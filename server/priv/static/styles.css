@@ -40,17 +40,23 @@ pre {
   line-height: 1.6;
 }
 
+.o11a-brand-text {
+  font-family: "Fira Code", "Consolas", "Monaco", "Courier New", monospace;
+  font-weight: bold;
+}
+
 code,
-.shortcut-s {
+.shortcut {
   background-color: #282c34;
   color: #abb2bf;
   font-family: "Fira Code", "Consolas", "Monaco", "Courier New", monospace;
 }
 
-.shortcut-s {
+.shortcut {
   font-weight: 600;
   padding: 0.35rem;
   border-radius: 0.4rem;
+  margin-left: 0.25rem;
 }
 
 /* Keywords (if, else, for, while, return, function, contract, etc.) */
