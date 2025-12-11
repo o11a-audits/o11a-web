@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>o11a web</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <script src="/static/main.js"></script>
+    <script type="module">
+      import { main } from "/static/o11a_web.js";
+      main("John");
+    </script>
+    <div
+      style="
+        display: flex;
+        height: 100%;
+        justify-content: center;
+        align-items: center;
+      "
+    >
+      <div style="height: min-content; font-size: 1.25rem">
+        <p>View All Audit Contracts <span class="shortcut-s">Ctrl-E</span></p>
+      </div>
+    </div>
+    <div id="app"></div>
+  </body>
+</html>

@@ -1,5 +1,7 @@
+import filepath
 import gleam/erlang/process
 import mist
+import simplifile
 import wisp
 import wisp/wisp_mist
 
@@ -11,8 +13,10 @@ pub fn main() {
   wisp.configure_logger()
   let secret_key_base = wisp.random_string(64)
 
+  let static_directory = static_directory()
+
   // A context is constructed holding the static directory path.
-  let ctx = Context(static_directory: static_directory())
+  let ctx = Context(static_directory:)
 
   // The handle_request function is partially applied with the context to make
   // the request handler function that only takes a request.
@@ -37,27 +41,13 @@ pub fn static_directory() -> String {
   priv_directory <> "/static"
 }
 
-const html = "<!DOCTYPE html>
-<html lang=\"en\">
-  <head>
-    <meta charset=\"utf-8\">
-    <title>o11a web</title>
-    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
-    <link rel=\"stylesheet\" href=\"/static/styles.css\">
-  </head>
-  <body>
-    <script src=\"/static/main.js\"></script>
-    <script type=\"module\">
-      import { main } from '/static/o11a_web.js';
-      main(\"John\");
-    </script>
-  </body>
-</html>
-"
-
 pub fn handle_request(req: wisp.Request, ctx: Context) -> wisp.Response {
   use _req <- middleware(req, ctx)
-  wisp.html_response(html, 200)
+
+  let assert Ok(index_html) =
+    simplifile.read(filepath.join(ctx.static_directory, "index.html"))
+
+  wisp.html_response(index_html, 200)
 }
 
 pub fn middleware(
