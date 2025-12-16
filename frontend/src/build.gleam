@@ -1,3 +1,6 @@
+//// This module can be run to build the frontend assets to be served
+//// by the server in the ../server directory
+
 import esgleam
 
 pub fn main() {

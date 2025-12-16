@@ -10,7 +10,7 @@
     <script src="/static/main.js"></script>
     <script type="module">
       import { main } from "/static/o11a_web.js";
-      main("John");
+      main();
     </script>
     <div
       style="
@@ -24,8 +24,8 @@
         padding: 0.25rem 0.5rem;
       "
     >
-      <span class="o11a-brand-text">o11a</span>
-      <span id="breadcrumb"></span>
+      <span class="o11a-brand-text" style="margin-right: 0.5rem">o11a</span
+      ><span id="dynamic-header" style="font-size: 0.9rem"></span>
     </div>
 
     <div
@@ -37,8 +37,8 @@
       "
     >
       <div style="height: min-content">
-        <p>View All Audit Contracts <span class="shortcut">Ctrl-E</span></p>
-        <p>View All Audit ToDos <span class="shortcut">Ctrl-T</span></p>
+        <p>View All Audit Contracts <span class="shortcut">E</span></p>
+        <p>View All Audit ToDos <span class="shortcut">T</span></p>
       </div>
     </div>
     <div id="app"></div>
