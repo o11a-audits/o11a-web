@@ -102,3 +102,73 @@ fn fetch_audit_contracts(audit_name) {
 
   promise.resolve(contracts)
 }
+
+@external(javascript, "./mem_ffi.mjs", "set_source_text_promise")
+fn set_source_text_promise(
+  topic_id: String,
+  promise: promise.Promise(Result(String, snag.Snag)),
+) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_source_text_promise")
+fn read_source_text_promise(
+  topic_id: String,
+) -> Result(promise.Promise(Result(String, snag.Snag)), Nil)
+
+@external(javascript, "./mem_ffi.mjs", "get_source_text")
+fn read_source_text(topic_id: String) -> Result(String, snag.Snag)
+
+@external(javascript, "./mem_ffi.mjs", "set_source_text")
+fn set_source_text(topic_id: String, text: String) -> Nil
+
+fn fetch_source_text(audit_name: String, topic: Topic) {
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/"
+      <> audit_name
+      <> "/source_text/"
+      <> topic.id,
+    )
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_text_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  promise.resolve(Ok(resp.body))
+}
+
+pub fn with_source_text(audit_name: String, topic: Topic, callback) {
+  case read_source_text(topic.id) {
+    Ok(source_text) -> {
+      callback(Ok(source_text))
+      Nil
+    }
+    Error(_) -> {
+      let promise = case read_source_text_promise(topic.id) {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_source_text(audit_name, topic)
+          set_source_text_promise(topic.id, promise)
+          promise
+        }
+      }
+
+      promise.await(promise, fn(source_text) {
+        case source_text {
+          Ok(source_text) -> {
+            set_source_text(topic.id, source_text)
+          }
+          Error(_) -> Nil
+        }
+        callback(source_text)
+
+        promise.resolve(Nil)
+      })
+
+      Nil
+    }
+  }
+}

@@ -25,3 +25,29 @@ export function get_contracts() {
   }
   return Result$Ok(contracts);
 }
+
+let source_text_dict = {};
+
+let source_text_promises = {};
+
+export function set_source_text_promise(topic_id, promise) {
+  source_text_promises[topic_id] = promise;
+}
+
+export function get_source_text_promise(topic_id) {
+  if (!source_text_promises[topic_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(source_text_promises[topic_id]);
+}
+
+export function get_source_text(topic_id) {
+  if (!source_text_dict[topic_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(source_text_dict[topic_id]);
+}
+
+export function set_source_text(topic_id, text) {
+  source_text_dict[topic_id] = text;
+}

@@ -1,6 +1,7 @@
 import audit_data
 import elements
 import gleam/io
+import gleam/list
 import gleam/result
 import gleam/string
 import plinth/browser/document
@@ -23,6 +24,28 @@ pub fn main() {
       }
       Ok(contracts) -> {
         echo contracts as "contracts: "
+
+        // Fetch source text for each contract's topic
+        contracts
+        |> list.each(fn(contract) {
+          audit_data.with_source_text(
+            audit_name,
+            contract.topic,
+            fn(source_text) {
+              case source_text {
+                Error(snag) -> {
+                  echo snag.line_print(snag) as "source_text error: "
+                  Nil
+                }
+                Ok(text) -> {
+                  echo text as "source_text for " <> contract.topic.id <> ": "
+                  Nil
+                }
+              }
+            },
+          )
+        })
+
         Nil
       }
     }
@@ -42,6 +65,30 @@ pub fn main() {
             }
             Ok(contracts) -> {
               echo contracts as "contracts: "
+
+              // Fetch source text for each contract's topic
+              contracts
+              |> list.each(fn(contract) {
+                audit_data.with_source_text(
+                  audit_name,
+                  contract.topic,
+                  fn(source_text) {
+                    case source_text {
+                      Error(snag) -> {
+                        echo snag.line_print(snag) as "source_text error: "
+                        Nil
+                      }
+                      Ok(text) -> {
+                        echo text as "source_text for "
+                        <> contract.topic.id
+                        <> ": "
+                        Nil
+                      }
+                    }
+                  },
+                )
+              })
+
               Nil
             }
           }
