@@ -5,6 +5,19 @@ import gleam/javascript/promise
 import gleam/string
 import snag
 
+@external(javascript, "./mem_ffi.mjs", "set_audit_name")
+pub fn set_audit_name(name: String) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_audit_name")
+fn get_audit_name() -> Result(String, Nil)
+
+pub fn audit_name() -> String {
+  case get_audit_name() {
+    Ok(name) -> name
+    Error(Nil) -> panic as "Failed to retrieve audit name"
+  }
+}
+
 pub fn with_audit_contracts(audit_name, callback) {
   case read_contracts() {
     Ok(contracts) -> {

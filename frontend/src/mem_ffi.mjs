@@ -1,5 +1,18 @@
 import { Result$Ok, Result$Error } from "./gleam.mjs";
 
+let audit_name;
+
+export function set_audit_name(name) {
+  audit_name = name;
+}
+
+export function get_audit_name() {
+  if (!audit_name) {
+    return Result$Error();
+  }
+  return Result$Ok(audit_name);
+}
+
 let contracts_promise;
 
 export function set_contracts_promise(promise) {
@@ -50,4 +63,18 @@ export function get_source_text(topic_id) {
 
 export function set_source_text(topic_id, text) {
   source_text_dict[topic_id] = text;
+}
+
+let navigation_history = {};
+
+export function set_navigation_node(id, node) {
+  navigation_history[id] = node;
+}
+
+export function get_navigation_node(id) {
+  let node = navigation_history[id];
+  if (!node) {
+    return Result$Error();
+  }
+  return Result$Ok(node);
 }

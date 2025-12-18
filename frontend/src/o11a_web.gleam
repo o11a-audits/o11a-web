@@ -38,7 +38,8 @@ pub fn main() {
                   Nil
                 }
                 Ok(text) -> {
-                  echo text as "source_text for " <> contract.topic.id <> ": "
+                  let _ =
+                    echo text as "source_text for " <> contract.topic.id <> ": "
                   Nil
                 }
               }
@@ -79,9 +80,10 @@ pub fn main() {
                         Nil
                       }
                       Ok(text) -> {
-                        echo text as "source_text for "
-                        <> contract.topic.id
-                        <> ": "
+                        let _ =
+                          echo text as "source_text for "
+                          <> contract.topic.id
+                          <> ": "
                         Nil
                       }
                     }
