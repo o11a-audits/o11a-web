@@ -10,6 +10,7 @@
 
 /* Color Variables */
 :root {
+  --color-brand-purple: #b490ff;
   --color-body-bg: #363b46;
   --color-body-text: #abb2bf;
   --color-body-border: #545963;
@@ -60,6 +61,7 @@ pre {
   font-family: "Fira Code", "Consolas", "Monaco", "Courier New", monospace;
   font-size: 14px;
   line-height: 1.6;
+  margin: 0;
 }
 
 .o11a-brand-text {

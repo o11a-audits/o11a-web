@@ -78,3 +78,44 @@ export function get_navigation_node(id) {
   }
   return Result$Ok(node);
 }
+
+let modal_state = null;
+
+export function init_modal_state() {
+  modal_state = {
+    all_contracts: [],
+    filtered_contracts: [],
+    selected_index: 0,
+    current_preview_topic_id: null,
+  };
+}
+
+export function get_modal_state() {
+  if (!modal_state) {
+    return Result$Error();
+  }
+  return Result$Ok(modal_state);
+}
+
+export function set_modal_state(state) {
+  modal_state = state;
+}
+
+export function clear_modal_state() {
+  modal_state = null;
+}
+
+// Focus context tracking
+let focus_context = "default"; // "default" | "input"
+
+export function set_input_context() {
+  focus_context = "input";
+}
+
+export function clear_input_context() {
+  focus_context = "default";
+}
+
+export function is_in_input_context() {
+  return focus_context === "input";
+}
