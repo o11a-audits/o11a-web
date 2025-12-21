@@ -79,30 +79,21 @@ export function get_navigation_node(id) {
   return Result$Ok(node);
 }
 
-let modal_state = null;
+let contracts_modal_state = null;
 
-export function init_modal_state() {
-  modal_state = {
-    all_contracts: [],
-    filtered_contracts: [],
-    selected_index: 0,
-    current_preview_topic_id: null,
-  };
-}
-
-export function get_modal_state() {
-  if (!modal_state) {
+export function get_contracts_modal_state() {
+  if (!contracts_modal_state) {
     return Result$Error();
   }
-  return Result$Ok(modal_state);
+  return Result$Ok(contracts_modal_state);
 }
 
-export function set_modal_state(state) {
-  modal_state = state;
+export function set_contracts_modal_state(state) {
+  contracts_modal_state = state;
 }
 
-export function clear_modal_state() {
-  modal_state = null;
+export function clear_contracts_modal_state() {
+  contracts_modal_state = null;
 }
 
 // Focus context tracking

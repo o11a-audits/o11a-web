@@ -50,7 +50,6 @@ body {
     "Ubuntu",
     "Cantarell",
     sans-serif;
-  font-size: 16px;
   line-height: 1.5;
 }
 
@@ -59,7 +58,7 @@ pre {
   background-color: var(--color-code-bg);
   color: var(--color-code-text);
   font-family: "Fira Code", "Consolas", "Monaco", "Courier New", monospace;
-  font-size: 14px;
+  font-size: 0.9rem;
   line-height: 1.6;
   margin: 0;
 }

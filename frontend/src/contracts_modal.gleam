@@ -1,0 +1,553 @@
+import audit_data
+import gleam/int
+import gleam/list
+import gleam/option.{type Option, None, Some}
+import icons
+import modal
+import plinth/browser/document
+import plinth/browser/element
+import plinth/browser/event
+import search
+import snag
+
+// ============================================================================
+// Contracts Modal State
+// ============================================================================
+
+pub type ContractsModalState {
+  ContractsModalState(
+    all_contracts: List(audit_data.Contract),
+    filtered_contracts: List(audit_data.Contract),
+    selected_index: Int,
+    current_preview_topic_id: Option(String),
+    audit_name: String,
+  )
+}
+
+// ============================================================================
+// FFI Bindings for State Management
+// ============================================================================
+
+@external(javascript, "./mem_ffi.mjs", "get_contracts_modal_state")
+fn get_contracts_modal_state() -> Result(ContractsModalState, Nil)
+
+@external(javascript, "./mem_ffi.mjs", "set_contracts_modal_state")
+fn set_contracts_modal_state(state: ContractsModalState) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "clear_contracts_modal_state")
+fn clear_contracts_modal_state() -> Nil
+
+// Initialize state in Gleam, not JavaScript
+fn init_contracts_modal_state() -> Nil {
+  set_contracts_modal_state(ContractsModalState(
+    all_contracts: [],
+    filtered_contracts: [],
+    selected_index: 0,
+    current_preview_topic_id: None,
+    audit_name: "",
+  ))
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+fn get_at(list: List(a), index: Int) -> Result(a, Nil) {
+  list
+  |> list.drop(index)
+  |> list.first
+}
+
+fn get_current_search_query() -> String {
+  case document.query_selector("#contracts-modal .modal-search-input") {
+    Ok(input) ->
+      case element.value(input) {
+        Ok(q) -> q
+        Error(_) -> ""
+      }
+    Error(_) -> ""
+  }
+}
+
+// ============================================================================
+// Two-Pane Layout Creation
+// ============================================================================
+
+fn create_two_pane_layout(
+  container: element.Element,
+  state: ContractsModalState,
+) -> Nil {
+  // Append container size styles to existing styles (preserves modal shadow/border)
+  let existing_style = case element.get_attribute(container, "style") {
+    Ok(style) -> style <> "; "
+    Error(_) -> ""
+  }
+  element.set_attribute(
+    container,
+    "style",
+    existing_style <> "height: 60ch; display: flex; flex-direction: row;",
+  )
+
+  // Left column (search + list)
+  let left_column = document.create_element("div")
+  element.set_attribute(
+    left_column,
+    "style",
+    "display: flex; flex-direction: column; border-right: 1px solid var(--color-body-border);",
+  )
+
+  // Search input container
+  let search_container = document.create_element("div")
+  element.set_attribute(
+    search_container,
+    "style",
+    "padding: 0.5rem; border-bottom: 1px solid var(--color-body-border);",
+  )
+
+  let search_input = document.create_element("input")
+  element.set_attribute(search_input, "type", "text")
+  element.set_attribute(search_input, "class", "modal-search-input")
+  element.set_attribute(search_input, "placeholder", "Search contracts...")
+  element.set_attribute(
+    search_input,
+    "style",
+    "width: 100%; padding: 0.5rem; background: var(--color-code-bg); color: var(--color-body-text); border: 1px solid var(--color-body-border); border-radius: 4px; font-size: 14px; box-sizing: border-box;",
+  )
+
+  // Search input event listener
+  let _search_cleanup =
+    element.add_event_listener(search_input, "input", fn(_e) {
+      case get_contracts_modal_state() {
+        Ok(state) -> {
+          case element.value(search_input) {
+            Ok(query) -> handle_search_input(query, state)
+            Error(_) -> Nil
+          }
+        }
+        Error(_) -> Nil
+      }
+    })
+
+  // Track focus context
+  let _input_focus_cleanup =
+    element.add_event_listener(search_input, "focus", fn(_e) {
+      modal.set_input_context()
+    })
+
+  let _input_blur_cleanup =
+    element.add_event_listener(search_input, "blur", fn(_e) {
+      modal.clear_input_context()
+    })
+
+  element.append_child(search_container, search_input)
+
+  // Left pane (contract list)
+  let left_pane = document.create_element("div")
+  element.set_attribute(left_pane, "class", "modal-left-pane")
+  element.set_attribute(
+    left_pane,
+    "style",
+    "width: 40ch; overflow-y: auto; background: var(--color-code-bg); padding: 0.5rem; flex: 1;",
+  )
+
+  element.append_child(left_column, search_container)
+  element.append_child(left_column, left_pane)
+
+  // Right pane (preview)
+  let right_pane = document.create_element("div")
+  element.set_attribute(right_pane, "class", "modal-right-pane")
+  element.set_attribute(
+    right_pane,
+    "style",
+    "width: 40ch; overflow-y: auto; background: var(--color-code-bg); padding: 1rem;",
+  )
+  element.set_inner_html(right_pane, "Loading...")
+
+  element.append_child(container, left_column)
+  element.append_child(container, right_pane)
+
+  // Show loading message initially (contracts will be rendered when loaded)
+  case list.is_empty(state.all_contracts) {
+    True -> {
+      element.set_inner_html(
+        left_pane,
+        "<div style='color: var(--color-body-text); padding: 1rem;'>Loading contracts...</div>",
+      )
+      Nil
+    }
+    False -> {
+      // Render contracts if already loaded
+      render_contract_list(state.filtered_contracts, state.selected_index, "")
+    }
+  }
+
+  Nil
+}
+
+// ============================================================================
+// Rendering Functions
+// ============================================================================
+
+fn render_contract_list(
+  contracts: List(audit_data.Contract),
+  selected_index: Int,
+  search_query: String,
+) -> Nil {
+  case document.query_selector("#contracts-modal .modal-left-pane") {
+    Ok(list_container) -> {
+      // Clear existing content
+      element.set_inner_html(list_container, "")
+
+      case list.is_empty(contracts) {
+        True -> {
+          let empty_msg = document.create_element("div")
+          element.set_inner_text(empty_msg, "No contracts match filter")
+          element.set_attribute(
+            empty_msg,
+            "style",
+            "color: var(--color-body-text); padding: 1rem;",
+          )
+          element.append_child(list_container, empty_msg)
+          Nil
+        }
+        False -> {
+          // Render each contract
+          contracts
+          |> list.index_map(fn(contract, idx) {
+            let item = document.create_element("div")
+            element.set_attribute(item, "data-index", int.to_string(idx))
+
+            let is_selected = idx == selected_index
+            let bg_color = case is_selected {
+              True -> "var(--color-code-selection-bg)"
+              False -> "transparent"
+            }
+
+            element.set_attribute(
+              item,
+              "style",
+              "padding: 0.5rem; cursor: pointer; background: "
+                <> bg_color
+                <> "; color: var(--color-body-text); border-radius: 4px; margin-bottom: 0.25rem;",
+            )
+
+            // Contract row: icon + name + kind
+            let name_container = document.create_element("div")
+            element.set_attribute(
+              name_container,
+              "style",
+              "display: flex; align-items: center; gap: 0.5rem;",
+            )
+
+            // Add icon based on contract kind
+            let icon_svg = case contract.kind {
+              "interface" -> icons.file_sliders
+              _ -> icons.file_braces
+            }
+
+            let icon_container = document.create_element("span")
+            element.set_attribute(
+              icon_container,
+              "style",
+              "display: flex; align-items: center; flex-shrink: 0;",
+            )
+            element.set_inner_html(icon_container, icon_svg)
+
+            let name_span = document.create_element("span")
+            // Highlight matching search term in contract name
+            let highlighted_name =
+              search.highlight_match(contract.name, search_query)
+            element.set_inner_html(name_span, highlighted_name)
+
+            let kind_span = document.create_element("span")
+            element.set_inner_text(kind_span, contract.kind)
+            element.set_attribute(
+              kind_span,
+              "style",
+              "font-size: 0.85rem; opacity: 0.7;",
+            )
+
+            element.append_child(name_container, icon_container)
+            element.append_child(name_container, name_span)
+            element.append_child(name_container, kind_span)
+            element.append_child(item, name_container)
+            element.append_child(list_container, item)
+
+            item
+          })
+          |> list.each(fn(_) { Nil })
+
+          Nil
+        }
+      }
+    }
+    Error(_) -> Nil
+  }
+}
+
+fn render_preview(html: String) -> Nil {
+  case document.query_selector("#contracts-modal .modal-right-pane") {
+    Ok(preview) -> {
+      element.set_inner_html(preview, html)
+      Nil
+    }
+    Error(_) -> Nil
+  }
+}
+
+fn render_preview_error(error: String) -> Nil {
+  render_preview("Error loading preview:<br><br>" <> error)
+}
+
+// ============================================================================
+// Preview Loading with Race Condition Protection
+// ============================================================================
+
+fn load_preview(audit_name: String, topic: audit_data.Topic) -> Nil {
+  // Update state to track current preview
+  case get_contracts_modal_state() {
+    Ok(state) -> {
+      set_contracts_modal_state(
+        ContractsModalState(..state, current_preview_topic_id: Some(topic.id)),
+      )
+
+      // Show loading indicator
+      render_preview("Loading preview...")
+
+      // Fetch source text
+      audit_data.with_source_text(audit_name, topic, fn(result) {
+        // Check if this is still the current selection
+        case get_contracts_modal_state() {
+          Ok(current_state) -> {
+            case current_state.current_preview_topic_id {
+              Some(current_topic_id) if current_topic_id == topic.id -> {
+                // Still current, render it
+                case result {
+                  Ok(text) -> render_preview(text)
+                  Error(err) -> render_preview_error(snag.line_print(err))
+                }
+              }
+              _ -> {
+                // User moved on, ignore this callback
+                Nil
+              }
+            }
+          }
+          Error(_) -> Nil
+        }
+      })
+    }
+    Error(_) -> Nil
+  }
+}
+
+// ============================================================================
+// Event Handlers
+// ============================================================================
+
+fn handle_search_input(query: String, state: ContractsModalState) -> Nil {
+  let filtered =
+    search.filter(state.all_contracts, query, fn(contract) { contract.name })
+
+  // Update state
+  set_contracts_modal_state(
+    ContractsModalState(
+      ..state,
+      filtered_contracts: filtered,
+      selected_index: 0,
+    ),
+  )
+
+  // Re-render list with search highlighting
+  render_contract_list(filtered, 0, query)
+
+  // Load preview for first item if any
+  case list.first(filtered) {
+    Ok(contract) -> load_preview(state.audit_name, contract.topic)
+    Error(_) -> Nil
+  }
+}
+
+fn handle_keydown(
+  e: event.Event(event.UIEvent(event.KeyboardEvent)),
+  state: ContractsModalState,
+) -> Nil {
+  let list_length = list.length(state.filtered_contracts)
+
+  case event.key(e) {
+    "Escape" -> {
+      event.prevent_default(e)
+      modal.close_modal(get_modal_config(state.audit_name))
+    }
+
+    "ArrowDown" if list_length > 0 -> {
+      event.prevent_default(e)
+      let new_index = case state.selected_index + 1 >= list_length {
+        True -> 0
+        False -> state.selected_index + 1
+      }
+
+      set_contracts_modal_state(
+        ContractsModalState(..state, selected_index: new_index),
+      )
+
+      let search_query = get_current_search_query()
+      render_contract_list(state.filtered_contracts, new_index, search_query)
+
+      case get_at(state.filtered_contracts, new_index) {
+        Ok(contract) -> load_preview(state.audit_name, contract.topic)
+        Error(_) -> Nil
+      }
+    }
+
+    "ArrowUp" if list_length > 0 -> {
+      event.prevent_default(e)
+      let new_index = case state.selected_index - 1 < 0 {
+        True -> list_length - 1
+        False -> state.selected_index - 1
+      }
+
+      set_contracts_modal_state(
+        ContractsModalState(..state, selected_index: new_index),
+      )
+
+      let search_query = get_current_search_query()
+      render_contract_list(state.filtered_contracts, new_index, search_query)
+
+      case get_at(state.filtered_contracts, new_index) {
+        Ok(contract) -> load_preview(state.audit_name, contract.topic)
+        Error(_) -> Nil
+      }
+    }
+
+    "Enter" if list_length > 0 -> {
+      event.prevent_default(e)
+      // Future: navigate to contract
+      modal.close_modal(get_modal_config(state.audit_name))
+    }
+
+    _ -> Nil
+  }
+}
+
+// ============================================================================
+// Modal Configuration
+// ============================================================================
+
+fn get_modal_config(
+  _audit_name: String,
+) -> modal.ModalConfig(ContractsModalState) {
+  modal.ModalConfig(
+    modal_id: "contracts-modal",
+    render_content: create_two_pane_layout,
+    on_keydown: handle_keydown,
+    init_state: init_contracts_modal_state,
+    get_state: get_contracts_modal_state,
+    clear_state: clear_contracts_modal_state,
+  )
+}
+
+// ============================================================================
+// Public API
+// ============================================================================
+
+pub fn open(audit_name: String) -> Nil {
+  let config = get_modal_config(audit_name)
+
+  // Check if modal already exists and has contracts loaded
+  case document.query_selector("#contracts-modal") {
+    Ok(_existing_modal) -> {
+      // Modal already exists, just focus the input
+      case document.query_selector("#contracts-modal .modal-search-input") {
+        Ok(input) -> {
+          element.focus(input)
+          Nil
+        }
+        Error(_) -> Nil
+      }
+    }
+    Error(_) -> {
+      // Modal doesn't exist, create it and fetch contracts
+      modal.open_modal(config, fn() {
+        // Focus the search input after modal is opened
+        case document.query_selector("#contracts-modal .modal-search-input") {
+          Ok(input) -> {
+            element.focus(input)
+            Nil
+          }
+          Error(_) -> Nil
+        }
+
+        // Fetch contracts and initialize (after modal DOM is ready)
+        audit_data.with_audit_contracts(audit_name, fn(result) {
+          on_contracts_loaded(result, audit_name)
+        })
+      })
+    }
+  }
+}
+
+fn on_contracts_loaded(
+  result: Result(List(audit_data.Contract), snag.Snag),
+  audit_name: String,
+) -> Nil {
+  case result {
+    Error(err) -> {
+      // Display error in list pane
+      case document.query_selector("#contracts-modal .modal-left-pane") {
+        Ok(list_container) -> {
+          element.set_inner_html(
+            list_container,
+            "<div style='color: var(--color-body-text); padding: 1rem;'>Error loading contracts:<br><br>"
+              <> snag.line_print(err)
+              <> "</div>",
+          )
+          Nil
+        }
+        Error(_) -> Nil
+      }
+
+      // Show error in preview pane
+      render_preview_error(snag.line_print(err))
+    }
+
+    Ok(contracts) -> {
+      case list.is_empty(contracts) {
+        True -> {
+          // Treat empty list as error
+          case document.query_selector("#contracts-modal .modal-left-pane") {
+            Ok(list_container) -> {
+              element.set_inner_html(
+                list_container,
+                "<div style='color: var(--color-body-text); padding: 1rem;'>No contracts found</div>",
+              )
+              Nil
+            }
+            Error(_) -> Nil
+          }
+          render_preview_error("No contracts available")
+        }
+
+        False -> {
+          // Update modal state
+          set_contracts_modal_state(ContractsModalState(
+            all_contracts: contracts,
+            filtered_contracts: contracts,
+            selected_index: 0,
+            current_preview_topic_id: None,
+            audit_name: audit_name,
+          ))
+
+          // Render contract list (no search query initially)
+          render_contract_list(contracts, 0, "")
+
+          // Load preview for first contract
+          case list.first(contracts) {
+            Ok(contract) -> load_preview(audit_name, contract.topic)
+            Error(_) -> Nil
+          }
+        }
+      }
+    }
+  }
+}
