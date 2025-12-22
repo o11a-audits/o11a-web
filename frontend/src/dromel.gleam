@@ -1,4 +1,4 @@
-//// Dommel - A chainable DOM manipulation library built on plinth
+//// dromel - A chainable DOM manipulation library built on plinth
 ////
 //// This module provides a more ergonomic, chainable API over plinth's browser APIs
 //// while maintaining full compatibility with plinth types.

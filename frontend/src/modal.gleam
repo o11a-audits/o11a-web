@@ -1,4 +1,4 @@
-import dommel
+import dromel
 import plinth/browser/element
 import plinth/browser/event
 
@@ -44,31 +44,31 @@ pub fn is_in_input_context() -> Bool
 pub fn create_modal_dom(config: ModalConfig(state)) -> element.Element {
   // Container - the modal content will be rendered into this
   let container =
-    dommel.new_div()
-    |> dommel.set_style(
+    dromel.new_div()
+    |> dromel.set_style(
       "background: var(--color-body-bg); border: 1px solid var(--color-body-border); border-radius: 4px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);",
     )
 
   // Overlay (full screen backdrop, transparent)
   let modal =
-    dommel.new_div()
-    |> dommel.set_id(config.modal_id)
-    |> dommel.set_style(
+    dromel.new_div()
+    |> dromel.set_id(config.modal_id)
+    |> dromel.set_style(
       "position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: transparent; z-index: 1000; display: flex; align-items: center; justify-content: center;",
     )
-    |> dommel.append_child(container)
-    |> dommel.add_event_listener("keydown", fn(e) {
+    |> dromel.append_child(container)
+    |> dromel.add_event_listener("keydown", fn(e) {
       case config.get_state() {
         Ok(state) -> config.on_keydown(e, state)
         Error(_) -> Nil
       }
     })
-    |> dommel.add_event_listener("click", fn(e) {
+    |> dromel.add_event_listener("click", fn(e) {
       case event.target(e) {
         target -> {
-          case dommel.cast(target) {
+          case dromel.cast(target) {
             Ok(elem) -> {
-              case dommel.get_attribute(elem, "id") {
+              case dromel.get_attribute(elem, "id") {
                 Ok(id) if id == config.modal_id -> close_modal(config)
                 _ -> Nil
               }
@@ -88,7 +88,7 @@ pub fn create_modal_dom(config: ModalConfig(state)) -> element.Element {
 
 pub fn open_modal(config: ModalConfig(state), on_opened: fn() -> Nil) -> Nil {
   // Check if modal is already open
-  case dommel.query_selector("#" <> config.modal_id) {
+  case dromel.query_selector("#" <> config.modal_id) {
     Ok(_existing_modal) -> {
       // Modal already open, just call the callback
       on_opened()
@@ -100,12 +100,12 @@ pub fn open_modal(config: ModalConfig(state), on_opened: fn() -> Nil) -> Nil {
       let modal = create_modal_dom(config)
 
       // Append to #app div
-      case dommel.query_selector("#app") {
+      case dromel.query_selector("#app") {
         Ok(app_div) -> {
-          let _ = app_div |> dommel.append_child(modal)
+          let _ = app_div |> dromel.append_child(modal)
 
           // Render content into the container
-          case dommel.query_selector("#" <> config.modal_id <> " > div") {
+          case dromel.query_selector("#" <> config.modal_id <> " > div") {
             Ok(container) -> {
               case config.get_state() {
                 Ok(state) -> config.render_content(container, state)
@@ -125,9 +125,9 @@ pub fn open_modal(config: ModalConfig(state), on_opened: fn() -> Nil) -> Nil {
 }
 
 pub fn close_modal(config: ModalConfig(state)) -> Nil {
-  case dommel.query_selector("#" <> config.modal_id) {
+  case dromel.query_selector("#" <> config.modal_id) {
     Ok(modal) -> {
-      let _ = modal |> dommel.remove()
+      let _ = modal |> dromel.remove()
       config.clear_state()
       clear_input_context()
       Nil

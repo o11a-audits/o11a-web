@@ -1,5 +1,5 @@
 import audit_data
-import dommel
+import dromel
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -59,9 +59,9 @@ fn get_at(list: List(a), index: Int) -> Result(a, Nil) {
 }
 
 fn get_current_search_query() -> String {
-  case dommel.query_selector("#contracts-modal .modal-search-input") {
+  case dromel.query_selector("#contracts-modal .modal-search-input") {
     Ok(input) ->
-      case dommel.value(input) {
+      case dromel.value(input) {
         Ok(q) -> q
         Error(_) -> ""
       }
@@ -80,38 +80,38 @@ fn create_two_pane_layout(
   // Append container size styles to existing styles (preserves modal shadow/border)
   let _ =
     container
-    |> dommel.add_style("height: 60ch; display: flex; flex-direction: row;")
+    |> dromel.add_style("height: 60ch; display: flex; flex-direction: row;")
 
   // Left column (search + list)
   let left_column =
-    dommel.new_div()
-    |> dommel.set_style(
+    dromel.new_div()
+    |> dromel.set_style(
       "display: flex; flex-direction: column; border-right: 1px solid var(--color-body-border);",
     )
 
   // Search input container
   let search_container =
-    dommel.new_div()
-    |> dommel.set_style(
+    dromel.new_div()
+    |> dromel.set_style(
       "padding: 0.5rem; border-bottom: 1px solid var(--color-body-border);",
     )
 
   let search_input =
-    dommel.new_input()
-    |> dommel.set_type("text")
-    |> dommel.set_class("modal-search-input")
-    |> dommel.set_placeholder("Search contracts...")
-    |> dommel.set_style(
+    dromel.new_input()
+    |> dromel.set_type("text")
+    |> dromel.set_class("modal-search-input")
+    |> dromel.set_placeholder("Search contracts...")
+    |> dromel.set_style(
       "width: 100%; padding: 0.5rem; background: var(--color-code-bg); color: var(--color-body-text); border: 1px solid var(--color-body-border); border-radius: 4px; font-size: 14px; box-sizing: border-box;",
     )
-    |> dommel.add_event_listener("input", fn(e) {
+    |> dromel.add_event_listener("input", fn(e) {
       case get_contracts_modal_state() {
         Ok(state) -> {
           case event.target(e) {
             target -> {
-              case dommel.cast(target) {
+              case dromel.cast(target) {
                 Ok(elem) -> {
-                  case dommel.value(elem) {
+                  case dromel.value(elem) {
                     Ok(query) -> handle_search_input(query, state)
                     Error(_) -> Nil
                   }
@@ -124,40 +124,40 @@ fn create_two_pane_layout(
         Error(_) -> Nil
       }
     })
-    |> dommel.add_event_listener("focus", fn(_e) { modal.set_input_context() })
-    |> dommel.add_event_listener("blur", fn(_e) { modal.clear_input_context() })
+    |> dromel.add_event_listener("focus", fn(_e) { modal.set_input_context() })
+    |> dromel.add_event_listener("blur", fn(_e) { modal.clear_input_context() })
 
-  let _ = search_container |> dommel.append_child(search_input)
+  let _ = search_container |> dromel.append_child(search_input)
 
   // Left pane (contract list)
   let left_pane =
-    dommel.new_div()
-    |> dommel.set_class("modal-left-pane")
-    |> dommel.set_style(
+    dromel.new_div()
+    |> dromel.set_class("modal-left-pane")
+    |> dromel.set_style(
       "width: 40ch; overflow-y: auto; background: var(--color-code-bg); padding: 0.5rem; flex: 1;",
     )
 
-  let _ = left_column |> dommel.append_child(search_container)
-  let _ = left_column |> dommel.append_child(left_pane)
+  let _ = left_column |> dromel.append_child(search_container)
+  let _ = left_column |> dromel.append_child(left_pane)
 
   // Right pane (preview)
   let right_pane =
-    dommel.new_div()
-    |> dommel.set_class("modal-right-pane")
-    |> dommel.set_style(
+    dromel.new_div()
+    |> dromel.set_class("modal-right-pane")
+    |> dromel.set_style(
       "width: 40ch; overflow-y: auto; background: var(--color-code-bg); padding: 1rem;",
     )
-    |> dommel.set_inner_html("Loading...")
+    |> dromel.set_inner_html("Loading...")
 
-  let _ = container |> dommel.append_child(left_column)
-  let _ = container |> dommel.append_child(right_pane)
+  let _ = container |> dromel.append_child(left_column)
+  let _ = container |> dromel.append_child(right_pane)
 
   // Show loading message initially (contracts will be rendered when loaded)
   case list.is_empty(state.all_contracts) {
     True -> {
       let _ =
         left_pane
-        |> dommel.set_inner_html(
+        |> dromel.set_inner_html(
           "<div style='color: var(--color-body-text); padding: 1rem;'>Loading contracts...</div>",
         )
       Nil
@@ -180,19 +180,19 @@ fn render_contract_list(
   selected_index: Int,
   search_query: String,
 ) -> Nil {
-  case dommel.query_selector("#contracts-modal .modal-left-pane") {
+  case dromel.query_selector("#contracts-modal .modal-left-pane") {
     Ok(list_container) -> {
       // Clear existing content
-      let _ = list_container |> dommel.set_inner_html("")
+      let _ = list_container |> dromel.set_inner_html("")
 
       case list.is_empty(contracts) {
         True -> {
           let empty_msg =
-            dommel.new_div()
-            |> dommel.set_inner_text("No contracts match filter")
-            |> dommel.set_style("color: var(--color-body-text); padding: 1rem;")
+            dromel.new_div()
+            |> dromel.set_inner_text("No contracts match filter")
+            |> dromel.set_style("color: var(--color-body-text); padding: 1rem;")
 
-          let _ = list_container |> dommel.append_child(empty_msg)
+          let _ = list_container |> dromel.append_child(empty_msg)
           Nil
         }
         False -> {
@@ -206,9 +206,9 @@ fn render_contract_list(
             }
 
             let item =
-              dommel.new_div()
-              |> dommel.set_attribute("data-index", int.to_string(idx))
-              |> dommel.set_style(
+              dromel.new_div()
+              |> dromel.set_attribute("data-index", int.to_string(idx))
+              |> dromel.set_style(
                 "padding: 0.5rem; cursor: pointer; background: "
                 <> bg_color
                 <> "; color: var(--color-body-text); border-radius: 4px; margin-bottom: 0.25rem;",
@@ -216,8 +216,8 @@ fn render_contract_list(
 
             // Contract row: icon + name + kind
             let name_container =
-              dommel.new_div()
-              |> dommel.set_style(
+              dromel.new_div()
+              |> dromel.set_style(
                 "display: flex; align-items: center; gap: 0.5rem;",
               )
 
@@ -230,32 +230,32 @@ fn render_contract_list(
             }
 
             let icon_container =
-              dommel.new_span()
-              |> dommel.set_style(
+              dromel.new_span()
+              |> dromel.set_style(
                 "display: flex; align-items: center; flex-shrink: 0;",
               )
-              |> dommel.set_inner_html(icon_svg)
+              |> dromel.set_inner_html(icon_svg)
 
             // Highlight matching search term in contract name
             let highlighted_name =
               search.highlight_match(contract.name, search_query)
 
             let name_span =
-              dommel.new_span()
-              |> dommel.set_inner_html(highlighted_name)
+              dromel.new_span()
+              |> dromel.set_inner_html(highlighted_name)
 
             let kind_span =
-              dommel.new_span()
-              |> dommel.set_inner_text(audit_data.contract_kind_to_string(
+              dromel.new_span()
+              |> dromel.set_inner_text(audit_data.contract_kind_to_string(
                 contract.kind,
               ))
-              |> dommel.set_style("font-size: 0.85rem; opacity: 0.7;")
+              |> dromel.set_style("font-size: 0.85rem; opacity: 0.7;")
 
-            let _ = name_container |> dommel.append_child(icon_container)
-            let _ = name_container |> dommel.append_child(name_span)
-            let _ = name_container |> dommel.append_child(kind_span)
-            let _ = item |> dommel.append_child(name_container)
-            let _ = list_container |> dommel.append_child(item)
+            let _ = name_container |> dromel.append_child(icon_container)
+            let _ = name_container |> dromel.append_child(name_span)
+            let _ = name_container |> dromel.append_child(kind_span)
+            let _ = item |> dromel.append_child(name_container)
+            let _ = list_container |> dromel.append_child(item)
 
             item
           })
@@ -270,9 +270,9 @@ fn render_contract_list(
 }
 
 fn render_preview(html: String) -> Nil {
-  case dommel.query_selector("#contracts-modal .modal-right-pane") {
+  case dromel.query_selector("#contracts-modal .modal-right-pane") {
     Ok(preview) -> {
-      let _ = preview |> dommel.set_inner_html(html)
+      let _ = preview |> dromel.set_inner_html(html)
       Nil
     }
     Error(_) -> Nil
@@ -439,12 +439,12 @@ pub fn open(audit_name: String) -> Nil {
   let config = get_modal_config(audit_name)
 
   // Check if modal already exists and has contracts loaded
-  case dommel.query_selector("#contracts-modal") {
+  case dromel.query_selector("#contracts-modal") {
     Ok(_existing_modal) -> {
       // Modal already exists, just focus the input
-      case dommel.query_selector("#contracts-modal .modal-search-input") {
+      case dromel.query_selector("#contracts-modal .modal-search-input") {
         Ok(input) -> {
-          let _ = input |> dommel.focus()
+          let _ = input |> dromel.focus()
           Nil
         }
         Error(_) -> Nil
@@ -454,9 +454,9 @@ pub fn open(audit_name: String) -> Nil {
       // Modal doesn't exist, create it and fetch contracts
       modal.open_modal(config, fn() {
         // Focus the search input after modal is opened
-        case dommel.query_selector("#contracts-modal .modal-search-input") {
+        case dromel.query_selector("#contracts-modal .modal-search-input") {
           Ok(input) -> {
-            let _ = input |> dommel.focus()
+            let _ = input |> dromel.focus()
             Nil
           }
           Error(_) -> Nil
@@ -478,11 +478,11 @@ fn on_contracts_loaded(
   case result {
     Error(err) -> {
       // Display error in list pane
-      case dommel.query_selector("#contracts-modal .modal-left-pane") {
+      case dromel.query_selector("#contracts-modal .modal-left-pane") {
         Ok(list_container) -> {
           let _ =
             list_container
-            |> dommel.set_inner_html(
+            |> dromel.set_inner_html(
               "<div style='color: var(--color-body-text); padding: 1rem;'>Error loading contracts:<br><br>"
               <> snag.line_print(err)
               <> "</div>",
@@ -500,11 +500,11 @@ fn on_contracts_loaded(
       case list.is_empty(contracts) {
         True -> {
           // Treat empty list as error
-          case dommel.query_selector("#contracts-modal .modal-left-pane") {
+          case dromel.query_selector("#contracts-modal .modal-left-pane") {
             Ok(list_container) -> {
               let _ =
                 list_container
-                |> dommel.set_inner_html(
+                |> dromel.set_inner_html(
                   "<div style='color: var(--color-body-text); padding: 1rem;'>No contracts found</div>",
                 )
               Nil

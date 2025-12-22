@@ -1,6 +1,6 @@
 import audit_data
 import contracts_modal
-import dommel
+import dromel
 import elements
 import gleam/io
 import gleam/list
@@ -75,16 +75,16 @@ pub fn main() {
 }
 
 pub fn populate_audit_name_tag(audit_name) {
-  use header <- result.try(dommel.query_selector(
+  use header <- result.try(dromel.query_selector(
     elements.dynamic_header.selector,
   ))
 
   let audit_name_tag =
-    dommel.new_span()
-    |> dommel.set_inner_text(audit_name)
-    |> dommel.set_style("margin-right: 0.5rem")
+    dromel.new_span()
+    |> dromel.set_inner_text(audit_name)
+    |> dromel.set_style("margin-right: 0.5rem")
 
-  let _ = header |> dommel.append_child(audit_name_tag)
+  let _ = header |> dromel.append_child(audit_name_tag)
 
   Ok(Nil)
 }
