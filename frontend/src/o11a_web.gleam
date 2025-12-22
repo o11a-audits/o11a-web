@@ -1,13 +1,12 @@
 import audit_data
 import contracts_modal
+import dommel
 import elements
 import gleam/io
 import gleam/list
 import gleam/result
 import gleam/string
 import modal
-import plinth/browser/document
-import plinth/browser/element
 import plinth/browser/event
 import plinth/browser/window
 import snag
@@ -76,15 +75,16 @@ pub fn main() {
 }
 
 pub fn populate_audit_name_tag(audit_name) {
-  use header <- result.try(document.query_selector(
+  use header <- result.try(dommel.query_selector(
     elements.dynamic_header.selector,
   ))
 
-  let audit_name_tag = document.create_element("span")
-  element.set_inner_text(audit_name_tag, audit_name)
-  element.set_attribute(audit_name_tag, "style", "margin-right: 0.5rem")
+  let audit_name_tag =
+    dommel.new_span()
+    |> dommel.set_inner_text(audit_name)
+    |> dommel.set_style("margin-right: 0.5rem")
 
-  element.append_child(header, audit_name_tag)
+  let _ = header |> dommel.append_child(audit_name_tag)
 
   Ok(Nil)
 }
