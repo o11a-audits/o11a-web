@@ -10,7 +10,7 @@ import plinth/browser/element
 import plinth/browser/event
 
 // ============================================================================
-// Re-export plinth types for convenience
+// Plinth types for convenience
 // ============================================================================
 
 pub type Element =
@@ -18,6 +18,35 @@ pub type Element =
 
 pub type Event(t) =
   event.Event(t)
+
+// ============================================================================
+// ElementRef
+// ============================================================================
+
+pub type ElementRef {
+  Selector(selector: String)
+  Class(class: String)
+  Id(id: String)
+}
+
+pub fn selector(element: ElementRef) -> String {
+  case element {
+    Selector(selector) -> selector
+    Class(class) -> "." <> class
+    Id(id) -> "#" <> id
+  }
+}
+
+pub fn matches_ref(
+  element element: Element,
+  ref element_ref: ElementRef,
+) -> Bool {
+  case element_ref {
+    Selector(_) -> panic as "Cannot match selectors"
+    Class(class) -> get_attribute(element, "class") == Ok(class)
+    Id(id) -> get_attribute(element, "id") == Ok(id)
+  }
+}
 
 // ============================================================================
 // Element Creation
@@ -52,12 +81,20 @@ pub fn get_attribute(elem: Element, attribute: String) -> Result(String, Nil) {
   element.get_attribute(elem, attribute)
 }
 
-pub fn set_id(elem: Element, id: String) -> Element {
-  set_attribute(elem, "id", id)
+pub fn set_id(elem: Element, ref: ElementRef) -> Element {
+  case ref {
+    Id(id) -> set_attribute(elem, "id", id)
+    Class(_) -> panic as "Unable to set a class ref as id"
+    Selector(_) -> panic as "Unable to set a selector ref as id"
+  }
 }
 
-pub fn set_class(elem: Element, class: String) -> Element {
-  set_attribute(elem, "class", class)
+pub fn set_class(elem: Element, ref: ElementRef) -> Element {
+  case ref {
+    Id(_) -> panic as "Unable to set an id ref as class"
+    Class(class) -> set_attribute(elem, "class", class)
+    Selector(_) -> panic as "Unable to set a selector ref as class"
+  }
 }
 
 pub fn set_type(elem: Element, type_: String) -> Element {
@@ -144,8 +181,8 @@ pub fn add_event_listener(
 // DOM Querying (Non-chainable - returns Result)
 // ============================================================================
 
-pub fn query_selector(selector: String) -> Result(Element, Nil) {
-  document.query_selector(selector)
+pub fn query_selector(ref: ElementRef) -> Result(Element, Nil) {
+  document.query_selector(selector(ref))
 }
 
 // ============================================================================

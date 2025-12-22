@@ -1,12 +1,15 @@
+import dromel
 import gleam/dynamic/decode
 import gleam/fetch
 import gleam/http/request
 import gleam/javascript/promise
 import gleam/string
+import plinth/browser/document
+import plinth/browser/window
 import snag
 
 @external(javascript, "./mem_ffi.mjs", "set_audit_name")
-pub fn set_audit_name(name: String) -> Nil
+fn set_audit_name(name: String) -> Nil
 
 @external(javascript, "./mem_ffi.mjs", "get_audit_name")
 fn get_audit_name() -> Result(String, Nil)
@@ -14,11 +17,39 @@ fn get_audit_name() -> Result(String, Nil)
 pub fn audit_name() -> String {
   case get_audit_name() {
     Ok(name) -> name
-    Error(Nil) -> panic as "Failed to retrieve audit name"
+    Error(Nil) -> {
+      case window.pathname() |> echo |> string.split("/") {
+        ["", audit_name, ..] -> {
+          set_audit_name(audit_name)
+          audit_name
+        }
+        _ -> panic as "Failed to retrieve audit name"
+      }
+    }
   }
 }
 
-pub fn with_audit_contracts(audit_name, callback) {
+@external(javascript, "./mem_ffi.mjs", "set_app_element")
+fn set_app_element(element: dromel.Element) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_app_element")
+fn get_app_element() -> Result(dromel.Element, Nil)
+
+pub fn app_element() -> dromel.Element {
+  case get_app_element() {
+    Ok(element) -> element
+    Error(Nil) ->
+      case document.query_selector("#app") {
+        Ok(element) -> {
+          set_app_element(element)
+          element
+        }
+        Error(Nil) -> panic as "Failed to retrieve app element"
+      }
+  }
+}
+
+pub fn with_audit_contracts(callback) {
   case read_contracts() {
     Ok(contracts) -> {
       callback(Ok(contracts))
@@ -28,7 +59,7 @@ pub fn with_audit_contracts(audit_name, callback) {
       let promise = case read_contracts_promise() {
         Ok(promise) -> promise
         Error(Nil) -> {
-          let promise = fetch_audit_contracts(audit_name)
+          let promise = fetch_audit_contracts()
           set_contracts_promise(promise)
           promise
         }
@@ -121,10 +152,10 @@ fn read_contracts() -> Result(List(ContractMetadata), snag.Snag)
 @external(javascript, "./mem_ffi.mjs", "set_contracts")
 fn set_contracts(contracts: List(ContractMetadata)) -> Nil
 
-fn fetch_audit_contracts(audit_name) {
+fn fetch_audit_contracts() {
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/" <> audit_name <> "/contracts",
+      "http://172.18.115.78:3000/api/v1/audits/" <> audit_name() <> "/contracts",
     )
 
   use resp <- promise.try_await(
@@ -165,11 +196,11 @@ fn read_source_text(topic_id: String) -> Result(String, snag.Snag)
 @external(javascript, "./mem_ffi.mjs", "set_source_text")
 fn set_source_text(topic_id: String, text: String) -> Nil
 
-fn fetch_source_text(audit_name: String, topic: Topic) {
+fn fetch_source_text(topic: Topic) {
   let assert Ok(req) =
     request.to(
       "http://172.18.115.78:3000/api/v1/audits/"
-      <> audit_name
+      <> audit_name()
       <> "/source_text/"
       <> topic.id,
     )
@@ -185,7 +216,7 @@ fn fetch_source_text(audit_name: String, topic: Topic) {
   promise.resolve(Ok(resp.body))
 }
 
-pub fn with_source_text(audit_name: String, topic: Topic, callback) {
+pub fn with_source_text(topic: Topic, callback) {
   case read_source_text(topic.id) {
     Ok(source_text) -> {
       callback(Ok(source_text))
@@ -195,7 +226,7 @@ pub fn with_source_text(audit_name: String, topic: Topic, callback) {
       let promise = case read_source_text_promise(topic.id) {
         Ok(promise) -> promise
         Error(Nil) -> {
-          let promise = fetch_source_text(audit_name, topic)
+          let promise = fetch_source_text(topic)
           set_source_text_promise(topic.id, promise)
           promise
         }

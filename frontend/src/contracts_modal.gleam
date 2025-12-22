@@ -1,5 +1,6 @@
 import audit_data
 import dromel
+import elements
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -20,7 +21,6 @@ pub type ContractsModalState {
     filtered_contracts: List(audit_data.ContractMetadata),
     selected_index: Int,
     current_preview_topic_id: Option(String),
-    audit_name: String,
   )
 }
 
@@ -37,14 +37,12 @@ fn set_contracts_modal_state(state: ContractsModalState) -> Nil
 @external(javascript, "./mem_ffi.mjs", "clear_contracts_modal_state")
 fn clear_contracts_modal_state() -> Nil
 
-// Initialize state in Gleam, not JavaScript
 fn init_contracts_modal_state() -> Nil {
   set_contracts_modal_state(ContractsModalState(
     all_contracts: [],
     filtered_contracts: [],
     selected_index: 0,
     current_preview_topic_id: None,
-    audit_name: "",
   ))
 }
 
@@ -59,7 +57,7 @@ fn get_at(list: List(a), index: Int) -> Result(a, Nil) {
 }
 
 fn get_current_search_query() -> String {
-  case dromel.query_selector("#contracts-modal .modal-search-input") {
+  case dromel.query_selector(elements.contracts_modal_search_input) {
     Ok(input) ->
       case dromel.value(input) {
         Ok(q) -> q
@@ -99,7 +97,7 @@ fn create_two_pane_layout(
   let search_input =
     dromel.new_input()
     |> dromel.set_type("text")
-    |> dromel.set_class("modal-search-input")
+    |> dromel.set_class(elements.modal_search_input_class)
     |> dromel.set_placeholder("Search contracts...")
     |> dromel.set_style(
       "width: 100%; padding: 0.5rem; background: var(--color-body-bg); color: var(--color-body-text); border: none; font-size: 14px; box-sizing: border-box;",
@@ -132,7 +130,7 @@ fn create_two_pane_layout(
   // Left pane (contract list)
   let left_pane =
     dromel.new_div()
-    |> dromel.set_class("modal-left-pane")
+    |> dromel.set_class(elements.modal_left_pane_class)
     |> dromel.set_style(
       "width: 40ch; overflow-y: auto; background: var(--color-body-bg); padding: 0.5rem; flex: 1;",
     )
@@ -143,7 +141,7 @@ fn create_two_pane_layout(
   // Right pane (preview)
   let right_pane =
     dromel.new_div()
-    |> dromel.set_class("modal-right-pane")
+    |> dromel.set_class(elements.modal_right_pane_class)
     |> dromel.set_style(
       "width: 40ch; overflow-y: auto; background: var(--color-code-bg); padding: 1rem;",
     )
@@ -180,7 +178,7 @@ fn render_contract_list(
   selected_index: Int,
   search_query: String,
 ) -> Nil {
-  case dromel.query_selector("#contracts-modal .modal-left-pane") {
+  case dromel.query_selector(elements.contracts_modal_left_pane) {
     Ok(list_container) -> {
       // Clear existing content
       let _ = list_container |> dromel.set_inner_html("")
@@ -270,7 +268,7 @@ fn render_contract_list(
 }
 
 fn render_preview(html: String) -> Nil {
-  case dromel.query_selector("#contracts-modal .modal-right-pane") {
+  case dromel.query_selector(elements.contracts_modal_right_pane) {
     Ok(preview) -> {
       let _ = preview |> dromel.set_inner_html(html)
       Nil
@@ -287,7 +285,7 @@ fn render_preview_error(error: String) -> Nil {
 // Preview Loading with Race Condition Protection
 // ============================================================================
 
-fn load_preview(audit_name: String, topic: audit_data.Topic) -> Nil {
+fn load_preview(topic: audit_data.Topic) -> Nil {
   // Update state to track current preview
   case get_contracts_modal_state() {
     Ok(state) -> {
@@ -299,7 +297,7 @@ fn load_preview(audit_name: String, topic: audit_data.Topic) -> Nil {
       render_preview("Loading preview...")
 
       // Fetch source text
-      audit_data.with_source_text(audit_name, topic, fn(result) {
+      audit_data.with_source_text(topic, fn(result) {
         // Check if this is still the current selection
         case get_contracts_modal_state() {
           Ok(current_state) -> {
@@ -347,7 +345,7 @@ fn handle_search_input(query: String, state: ContractsModalState) -> Nil {
 
   // Load preview for first item if any
   case list.first(filtered) {
-    Ok(contract) -> load_preview(state.audit_name, contract.topic)
+    Ok(contract) -> load_preview(contract.topic)
     Error(_) -> Nil
   }
 }
@@ -361,7 +359,7 @@ fn handle_keydown(
   case event.key(e) {
     "Escape" -> {
       event.prevent_default(e)
-      modal.close_modal(get_modal_config(state.audit_name))
+      modal.close_modal(get_modal_config())
     }
 
     "ArrowDown" if list_length > 0 -> {
@@ -379,7 +377,7 @@ fn handle_keydown(
       render_contract_list(state.filtered_contracts, new_index, search_query)
 
       case get_at(state.filtered_contracts, new_index) {
-        Ok(contract) -> load_preview(state.audit_name, contract.topic)
+        Ok(contract) -> load_preview(contract.topic)
         Error(_) -> Nil
       }
     }
@@ -399,7 +397,7 @@ fn handle_keydown(
       render_contract_list(state.filtered_contracts, new_index, search_query)
 
       case get_at(state.filtered_contracts, new_index) {
-        Ok(contract) -> load_preview(state.audit_name, contract.topic)
+        Ok(contract) -> load_preview(contract.topic)
         Error(_) -> Nil
       }
     }
@@ -407,7 +405,7 @@ fn handle_keydown(
     "Enter" if list_length > 0 -> {
       event.prevent_default(e)
       // Future: navigate to contract
-      modal.close_modal(get_modal_config(state.audit_name))
+      modal.close_modal(get_modal_config())
     }
 
     _ -> Nil
@@ -418,11 +416,9 @@ fn handle_keydown(
 // Modal Configuration
 // ============================================================================
 
-fn get_modal_config(
-  _audit_name: String,
-) -> modal.ModalConfig(ContractsModalState) {
+fn get_modal_config() -> modal.ModalConfig(ContractsModalState) {
   modal.ModalConfig(
-    modal_id: "contracts-modal",
+    modal_id_ref: elements.contracts_modal_id,
     render_content: create_two_pane_layout,
     on_keydown: handle_keydown,
     init_state: init_contracts_modal_state,
@@ -435,14 +431,14 @@ fn get_modal_config(
 // Public API
 // ============================================================================
 
-pub fn open(audit_name: String) -> Nil {
-  let config = get_modal_config(audit_name)
+pub fn open() -> Nil {
+  let config = get_modal_config()
 
   // Check if modal already exists and has contracts loaded
-  case dromel.query_selector("#contracts-modal") {
+  case dromel.query_selector(elements.contracts_modal_id) {
     Ok(_existing_modal) -> {
       // Modal already exists, just focus the input
-      case dromel.query_selector("#contracts-modal .modal-search-input") {
+      case dromel.query_selector(elements.contracts_modal_search_input) {
         Ok(input) -> {
           let _ = input |> dromel.focus()
           Nil
@@ -454,7 +450,7 @@ pub fn open(audit_name: String) -> Nil {
       // Modal doesn't exist, create it and fetch contracts
       modal.open_modal(config, fn() {
         // Focus the search input after modal is opened
-        case dromel.query_selector("#contracts-modal .modal-search-input") {
+        case dromel.query_selector(elements.contracts_modal_search_input) {
           Ok(input) -> {
             let _ = input |> dromel.focus()
             Nil
@@ -463,8 +459,8 @@ pub fn open(audit_name: String) -> Nil {
         }
 
         // Fetch contracts and initialize (after modal DOM is ready)
-        audit_data.with_audit_contracts(audit_name, fn(result) {
-          on_contracts_loaded(result, audit_name)
+        audit_data.with_audit_contracts(fn(result) {
+          on_contracts_loaded(result)
         })
       })
     }
@@ -473,12 +469,11 @@ pub fn open(audit_name: String) -> Nil {
 
 fn on_contracts_loaded(
   result: Result(List(audit_data.ContractMetadata), snag.Snag),
-  audit_name: String,
 ) -> Nil {
   case result {
     Error(err) -> {
       // Display error in list pane
-      case dromel.query_selector("#contracts-modal .modal-left-pane") {
+      case dromel.query_selector(elements.contracts_modal_left_pane) {
         Ok(list_container) -> {
           let _ =
             list_container
@@ -500,7 +495,7 @@ fn on_contracts_loaded(
       case list.is_empty(contracts) {
         True -> {
           // Treat empty list as error
-          case dromel.query_selector("#contracts-modal .modal-left-pane") {
+          case dromel.query_selector(elements.contracts_modal_left_pane) {
             Ok(list_container) -> {
               let _ =
                 list_container
@@ -521,7 +516,6 @@ fn on_contracts_loaded(
             filtered_contracts: contracts,
             selected_index: 0,
             current_preview_topic_id: None,
-            audit_name: audit_name,
           ))
 
           // Render contract list (no search query initially)
@@ -529,7 +523,7 @@ fn on_contracts_loaded(
 
           // Load preview for first contract
           case list.first(contracts) {
-            Ok(contract) -> load_preview(audit_name, contract.topic)
+            Ok(contract) -> load_preview(contract.topic)
             Error(_) -> Nil
           }
         }

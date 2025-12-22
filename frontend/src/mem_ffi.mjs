@@ -13,6 +13,19 @@ export function get_audit_name() {
   return Result$Ok(audit_name);
 }
 
+let app_element;
+
+export function set_app_element(element) {
+  app_element = element;
+}
+
+export function get_app_element() {
+  if (!app_element) {
+    return Result$Error();
+  }
+  return Result$Ok(app_element);
+}
+
 let contracts_promise;
 
 export function set_contracts_promise(promise) {

@@ -5,20 +5,17 @@ import elements
 import gleam/io
 import gleam/list
 import gleam/result
-import gleam/string
 import modal
 import plinth/browser/event
 import plinth/browser/window
 import snag
 
 pub fn main() {
-  let assert Ok(audit_name) = extract_audit_name()
-  audit_data.set_audit_name(audit_name)
-  io.println("Hello from o11a_web at " <> audit_name)
+  io.println("Hello from o11a_web at " <> audit_data.audit_name())
 
-  let _ = populate_audit_name_tag(audit_name)
+  let _ = populate_audit_name_tag(audit_data.audit_name())
 
-  audit_data.with_audit_contracts(audit_name, fn(contracts) {
+  audit_data.with_audit_contracts(fn(contracts) {
     case contracts {
       Error(snag) -> {
         echo snag.line_print(snag) as "contracts: "
@@ -30,23 +27,19 @@ pub fn main() {
         // Fetch source text for each contract's topic
         contracts
         |> list.each(fn(contract) {
-          audit_data.with_source_text(
-            audit_name,
-            contract.topic,
-            fn(source_text) {
-              case source_text {
-                Error(snag) -> {
-                  echo snag.line_print(snag) as "source_text error: "
-                  Nil
-                }
-                Ok(text) -> {
-                  let _ =
-                    echo text as "source_text for " <> contract.topic.id <> ": "
-                  Nil
-                }
+          audit_data.with_source_text(contract.topic, fn(source_text) {
+            case source_text {
+              Error(snag) -> {
+                echo snag.line_print(snag) as "source_text error: "
+                Nil
               }
-            },
-          )
+              Ok(text) -> {
+                let _ =
+                  echo text as "source_text for " <> contract.topic.id <> ": "
+                Nil
+              }
+            }
+          })
         })
 
         Nil
@@ -63,7 +56,7 @@ pub fn main() {
           "t" -> {
             event.prevent_default(event)
             event.stop_propagation(event)
-            contracts_modal.open(audit_name)
+            contracts_modal.open()
           }
           _ -> Nil
         }
@@ -75,9 +68,7 @@ pub fn main() {
 }
 
 pub fn populate_audit_name_tag(audit_name) {
-  use header <- result.try(dromel.query_selector(
-    elements.dynamic_header.selector,
-  ))
+  use header <- result.try(dromel.query_selector(elements.dynamic_header_sel))
 
   let audit_name_tag =
     dromel.new_span()
@@ -87,13 +78,4 @@ pub fn populate_audit_name_tag(audit_name) {
   let _ = header |> dromel.append_child(audit_name_tag)
 
   Ok(Nil)
-}
-
-// Extract audit name from pathname
-// For a path like "/my-audit", this returns "my-audit"
-pub fn extract_audit_name() {
-  case window.pathname() |> echo |> string.split("/") |> echo {
-    ["", audit_name, ..] -> Ok(audit_name)
-    _ -> Error(Nil)
-  }
 }
