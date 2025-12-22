@@ -102,7 +102,7 @@ fn create_two_pane_layout(
     |> dromel.set_class("modal-search-input")
     |> dromel.set_placeholder("Search contracts...")
     |> dromel.set_style(
-      "width: 100%; padding: 0.5rem; background: var(--color-code-bg); color: var(--color-body-text); border: 1px solid var(--color-body-border); border-radius: 4px; font-size: 14px; box-sizing: border-box;",
+      "width: 100%; padding: 0.5rem; background: var(--color-body-bg); color: var(--color-body-text); border: none; font-size: 14px; box-sizing: border-box;",
     )
     |> dromel.add_event_listener("input", fn(e) {
       case get_contracts_modal_state() {
@@ -134,7 +134,7 @@ fn create_two_pane_layout(
     dromel.new_div()
     |> dromel.set_class("modal-left-pane")
     |> dromel.set_style(
-      "width: 40ch; overflow-y: auto; background: var(--color-code-bg); padding: 0.5rem; flex: 1;",
+      "width: 40ch; overflow-y: auto; background: var(--color-body-bg); padding: 0.5rem; flex: 1;",
     )
 
   let _ = left_column |> dromel.append_child(search_container)

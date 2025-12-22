@@ -46,7 +46,7 @@ pub fn create_modal_dom(config: ModalConfig(state)) -> element.Element {
   let container =
     dromel.new_div()
     |> dromel.set_style(
-      "background: var(--color-body-bg); border: 1px solid var(--color-body-border); border-radius: 4px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);",
+      "background: var(--color-body-bg); border: 1px solid var(--color-body-border); border-radius: 4px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); overflow: hidden;",
     )
 
   // Overlay (full screen backdrop, transparent)
