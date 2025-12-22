@@ -16,8 +16,8 @@ import snag
 
 pub type ContractsModalState {
   ContractsModalState(
-    all_contracts: List(audit_data.Contract),
-    filtered_contracts: List(audit_data.Contract),
+    all_contracts: List(audit_data.ContractMetadata),
+    filtered_contracts: List(audit_data.ContractMetadata),
     selected_index: Int,
     current_preview_topic_id: Option(String),
     audit_name: String,
@@ -189,7 +189,7 @@ fn create_two_pane_layout(
 // ============================================================================
 
 fn render_contract_list(
-  contracts: List(audit_data.Contract),
+  contracts: List(audit_data.ContractMetadata),
   selected_index: Int,
   search_query: String,
 ) -> Nil {
@@ -241,8 +241,10 @@ fn render_contract_list(
 
             // Add icon based on contract kind
             let icon_svg = case contract.kind {
-              "interface" -> icons.file_sliders
-              _ -> icons.file_braces
+              audit_data.Contract -> icons.file_braces
+              audit_data.Interface -> icons.file_sliders
+              audit_data.Library -> icons.file_exclamation
+              audit_data.Abstract -> icons.file_question
             }
 
             let icon_container = document.create_element("span")
@@ -260,7 +262,10 @@ fn render_contract_list(
             element.set_inner_html(name_span, highlighted_name)
 
             let kind_span = document.create_element("span")
-            element.set_inner_text(kind_span, contract.kind)
+            element.set_inner_text(
+              kind_span,
+              audit_data.contract_kind_to_string(contract.kind),
+            )
             element.set_attribute(
               kind_span,
               "style",
@@ -488,7 +493,7 @@ pub fn open(audit_name: String) -> Nil {
 }
 
 fn on_contracts_loaded(
-  result: Result(List(audit_data.Contract), snag.Snag),
+  result: Result(List(audit_data.ContractMetadata), snag.Snag),
   audit_name: String,
 ) -> Nil {
   case result {

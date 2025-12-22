@@ -60,34 +60,66 @@ fn topic_decoder() -> decode.Decoder(Topic) {
   decode.success(Topic(id:))
 }
 
-pub type Contract {
-  Contract(topic: Topic, name: String, kind: String, file_path: String)
+pub type ContractMetadata {
+  ContractMetadata(
+    topic: Topic,
+    name: String,
+    kind: ContractKind,
+    file_path: String,
+  )
 }
 
-fn contract_decoder() -> decode.Decoder(Contract) {
+pub type ContractKind {
+  Contract
+  Interface
+  Library
+  Abstract
+}
+
+pub fn contract_kind_to_string(kind: ContractKind) -> String {
+  case kind {
+    Contract -> "Contract"
+    Interface -> "Interface"
+    Library -> "Library"
+    Abstract -> "Abstract"
+  }
+}
+
+fn contract_kind_decoder() -> decode.Decoder(ContractKind) {
+  use variant <- decode.then(decode.string)
+  case variant {
+    "Contract" -> decode.success(Contract)
+    "Interface" -> decode.success(Interface)
+    "Library" -> decode.success(Library)
+    "Abstract" -> decode.success(Abstract)
+    _ -> decode.failure(Contract, "ContractKind")
+  }
+}
+
+fn contract_decoder() -> decode.Decoder(ContractMetadata) {
   use topic <- decode.field("topic", topic_decoder())
   use name <- decode.field("name", decode.string)
-  use kind <- decode.field("kind", decode.string)
+  use kind <- decode.field("kind", contract_kind_decoder())
   use file_path <- decode.field("file_path", decode.string)
-  decode.success(Contract(topic:, name:, kind:, file_path:))
+  decode.success(ContractMetadata(topic:, name:, kind:, file_path:))
 }
 
 @external(javascript, "./mem_ffi.mjs", "set_contracts_promise")
 fn set_contracts_promise(
-  promise: promise.Promise(Result(List(Contract), snag.Snag)),
+  promise: promise.Promise(Result(List(ContractMetadata), snag.Snag)),
 ) -> Nil
 
 @external(javascript, "./mem_ffi.mjs", "get_contracts_promise")
 fn read_contracts_promise() -> Result(
-  promise.Promise(Result(List(Contract), snag.Snag)),
+  promise.Promise(Result(List(ContractMetadata), snag.Snag)),
   Nil,
 )
 
 @external(javascript, "./mem_ffi.mjs", "get_contracts")
-fn read_contracts() -> Result(List(Contract), snag.Snag)
+fn read_contracts() -> Result(List(ContractMetadata), snag.Snag)
 
 @external(javascript, "./mem_ffi.mjs", "set_contracts")
-fn set_contracts(contracts: List(Contract)) -> Nil
+fn set_contracts(contracts: List(ContractMetadata)) -> Nil
 
 fn fetch_audit_contracts(audit_name) {
   let assert Ok(req) =
