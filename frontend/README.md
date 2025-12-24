@@ -5,6 +5,14 @@ The web client for o11a collaborative auditing
 
 The o11a web client receives formatted html source text from the backend, removing the need for any front end formatting. The html recieved can be assumed to be 40 characters wide, making front end layout decisions easy.
 
+# Hydration
+
+The server renders the source text as HTML and sends it to the client. The audit source text is constant, but the info comments on the source nodes are not constant, and they need to be dynamically added above each node in the source text. The strategy for keeping initial renders of the source text fast, but still allowing for updating info comments above nodes in the source text dynamically is as follows: The client requests HTML for any source text it needs, renders it to the page, and caches it for later retrieval. The client then connects to the server by a websocket connection to receive cache-invalidation messages for the pre-rendered source text. When a user posts an info note, the server saves it and sends a message to the client with the topic id that was updated. Then the client can look up the metadata for the topic id, which includes scope, and use it to find all parents of the topic id as well. The client can then invalidate the cached HTML for those topic ids and request new HTML for them -- this new HTML will now include the added info comment.
+
+If the server sends an update for a topic or parent topic that is currently in-view, the client should also dynamically replace the content of the dom node with the updated message. To enable this requirement, the server should send the new info message itself along with the topic id.
+
+If the client disconnects from the server websocket, the client should invalidate all cached HTML and request new HTML for all currently visible topics to they can be updated with the latest info messages.
+
 # Navigation Breadcrumb
 
 Given that keyboard navigation is important in this application and running through convergences requires a lot of code-jumping, a back and forward key will be very important to get back to what you were looking at before jumping. Furthermore, maybe a breadcrumb would be beneficial to see your path. Even more than a linear breadcrumb that gets overridden when you go back and then to a new spot, a tree-like breadcrumb that preserves each history branch as you go forward and backward may be very useful. As the breadcrumb grows and is presented with lots of branches, maybe there would be a way to trim all other branches but the current one to get back to a simple history.
