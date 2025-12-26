@@ -105,10 +105,6 @@ export function set_contracts_modal_state(state) {
   contracts_modal_state = state;
 }
 
-export function clear_contracts_modal_state() {
-  contracts_modal_state = null;
-}
-
 // Focus context tracking
 let focus_context = "default"; // "default" | "input"
 

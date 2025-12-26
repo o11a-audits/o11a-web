@@ -1,14 +1,14 @@
 import audit_data
-import contracts_modal
 import dromel
-import elements
 import gleam/io
 import gleam/list
 import gleam/result
-import modal
 import plinth/browser/event
 import plinth/browser/window
 import snag
+import ui/contracts_modal
+import ui/elements
+import ui/modal
 
 pub fn main() {
   io.println("Hello from o11a_web at " <> audit_data.audit_name())
