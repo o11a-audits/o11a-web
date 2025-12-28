@@ -17,8 +17,8 @@ import ui/modal
 
 pub type ContractsModalState {
   ContractsModalState(
-    all_contracts: List(audit_data.ContractMetadata),
-    filtered_contracts: List(audit_data.ContractMetadata),
+    all_contracts: List(audit_data.TopicMetadata),
+    filtered_contracts: List(audit_data.TopicMetadata),
     selected_index: Int,
     current_preview_topic_id: Option(String),
     search_query: String,
@@ -151,7 +151,7 @@ fn mount_contracts_modal(container: element.Element) -> Nil {
 
 fn render_contract_list(
   list_container: element.Element,
-  contracts: List(audit_data.ContractMetadata),
+  contracts: List(audit_data.TopicMetadata),
   selected_index: Int,
   search_query: String,
 ) -> Nil {
@@ -196,10 +196,11 @@ fn render_contract_list(
 
         // Add icon based on contract kind
         let icon_svg = case contract.kind {
-          audit_data.Contract -> icons.file_braces
-          audit_data.Interface -> icons.file_sliders
-          audit_data.Library -> icons.file_exclamation
-          audit_data.Abstract -> icons.file_question
+          audit_data.TopicContract(audit_data.Contract) -> icons.file_braces
+          audit_data.TopicContract(audit_data.Interface) -> icons.file_sliders
+          audit_data.TopicContract(audit_data.Library) -> icons.file_exclamation
+          audit_data.TopicContract(audit_data.Abstract) -> icons.file_question
+          _ -> icons.file_braces
         }
 
         let icon_container =
@@ -209,19 +210,24 @@ fn render_contract_list(
           )
           |> dromel.set_inner_html(icon_svg)
 
-        // Highlight matching search term in contract name
+        // Get name from metadata and highlight matching search term
+        let contract_name = audit_data.topic_metadata_name(contract)
         let highlighted_name =
-          search.highlight_match(contract.name, search_query)
+          search.highlight_match(contract_name, search_query)
 
         let name_span =
           dromel.new_span()
           |> dromel.set_inner_html(highlighted_name)
 
+        let kind_label = case contract.kind {
+          audit_data.TopicContract(kind) ->
+            audit_data.contract_kind_to_string(kind)
+          _ -> ""
+        }
+
         let kind_span =
           dromel.new_span()
-          |> dromel.set_inner_text(audit_data.contract_kind_to_string(
-            contract.kind,
-          ))
+          |> dromel.set_inner_text(kind_label)
           |> dromel.set_style("font-size: 0.85rem; opacity: 0.7;")
 
         let _ = name_container |> dromel.append_child(icon_container)
@@ -300,7 +306,7 @@ fn load_preview(topic: audit_data.Topic) -> Nil {
 
 fn handle_search_input(query: String, state: ContractsModalState) -> Nil {
   let filtered =
-    search.filter(state.all_contracts, query, fn(contract) { contract.name })
+    search.filter(state.all_contracts, query, audit_data.topic_metadata_name)
 
   // Update state with new query
   set_contracts_modal_state(
@@ -317,7 +323,7 @@ fn handle_search_input(query: String, state: ContractsModalState) -> Nil {
 
   // Load preview for first item if any
   case list.first(filtered) {
-    Ok(contract) -> load_preview(contract.topic)
+    Ok(contract) -> load_preview(audit_data.topic_metadata_topic(contract))
     Error(_) -> Nil
   }
 }
@@ -354,7 +360,7 @@ fn handle_keydown(
       )
 
       case get_at(state.filtered_contracts, new_index) {
-        Ok(contract) -> load_preview(contract.topic)
+        Ok(contract) -> load_preview(audit_data.topic_metadata_topic(contract))
         Error(_) -> Nil
       }
     }
@@ -378,7 +384,7 @@ fn handle_keydown(
       )
 
       case get_at(state.filtered_contracts, new_index) {
-        Ok(contract) -> load_preview(contract.topic)
+        Ok(contract) -> load_preview(audit_data.topic_metadata_topic(contract))
         Error(_) -> Nil
       }
     }
@@ -425,7 +431,7 @@ pub fn open() -> Nil {
 }
 
 fn on_contracts_loaded(
-  result: Result(List(audit_data.ContractMetadata), snag.Snag),
+  result: Result(List(audit_data.TopicMetadata), snag.Snag),
 ) -> Nil {
   case get_contracts_modal_state() {
     Ok(state) -> {
@@ -473,7 +479,8 @@ fn on_contracts_loaded(
 
               // Load preview for first contract
               case list.first(contracts) {
-                Ok(contract) -> load_preview(contract.topic)
+                Ok(contract) ->
+                  load_preview(audit_data.topic_metadata_topic(contract))
                 Error(_) -> Nil
               }
             }

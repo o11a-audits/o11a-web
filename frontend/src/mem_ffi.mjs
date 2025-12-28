@@ -119,3 +119,29 @@ export function clear_input_context() {
 export function is_in_input_context() {
   return focus_context === "input";
 }
+
+let topic_metadata_dict = {};
+
+let topic_metadata_promises = {};
+
+export function set_topic_metadata_promise(topic_id, promise) {
+  topic_metadata_promises[topic_id] = promise;
+}
+
+export function get_topic_metadata_promise(topic_id) {
+  if (!topic_metadata_promises[topic_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(topic_metadata_promises[topic_id]);
+}
+
+export function get_topic_metadata(topic_id) {
+  if (!topic_metadata_dict[topic_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(topic_metadata_dict[topic_id]);
+}
+
+export function set_topic_metadata(topic_id, metadata) {
+  topic_metadata_dict[topic_id] = metadata;
+}

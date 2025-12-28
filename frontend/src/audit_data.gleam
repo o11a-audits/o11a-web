@@ -3,6 +3,7 @@ import gleam/dynamic/decode
 import gleam/fetch
 import gleam/http/request
 import gleam/javascript/promise
+import gleam/option.{None, Some}
 import gleam/string
 import plinth/browser/document
 import plinth/browser/window
@@ -86,18 +87,191 @@ pub type Topic {
   Topic(id: String)
 }
 
-fn topic_decoder() -> decode.Decoder(Topic) {
-  use id <- decode.field("id", decode.string)
-  decode.success(Topic(id:))
+pub type Scope {
+  Container(container: String)
+  Component(container: String, component: Topic)
+  Member(container: String, component: Topic, member: Topic)
+  Statement(
+    container: String,
+    component: Topic,
+    member: Topic,
+    statement: Topic,
+  )
 }
 
-pub type ContractMetadata {
-  ContractMetadata(
-    topic: Topic,
-    name: String,
-    kind: ContractKind,
-    file_path: String,
+fn scope_decoder() -> decode.Decoder(Scope) {
+  use scope_type <- decode.field("scope_type", decode.string)
+  use container <- decode.field("container", decode.string)
+  use maybe_component <- decode.optional_field(
+    "component",
+    None,
+    decode.optional(decode.string),
   )
+  use maybe_member <- decode.optional_field(
+    "member",
+    None,
+    decode.optional(decode.string),
+  )
+  use maybe_statement <- decode.optional_field(
+    "statement",
+    None,
+    decode.optional(decode.string),
+  )
+
+  case scope_type, maybe_component, maybe_member, maybe_statement {
+    "Container", None, None, None -> {
+      decode.success(Container(container: container))
+    }
+    "Component", Some(component), None, None -> {
+      decode.success(Component(
+        container: container,
+        component: Topic(id: component),
+      ))
+    }
+    "Member", Some(component), Some(member), None -> {
+      decode.success(Member(
+        container: container,
+        component: Topic(id: component),
+        member: Topic(id: member),
+      ))
+    }
+    "Statement", Some(component), Some(member), Some(statement) -> {
+      decode.success(Statement(
+        container: container,
+        component: Topic(id: component),
+        member: Topic(id: member),
+        statement: Topic(id: statement),
+      ))
+    }
+    _, _, _, _ -> decode.failure(Container(container: ""), "Scope")
+  }
+}
+
+pub type FunctionKind {
+  Constructor
+  Fallback
+  Receive
+  Function
+  FreeFunction
+}
+
+pub type TopicKind {
+  TopicContract(ContractKind)
+  TopicFunction(FunctionKind)
+  Modifier
+  Event
+  TopicError
+  Struct
+  Enum
+  EnumMember
+  Constant
+  StateVariable
+  LocalVariable
+  OperatorInvocation
+  DocumentationSection
+  DocumentationParagraph
+}
+
+fn topic_kind_decoder() -> decode.Decoder(TopicKind) {
+  use kind_str <- decode.field("kind", decode.string)
+  use maybe_sub_kind <- decode.optional_field(
+    "sub_kind",
+    None,
+    decode.optional(decode.string),
+  )
+
+  case kind_str, maybe_sub_kind {
+    "Contract", Some("Contract") -> decode.success(TopicContract(Contract))
+    "Contract", Some("Library") -> decode.success(TopicContract(Library))
+    "Contract", Some("Abstract") -> decode.success(TopicContract(Abstract))
+    "Contract", Some("Interface") -> decode.success(TopicContract(Interface))
+    "Function", Some("Constructor") ->
+      decode.success(TopicFunction(Constructor))
+    "Function", Some("Fallback") -> decode.success(TopicFunction(Fallback))
+    "Function", Some("Receive") -> decode.success(TopicFunction(Receive))
+    "Function", Some("Function") -> decode.success(TopicFunction(Function))
+    "Function", Some("FreeFunction") ->
+      decode.success(TopicFunction(FreeFunction))
+    "Modifier", None -> decode.success(Modifier)
+    "Event", None -> decode.success(Event)
+    "Error", None -> decode.success(TopicError)
+    "Struct", None -> decode.success(Struct)
+    "Enum", None -> decode.success(Enum)
+    "EnumMember", None -> decode.success(EnumMember)
+    "Constant", None -> decode.success(Constant)
+    "StateVariable", None -> decode.success(StateVariable)
+    "LocalVariable", None -> decode.success(LocalVariable)
+    "OperatorInvocation", None -> decode.success(OperatorInvocation)
+    "DocumentationSection", None -> decode.success(DocumentationSection)
+    "DocumentationParagraph", None -> decode.success(DocumentationParagraph)
+    _, _ -> decode.failure(DocumentationParagraph, "TopicKind")
+  }
+}
+
+pub type TopicMetadata {
+  NamedTopic(topic: Topic, scope: Scope, kind: TopicKind, name: String)
+  UnnamedTopic(topic: Topic, scope: Scope, kind: TopicKind)
+}
+
+fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
+  use topic_id <- decode.field("topic_id", decode.string)
+  use scope <- decode.field("scope", scope_decoder())
+  use kind <- decode.then(topic_kind_decoder())
+  use maybe_name <- decode.optional_field(
+    "name",
+    None,
+    decode.optional(decode.string),
+  )
+
+  let topic = Topic(id: topic_id)
+
+  case maybe_name {
+    Some(name) ->
+      decode.success(NamedTopic(
+        topic: topic,
+        scope: scope,
+        kind: kind,
+        name: name,
+      ))
+    None -> decode.success(UnnamedTopic(topic: topic, scope: scope, kind: kind))
+  }
+}
+
+pub fn topic_metadata_name(metadata: TopicMetadata) -> String {
+  case metadata {
+    NamedTopic(name: name, ..) -> name
+    UnnamedTopic(kind: kind, ..) -> topic_kind_to_string(kind)
+  }
+}
+
+pub fn topic_metadata_topic(metadata: TopicMetadata) -> Topic {
+  case metadata {
+    NamedTopic(topic: topic, ..) -> topic
+    UnnamedTopic(topic: topic, ..) -> topic
+  }
+}
+
+fn topic_kind_to_string(kind: TopicKind) -> String {
+  case kind {
+    TopicContract(contract_kind) -> contract_kind_to_string(contract_kind)
+    TopicFunction(Constructor) -> "constructor"
+    TopicFunction(Fallback) -> "fallback"
+    TopicFunction(Receive) -> "receive"
+    TopicFunction(Function) -> "function"
+    TopicFunction(FreeFunction) -> "free function"
+    Modifier -> "modifier"
+    Event -> "event"
+    TopicError -> "error"
+    Struct -> "struct"
+    Enum -> "enum"
+    EnumMember -> "enum member"
+    Constant -> "constant"
+    StateVariable -> "state variable"
+    LocalVariable -> "local variable"
+    OperatorInvocation -> "operator invocation"
+    DocumentationSection -> "documentation section"
+    DocumentationParagraph -> "documentation paragraph"
+  }
 }
 
 pub type ContractKind {
@@ -116,41 +290,22 @@ pub fn contract_kind_to_string(kind: ContractKind) -> String {
   }
 }
 
-fn contract_kind_decoder() -> decode.Decoder(ContractKind) {
-  use variant <- decode.then(decode.string)
-  case variant {
-    "Contract" -> decode.success(Contract)
-    "Interface" -> decode.success(Interface)
-    "Library" -> decode.success(Library)
-    "Abstract" -> decode.success(Abstract)
-    _ -> decode.failure(Contract, "ContractKind")
-  }
-}
-
-fn contract_decoder() -> decode.Decoder(ContractMetadata) {
-  use topic <- decode.field("topic", topic_decoder())
-  use name <- decode.field("name", decode.string)
-  use kind <- decode.field("kind", contract_kind_decoder())
-  use file_path <- decode.field("file_path", decode.string)
-  decode.success(ContractMetadata(topic:, name:, kind:, file_path:))
-}
-
 @external(javascript, "./mem_ffi.mjs", "set_contracts_promise")
 fn set_contracts_promise(
-  promise: promise.Promise(Result(List(ContractMetadata), snag.Snag)),
+  promise: promise.Promise(Result(List(TopicMetadata), snag.Snag)),
 ) -> Nil
 
 @external(javascript, "./mem_ffi.mjs", "get_contracts_promise")
 fn read_contracts_promise() -> Result(
-  promise.Promise(Result(List(ContractMetadata), snag.Snag)),
+  promise.Promise(Result(List(TopicMetadata), snag.Snag)),
   Nil,
 )
 
 @external(javascript, "./mem_ffi.mjs", "get_contracts")
-fn read_contracts() -> Result(List(ContractMetadata), snag.Snag)
+fn read_contracts() -> Result(List(TopicMetadata), snag.Snag)
 
 @external(javascript, "./mem_ffi.mjs", "set_contracts")
-fn set_contracts(contracts: List(ContractMetadata)) -> Nil
+fn set_contracts(contracts: List(TopicMetadata)) -> Nil
 
 fn fetch_audit_contracts() {
   let assert Ok(req) =
@@ -170,7 +325,7 @@ fn fetch_audit_contracts() {
     decode.run(resp.body, {
       use contracts <- decode.field(
         "contracts",
-        decode.list(contract_decoder()),
+        decode.list(topic_metadata_decoder()),
       )
       decode.success(contracts)
     })
@@ -240,6 +395,80 @@ pub fn with_source_text(topic: Topic, callback) {
           Error(_) -> Nil
         }
         callback(source_text)
+
+        promise.resolve(Nil)
+      })
+
+      Nil
+    }
+  }
+}
+
+@external(javascript, "./mem_ffi.mjs", "set_topic_metadata_promise")
+fn set_topic_metadata_promise(
+  topic_id: String,
+  promise: promise.Promise(Result(TopicMetadata, snag.Snag)),
+) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_topic_metadata_promise")
+fn read_topic_metadata_promise(
+  topic_id: String,
+) -> Result(promise.Promise(Result(TopicMetadata, snag.Snag)), Nil)
+
+@external(javascript, "./mem_ffi.mjs", "get_topic_metadata")
+fn read_topic_metadata(topic_id: String) -> Result(TopicMetadata, snag.Snag)
+
+@external(javascript, "./mem_ffi.mjs", "set_topic_metadata")
+fn set_topic_metadata(topic_id: String, metadata: TopicMetadata) -> Nil
+
+fn fetch_topic_metadata(topic: Topic) {
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/"
+      <> audit_name()
+      <> "/metadata/"
+      <> topic.id,
+    )
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_json_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  let metadata =
+    decode.run(resp.body, topic_metadata_decoder())
+    |> snag.map_error(string.inspect)
+
+  promise.resolve(metadata)
+}
+
+pub fn with_topic_metadata(topic: Topic, callback) {
+  case read_topic_metadata(topic.id) {
+    Ok(metadata) -> {
+      callback(Ok(metadata))
+      Nil
+    }
+    Error(_) -> {
+      let promise = case read_topic_metadata_promise(topic.id) {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_topic_metadata(topic)
+          set_topic_metadata_promise(topic.id, promise)
+          promise
+        }
+      }
+
+      promise.await(promise, fn(metadata) {
+        case metadata {
+          Ok(metadata) -> {
+            set_topic_metadata(topic.id, metadata)
+          }
+          Error(_) -> Nil
+        }
+        callback(metadata)
 
         promise.resolve(Nil)
       })
