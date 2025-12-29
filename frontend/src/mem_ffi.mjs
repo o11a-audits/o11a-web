@@ -145,3 +145,29 @@ export function get_topic_metadata(topic_id) {
 export function set_topic_metadata(topic_id, metadata) {
   topic_metadata_dict[topic_id] = metadata;
 }
+
+// Topic view management
+let topic_views = {};
+let active_view_node_id = null;
+
+export function get_topic_view(node_id) {
+  if (!topic_views[node_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(topic_views[node_id]);
+}
+
+export function set_topic_view(node_id, view) {
+  topic_views[node_id] = view;
+}
+
+export function get_active_view_node_id() {
+  if (!active_view_node_id) {
+    return Result$Error();
+  }
+  return Result$Ok(active_view_node_id);
+}
+
+export function set_active_view_node_id(node_id) {
+  active_view_node_id = node_id;
+}

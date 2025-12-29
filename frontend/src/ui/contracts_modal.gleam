@@ -3,6 +3,7 @@ import dromel
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import navigation_history
 import plinth/browser/element
 import plinth/browser/event
 import search
@@ -10,6 +11,7 @@ import snag
 import ui/elements
 import ui/icons
 import ui/modal
+import ui/topic_view
 
 // ============================================================================
 // Contracts Modal State
@@ -323,7 +325,7 @@ fn handle_search_input(query: String, state: ContractsModalState) -> Nil {
 
   // Load preview for first item if any
   case list.first(filtered) {
-    Ok(contract) -> load_preview(audit_data.topic_metadata_topic(contract))
+    Ok(contract) -> load_preview(contract.topic)
     Error(_) -> Nil
   }
 }
@@ -360,7 +362,7 @@ fn handle_keydown(
       )
 
       case get_at(state.filtered_contracts, new_index) {
-        Ok(contract) -> load_preview(audit_data.topic_metadata_topic(contract))
+        Ok(contract) -> load_preview(contract.topic)
         Error(_) -> Nil
       }
     }
@@ -384,15 +386,51 @@ fn handle_keydown(
       )
 
       case get_at(state.filtered_contracts, new_index) {
-        Ok(contract) -> load_preview(audit_data.topic_metadata_topic(contract))
+        Ok(contract) -> load_preview(contract.topic)
         Error(_) -> Nil
       }
     }
 
     "Enter" if list_length > 0 -> {
       event.prevent_default(e)
-      // Future: navigate to contract
-      modal.close_modal(overlay)
+
+      // Get the selected contract and navigate to its topic view
+      case get_at(state.filtered_contracts, state.selected_index) {
+        Ok(contract) -> {
+          let topic = contract.topic
+          let name = audit_data.topic_metadata_name(contract)
+
+          echo "navigating to " <> topic.id
+
+          // Get the view container
+          case dromel.query_selector(elements.topic_view_container_id) {
+            Ok(view_container) -> {
+              // Create a root navigation node for this topic
+              let node_id = navigation_history.create_root(topic.id, name)
+
+              // Navigate to the node (creates and displays the view)
+              case topic_view.navigate_to_node(view_container, node_id) {
+                Ok(_) -> {
+                  // Close the modal after successfully navigating
+                  modal.close_modal(overlay)
+                }
+                Error(_) -> {
+                  // Failed to navigate, but still close modal
+                  modal.close_modal(overlay)
+                }
+              }
+            }
+            Error(_) -> {
+              // No view container found, just close modal
+              modal.close_modal(overlay)
+            }
+          }
+        }
+        Error(_) -> {
+          // No contract selected, do nothing
+          Nil
+        }
+      }
     }
 
     _ -> Nil
@@ -479,8 +517,7 @@ fn on_contracts_loaded(
 
               // Load preview for first contract
               case list.first(contracts) {
-                Ok(contract) ->
-                  load_preview(audit_data.topic_metadata_topic(contract))
+                Ok(contract) -> load_preview(contract.topic)
                 Error(_) -> Nil
               }
             }

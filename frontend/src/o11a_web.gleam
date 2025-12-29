@@ -15,6 +15,9 @@ pub fn main() {
 
   let _ = populate_audit_name_tag(audit_data.audit_name())
 
+  // Create view container for topic views
+  let _ = setup_view_container()
+
   audit_data.with_audit_contracts(fn(contracts) {
     case contracts {
       Error(snag) -> {
@@ -76,6 +79,17 @@ pub fn populate_audit_name_tag(audit_name) {
     |> dromel.set_style("margin-right: 0.5rem")
 
   let _ = header |> dromel.append_child(audit_name_tag)
+
+  Ok(Nil)
+}
+
+fn setup_view_container() {
+  let view_container =
+    dromel.new_div()
+    |> dromel.set_id(elements.topic_view_container_id)
+    |> dromel.set_style("height: 100dvh")
+
+  let _ = audit_data.app_element() |> dromel.append_child(view_container)
 
   Ok(Nil)
 }

@@ -226,14 +226,8 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
   let topic = Topic(id: topic_id)
 
   case maybe_name {
-    Some(name) ->
-      decode.success(NamedTopic(
-        topic: topic,
-        scope: scope,
-        kind: kind,
-        name: name,
-      ))
-    None -> decode.success(UnnamedTopic(topic: topic, scope: scope, kind: kind))
+    Some(name) -> decode.success(NamedTopic(topic:, scope:, kind:, name:))
+    None -> decode.success(UnnamedTopic(topic:, scope:, kind:))
   }
 }
 
@@ -241,13 +235,6 @@ pub fn topic_metadata_name(metadata: TopicMetadata) -> String {
   case metadata {
     NamedTopic(name: name, ..) -> name
     UnnamedTopic(kind: kind, ..) -> topic_kind_to_string(kind)
-  }
-}
-
-pub fn topic_metadata_topic(metadata: TopicMetadata) -> Topic {
-  case metadata {
-    NamedTopic(topic: topic, ..) -> topic
-    UnnamedTopic(topic: topic, ..) -> topic
   }
 }
 
