@@ -121,8 +121,9 @@ fn mount_contracts_modal(container: element.Element) -> Nil {
   let left_pane =
     dromel.new_div()
     |> dromel.set_class(elements.modal_left_pane_class)
+    |> dromel.append_class(elements.source_container_class)
     |> dromel.set_style(
-      "width: 40ch; overflow-y: auto; background: var(--color-body-bg); padding: 0.5rem; flex: 1;",
+      "background: var(--color-body-bg); padding: 0.5rem; flex: 1;",
     )
     |> dromel.set_inner_html(
       "<div style='color: var(--color-body-text); padding: 1rem;'>Loading contracts...</div>",
@@ -135,9 +136,8 @@ fn mount_contracts_modal(container: element.Element) -> Nil {
   let right_pane =
     dromel.new_div()
     |> dromel.set_class(elements.modal_right_pane_class)
-    |> dromel.set_style(
-      "width: 40ch; overflow-y: auto; background: var(--color-code-bg); padding: 1rem;",
-    )
+    |> dromel.append_class(elements.source_container_class)
+    |> dromel.set_style("background: var(--color-code-bg); padding: 1rem;")
     |> dromel.set_inner_html("Loading...")
 
   let _ = container |> dromel.append_child(left_column)
@@ -399,8 +399,6 @@ fn handle_keydown(
         Ok(contract) -> {
           let topic = contract.topic
           let name = audit_data.topic_metadata_name(contract)
-
-          echo "navigating to " <> topic.id
 
           // Get the view container
           case dromel.query_selector(elements.topic_view_container_id) {

@@ -83,6 +83,7 @@ import dromel
 import navigation_history
 import plinth/browser/element
 import snag
+import ui/elements
 
 // ============================================================================
 // Topic View State
@@ -126,8 +127,9 @@ fn mount_topic_view(
   let view_element =
     dromel.new_div()
     |> dromel.set_attribute("data-node-id", node_id)
+    |> dromel.set_class(elements.source_container_class)
     |> dromel.set_style(
-      "width: 100%; height: 100%; overflow-y: auto; background: var(--color-code-bg); padding: 1rem; display: none;",
+      "background: var(--color-code-bg); display: none; box-sizing: border-box; margin: 1rem auto;",
     )
     |> dromel.set_inner_html(
       "<div style='color: var(--color-body-text);'>Loading...</div>",

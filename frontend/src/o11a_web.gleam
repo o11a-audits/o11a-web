@@ -25,8 +25,6 @@ pub fn main() {
         Nil
       }
       Ok(contracts) -> {
-        echo contracts as "contracts: "
-
         // Fetch source text for each contract's topic
         contracts
         |> list.each(fn(contract) {
@@ -87,7 +85,7 @@ fn setup_view_container() {
   let view_container =
     dromel.new_div()
     |> dromel.set_id(elements.topic_view_container_id)
-    |> dromel.set_style("height: 100dvh")
+    |> dromel.set_style("flex: 1; min-height: 0")
 
   let _ = audit_data.app_element() |> dromel.append_child(view_container)
 

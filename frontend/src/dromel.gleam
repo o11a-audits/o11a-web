@@ -97,6 +97,21 @@ pub fn set_class(elem: Element, ref: ElementRef) -> Element {
   }
 }
 
+pub fn append_class(elem: Element, ref: ElementRef) -> Element {
+  case ref {
+    Id(_) -> panic as "Unable to set an id ref as class"
+    Class(class) -> {
+      let existing_class = case element.get_attribute(elem, "class") {
+        Ok(class) -> class <> " "
+        Error(_) -> ""
+      }
+      element.set_attribute(elem, "class", existing_class <> class)
+      elem
+    }
+    Selector(_) -> panic as "Unable to set a selector ref as class"
+  }
+}
+
 pub fn set_type(elem: Element, type_: String) -> Element {
   set_attribute(elem, "type", type_)
 }
