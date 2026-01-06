@@ -99,7 +99,6 @@ code,
 /* Keywords (if, else, for, while, return, function, contract, etc.) */
 .keyword {
   color: var(--color-keyword);
-  font-weight: 600;
 }
 
 /* Operators (+, -, *, /, =>, ==, etc.) */
@@ -135,6 +134,7 @@ code,
 /* Global variables (msg, block, tx, etc.) */
 .global {
   color: var(--color-global);
+  font-style: italic;
 }
 
 /* Enum values */
