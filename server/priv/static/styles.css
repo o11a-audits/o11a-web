@@ -19,12 +19,15 @@
   --color-code-hover-bg: #2c313a;
   --color-code-selection-bg: #3e4451;
   --color-code-indent-border: #3e4451;
+  --color-code-select-indent-border: #61656c;
   --color-keyword: #c678dd;
   --color-operator: #56b6c2;
   --color-type: #e5c07b;
   --color-function: #61afef;
   --color-identifier: #e06c75;
   --color-global: #d19a66;
+  --color-constant: #d19a66;
+  --color-state-variable: #e06c75;
   --color-string: #98c379;
   --color-number: #d19a66;
   --color-comment: #5c6370;
@@ -111,11 +114,6 @@ code,
   color: var(--color-type);
 }
 
-/* User-defined types (custom structs, contracts) */
-.user-type {
-  color: var(--color-type);
-}
-
 /* Function names */
 .function {
   color: var(--color-function);
@@ -126,20 +124,50 @@ code,
   color: var(--color-identifier);
 }
 
-/* Member access (property names) */
-.member {
-  color: var(--color-identifier);
-}
-
 /* Global variables (msg, block, tx, etc.) */
 .global {
   color: var(--color-global);
   font-style: italic;
 }
 
-/* Enum values */
+/* Literal values (true, false, 123, "hello", etc.) */
+.constant {
+  color: var(--color-constant);
+}
+
+/* State variables */
+.immutable-state-variable {
+  color: var(--color-constant);
+  font-style: italic;
+}
+
+.state-variable {
+  color: var(--color-state-variable);
+  font-style: italic;
+}
+
+.enum {
+  color: var(--color-type);
+}
+
 .enum-value {
-  color: var(--color-global);
+  color: var(--color-type);
+}
+
+.struct {
+  color: var(--color-type);
+}
+
+.contract {
+  color: var(--color-type);
+}
+
+.event {
+  color: var(--color-type);
+}
+
+.error {
+  color: var(--color-type);
 }
 
 /* String literals */
@@ -189,12 +217,6 @@ code,
 
 .indent-level-4 {
   border-left-color: var(--color-code-indent-border);
-}
-
-/* Optional: Add subtle hover effects for nodes (for debugging/interaction) */
-.node:hover {
-  background-color: var(--color-code-hover-bg);
-  cursor: default;
 }
 
 /* Selection styling */
