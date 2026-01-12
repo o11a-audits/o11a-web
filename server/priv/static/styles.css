@@ -115,7 +115,8 @@ code,
 }
 
 /* Function names */
-.function {
+.function,
+.modifier {
   color: var(--color-function);
 }
 

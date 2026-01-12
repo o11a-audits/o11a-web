@@ -403,11 +403,11 @@ fn handle_keydown(
           // Get the view container
           case dromel.query_selector(elements.topic_view_container_id) {
             Ok(view_container) -> {
-              // Create a root navigation node for this topic
-              let node_id = navigation_history.create_root(topic.id, name)
+              // Create a root navigation entry for this topic
+              let entry_id = navigation_history.create_root(topic.id, name)
 
-              // Navigate to the node (creates and displays the view)
-              case topic_view.navigate_to_node(view_container, node_id) {
+              // Navigate to the entry (creates and displays the view)
+              case topic_view.navigate_to_entry(view_container, entry_id) {
                 Ok(_) -> {
                   // Close the modal after successfully navigating
                   modal.close_modal(overlay)

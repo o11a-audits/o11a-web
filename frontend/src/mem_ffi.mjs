@@ -80,16 +80,16 @@ export function set_source_text(topic_id, text) {
 
 let navigation_history = {};
 
-export function set_navigation_node(id, node) {
-  navigation_history[id] = node;
+export function set_navigation_entry(id, entry) {
+  navigation_history[id] = entry;
 }
 
-export function get_navigation_node(id) {
-  let node = navigation_history[id];
-  if (!node) {
+export function get_navigation_entry(id) {
+  let entry = navigation_history[id];
+  if (!entry) {
     return Result$Error();
   }
-  return Result$Ok(node);
+  return Result$Ok(entry);
 }
 
 let contracts_modal_state = null;
@@ -148,26 +148,26 @@ export function set_topic_metadata(topic_id, metadata) {
 
 // Topic view management
 let topic_views = {};
-let active_view_node_id = null;
+let active_view_entry_id = null;
 
-export function get_topic_view(node_id) {
-  if (!topic_views[node_id]) {
+export function get_topic_view(entry_id) {
+  if (!topic_views[entry_id]) {
     return Result$Error();
   }
-  return Result$Ok(topic_views[node_id]);
+  return Result$Ok(topic_views[entry_id]);
 }
 
-export function set_topic_view(node_id, view) {
-  topic_views[node_id] = view;
+export function set_topic_view(entry_id, view) {
+  topic_views[entry_id] = view;
 }
 
-export function get_active_view_node_id() {
-  if (!active_view_node_id) {
+export function get_active_view_entry_id() {
+  if (!active_view_entry_id) {
     return Result$Error();
   }
-  return Result$Ok(active_view_node_id);
+  return Result$Ok(active_view_entry_id);
 }
 
-export function set_active_view_node_id(node_id) {
-  active_view_node_id = node_id;
+export function set_active_view_entry_id(entry_id) {
+  active_view_entry_id = entry_id;
 }

@@ -14,8 +14,8 @@ pub type Parent {
   Parent(id: String, line_number: Int)
 }
 
-pub type HistoryNode {
-  HistoryNode(
+pub type HistoryEntry {
+  HistoryEntry(
     id: String,
     topic_id: String,
     name: String,
@@ -28,79 +28,79 @@ pub type HistoryNode {
 // FFI - Memory Layer
 // =============================================================================
 
-@external(javascript, "./mem_ffi.mjs", "get_navigation_node")
-fn get_navigation_node(id: String) -> Result(HistoryNode, Nil)
+@external(javascript, "./mem_ffi.mjs", "get_navigation_entry")
+fn get_navigation_entry(id: String) -> Result(HistoryEntry, Nil)
 
-@external(javascript, "./mem_ffi.mjs", "set_navigation_node")
-fn set_navigation_node(id: String, node: HistoryNode) -> Nil
+@external(javascript, "./mem_ffi.mjs", "set_navigation_entry")
+fn set_navigation_entry(id: String, entry: HistoryEntry) -> Nil
 
 // =============================================================================
 // Public API - High-level operations with persistence
 // =============================================================================
 
-/// Create a new root node for a pane's history
+/// Create a new root entry for a pane's history
 pub fn create_root(topic_id: String, name: String) -> String {
-  let node_id = generate_id()
-  let node =
-    HistoryNode(
-      id: node_id,
+  let entry_id = generate_id()
+  let entry =
+    HistoryEntry(
+      id: entry_id,
       topic_id: topic_id,
       name: name,
       parent: None,
       children: [],
     )
-  set_navigation_node(node.id, node)
-  node_id
+  set_navigation_entry(entry.id, entry)
+  entry_id
 }
 
-/// Navigate to a new location from the current node
-/// Creates a new child node with the parent info set
+/// Navigate to a new location from the current entry
+/// Creates a new child entry with the parent info set
 pub fn navigate_to(
-  current_node_id: String,
+  current_entry_id: String,
   current_line_number: Int,
   new_topic_id: String,
   new_name: String,
 ) -> Result(String, snag.Snag) {
-  case get_navigation_node(current_node_id) {
-    Error(Nil) -> snag.error("Failed to read history node: " <> current_node_id)
-    Ok(current_node) -> {
-      // Create new child node with parent info
-      let new_node_id = generate_id()
-      let new_node =
-        HistoryNode(
-          id: new_node_id,
+  case get_navigation_entry(current_entry_id) {
+    Error(Nil) -> snag.error("Failed to read history entry: " <> current_entry_id)
+    Ok(current_entry) -> {
+      // Create new child entry with parent info
+      let new_entry_id = generate_id()
+      let new_entry =
+        HistoryEntry(
+          id: new_entry_id,
           topic_id: new_topic_id,
           name: new_name,
           parent: Some(Parent(
-            id: current_node_id,
+            id: current_entry_id,
             line_number: current_line_number,
           )),
           children: [],
         )
 
-      // Update current node to add child
-      let updated_current_node =
-        HistoryNode(..current_node, children: [
-          new_node_id,
-          ..current_node.children
+      // Update current entry to add child
+      let updated_current_entry =
+        HistoryEntry(..current_entry, children: [
+          new_entry_id,
+          ..current_entry.children
         ])
 
-      // Write both nodes
-      set_navigation_node(updated_current_node.id, updated_current_node)
-      set_navigation_node(new_node.id, new_node)
+      // Write both entries
+      set_navigation_entry(updated_current_entry.id, updated_current_entry)
+      set_navigation_entry(new_entry.id, new_entry)
 
-      Ok(new_node_id)
+      Ok(new_entry_id)
     }
   }
 }
 
-/// Go back to parent node (if exists)
-/// Returns the parent node ID and the line number to navigate to
-pub fn go_back(current_node_id: String) -> Result(#(String, Int), snag.Snag) {
-  case get_navigation_node(current_node_id) {
-    Error(Nil) -> snag.error("Failed to read history node: " <> current_node_id)
-    Ok(node) -> {
-      case node.parent {
+/// Go back to parent entry (if exists)
+/// Returns the parent entry ID and the line number to navigate to
+pub fn go_back(current_entry_id: String) -> Result(#(String, Int), snag.Snag) {
+  case get_navigation_entry(current_entry_id) {
+    Error(Nil) -> snag.error("Failed to read history entry: " <> current_entry_id)
+    Ok(entry) -> {
+      case entry.parent {
         None -> snag.error("Already at root, cannot go back")
         Some(Parent(id: parent_id, line_number: line_num)) ->
           Ok(#(parent_id, line_num))
@@ -110,11 +110,11 @@ pub fn go_back(current_node_id: String) -> Result(#(String, Int), snag.Snag) {
 }
 
 /// Go forward to the most recent child (first in list)
-pub fn go_forward(current_node_id: String) -> Result(String, snag.Snag) {
-  case get_navigation_node(current_node_id) {
-    Error(Nil) -> snag.error("Failed to read history node: " <> current_node_id)
-    Ok(node) -> {
-      case node.children {
+pub fn go_forward(current_entry_id: String) -> Result(String, snag.Snag) {
+  case get_navigation_entry(current_entry_id) {
+    Error(Nil) -> snag.error("Failed to read history entry: " <> current_entry_id)
+    Ok(entry) -> {
+      case entry.children {
         [] -> snag.error("No forward history available")
         [first_child, ..] -> Ok(first_child)
       }
@@ -124,13 +124,13 @@ pub fn go_forward(current_node_id: String) -> Result(String, snag.Snag) {
 
 /// Go forward to a specific child by index
 pub fn go_forward_to_branch(
-  current_node_id: String,
+  current_entry_id: String,
   child_index: Int,
 ) -> Result(String, snag.Snag) {
-  case get_navigation_node(current_node_id) {
-    Error(Nil) -> snag.error("Failed to read history node: " <> current_node_id)
-    Ok(node) -> {
-      case get_child_at_index(node.children, child_index) {
+  case get_navigation_entry(current_entry_id) {
+    Error(Nil) -> snag.error("Failed to read history entry: " <> current_entry_id)
+    Ok(entry) -> {
+      case get_child_at_index(entry.children, child_index) {
         Error(Nil) -> snag.error("Child index out of bounds")
         Ok(child_id) -> Ok(child_id)
       }
@@ -138,18 +138,18 @@ pub fn go_forward_to_branch(
   }
 }
 
-/// Get all forward branches from a node (for UI display)
+/// Get all forward branches from an entry (for UI display)
 pub fn get_forward_branches(
-  node_id: String,
-) -> Result(List(#(Int, HistoryNode)), snag.Snag) {
-  case get_navigation_node(node_id) {
-    Error(Nil) -> snag.error("Failed to read history node: " <> node_id)
-    Ok(node) -> {
+  entry_id: String,
+) -> Result(List(#(Int, HistoryEntry)), snag.Snag) {
+  case get_navigation_entry(entry_id) {
+    Error(Nil) -> snag.error("Failed to read history entry: " <> entry_id)
+    Ok(entry) -> {
       let branches =
-        node.children
+        entry.children
         |> list.index_map(fn(child_id, index) {
-          case get_navigation_node(child_id) {
-            Ok(child_node) -> Ok(#(index, child_node))
+          case get_navigation_entry(child_id) {
+            Ok(child_entry) -> Ok(#(index, child_entry))
             Error(_) -> Error(Nil)
           }
         })
@@ -160,110 +160,110 @@ pub fn get_forward_branches(
   }
 }
 
-/// Check if can navigate back from a node
-pub fn can_go_back(node_id: String) -> Bool {
-  case get_navigation_node(node_id) {
+/// Check if can navigate back from an entry
+pub fn can_go_back(entry_id: String) -> Bool {
+  case get_navigation_entry(entry_id) {
     Error(_) -> False
-    Ok(node) ->
-      case node.parent {
+    Ok(entry) ->
+      case entry.parent {
         None -> False
         Some(_) -> True
       }
   }
 }
 
-/// Check if can navigate forward from a node
-pub fn can_go_forward(node_id: String) -> Bool {
-  case get_navigation_node(node_id) {
+/// Check if can navigate forward from an entry
+pub fn can_go_forward(entry_id: String) -> Bool {
+  case get_navigation_entry(entry_id) {
     Error(_) -> False
-    Ok(node) ->
-      case node.children {
+    Ok(entry) ->
+      case entry.children {
         [] -> False
         _ -> True
       }
   }
 }
 
-/// Get the parent chain from a node up to the root
-/// Returns a list starting from the given node and going up to the root
-pub fn get_parent_chain(node_id: String) -> Result(List(HistoryNode), snag.Snag) {
-  case get_navigation_node(node_id) {
-    Error(Nil) -> snag.error("Failed to read history node: " <> node_id)
-    Ok(node) -> Ok(build_parent_chain(node, []))
+/// Get the parent chain from an entry up to the root
+/// Returns a list starting from the given entry and going up to the root
+pub fn get_parent_chain(entry_id: String) -> Result(List(HistoryEntry), snag.Snag) {
+  case get_navigation_entry(entry_id) {
+    Error(Nil) -> snag.error("Failed to read history entry: " <> entry_id)
+    Ok(entry) -> Ok(build_parent_chain(entry, []))
   }
 }
 
 fn build_parent_chain(
-  node: HistoryNode,
-  acc: List(HistoryNode),
-) -> List(HistoryNode) {
-  let new_acc = [node, ..acc]
-  case node.parent {
+  entry: HistoryEntry,
+  acc: List(HistoryEntry),
+) -> List(HistoryEntry) {
+  let new_acc = [entry, ..acc]
+  case entry.parent {
     None -> new_acc
     Some(Parent(id: parent_id, line_number: _)) -> {
-      case get_navigation_node(parent_id) {
-        Ok(parent_node) -> build_parent_chain(parent_node, new_acc)
+      case get_navigation_entry(parent_id) {
+        Ok(parent_entry) -> build_parent_chain(parent_entry, new_acc)
         Error(_) -> new_acc
       }
     }
   }
 }
 
-/// Get just the node data without navigating
-pub fn get_node(node_id: String) -> Result(HistoryNode, snag.Snag) {
-  case get_navigation_node(node_id) {
-    Error(Nil) -> snag.error("Failed to read history node: " <> node_id)
-    Ok(node) -> Ok(node)
+/// Get just the entry data without navigating
+pub fn get_entry(entry_id: String) -> Result(HistoryEntry, snag.Snag) {
+  case get_navigation_entry(entry_id) {
+    Error(Nil) -> snag.error("Failed to read history entry: " <> entry_id)
+    Ok(entry) -> Ok(entry)
   }
 }
 
 /// Prune history by removing all sibling branches
-/// Starting from the given node, walks up to the root and removes all children
+/// Starting from the given entry, walks up to the root and removes all children
 /// from each parent except the one in the current chain
-pub fn prune_history(node_id: String) -> Result(Nil, snag.Snag) {
-  case get_navigation_node(node_id) {
-    Error(Nil) -> snag.error("Failed to read history node: " <> node_id)
-    Ok(node) -> {
-      prune_from_node(node)
+pub fn prune_history(entry_id: String) -> Result(Nil, snag.Snag) {
+  case get_navigation_entry(entry_id) {
+    Error(Nil) -> snag.error("Failed to read history entry: " <> entry_id)
+    Ok(entry) -> {
+      prune_from_entry(entry)
       Ok(Nil)
     }
   }
 }
 
-fn prune_from_node(node: HistoryNode) -> Nil {
-  case node.parent {
+fn prune_from_entry(entry: HistoryEntry) -> Nil {
+  case entry.parent {
     None -> Nil
     Some(Parent(id: parent_id, line_number: _)) -> {
-      case get_navigation_node(parent_id) {
+      case get_navigation_entry(parent_id) {
         Error(Nil) -> Nil
-        Ok(parent_node) -> {
-          // Remove all children except the current node from parent
+        Ok(parent_entry) -> {
+          // Remove all children except the current entry from parent
           let siblings_to_remove =
-            parent_node.children
-            |> list.filter(fn(child_id) { child_id != node.id })
+            parent_entry.children
+            |> list.filter(fn(child_id) { child_id != entry.id })
 
           // Delete all sibling branches recursively
           list.each(siblings_to_remove, delete_branch)
 
-          // Update parent to only have current node as child
-          let pruned_parent = HistoryNode(..parent_node, children: [node.id])
-          set_navigation_node(pruned_parent.id, pruned_parent)
+          // Update parent to only have current entry as child
+          let pruned_parent = HistoryEntry(..parent_entry, children: [entry.id])
+          set_navigation_entry(pruned_parent.id, pruned_parent)
 
           // Continue pruning up the tree
-          prune_from_node(parent_node)
+          prune_from_entry(parent_entry)
         }
       }
     }
   }
 }
 
-fn delete_branch(node_id: String) -> Nil {
-  case get_navigation_node(node_id) {
+fn delete_branch(entry_id: String) -> Nil {
+  case get_navigation_entry(entry_id) {
     Error(Nil) -> Nil
-    Ok(node) -> {
+    Ok(entry) -> {
       // Recursively delete all children first
-      list.each(node.children, delete_branch)
-      // Note: In a real implementation, you'd need a delete_navigation_node FFI function
+      list.each(entry.children, delete_branch)
+      // Note: In a real implementation, you'd need a delete_navigation_entry FFI function
       // For now, this structure shows the logic - the actual deletion would happen here
       Nil
     }
