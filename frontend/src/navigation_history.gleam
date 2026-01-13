@@ -1,9 +1,8 @@
-import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/time/timestamp
 import snag
+import tempo/datetime
 import tempo/instant
 
 // =============================================================================
@@ -62,7 +61,8 @@ pub fn navigate_to(
   new_name: String,
 ) -> Result(String, snag.Snag) {
   case get_navigation_entry(current_entry_id) {
-    Error(Nil) -> snag.error("Failed to read history entry: " <> current_entry_id)
+    Error(Nil) ->
+      snag.error("Failed to read history entry: " <> current_entry_id)
     Ok(current_entry) -> {
       // Create new child entry with parent info
       let new_entry_id = generate_id()
@@ -98,7 +98,8 @@ pub fn navigate_to(
 /// Returns the parent entry ID and the line number to navigate to
 pub fn go_back(current_entry_id: String) -> Result(#(String, Int), snag.Snag) {
   case get_navigation_entry(current_entry_id) {
-    Error(Nil) -> snag.error("Failed to read history entry: " <> current_entry_id)
+    Error(Nil) ->
+      snag.error("Failed to read history entry: " <> current_entry_id)
     Ok(entry) -> {
       case entry.parent {
         None -> snag.error("Already at root, cannot go back")
@@ -112,7 +113,8 @@ pub fn go_back(current_entry_id: String) -> Result(#(String, Int), snag.Snag) {
 /// Go forward to the most recent child (first in list)
 pub fn go_forward(current_entry_id: String) -> Result(String, snag.Snag) {
   case get_navigation_entry(current_entry_id) {
-    Error(Nil) -> snag.error("Failed to read history entry: " <> current_entry_id)
+    Error(Nil) ->
+      snag.error("Failed to read history entry: " <> current_entry_id)
     Ok(entry) -> {
       case entry.children {
         [] -> snag.error("No forward history available")
@@ -128,7 +130,8 @@ pub fn go_forward_to_branch(
   child_index: Int,
 ) -> Result(String, snag.Snag) {
   case get_navigation_entry(current_entry_id) {
-    Error(Nil) -> snag.error("Failed to read history entry: " <> current_entry_id)
+    Error(Nil) ->
+      snag.error("Failed to read history entry: " <> current_entry_id)
     Ok(entry) -> {
       case get_child_at_index(entry.children, child_index) {
         Error(Nil) -> snag.error("Child index out of bounds")
@@ -186,7 +189,9 @@ pub fn can_go_forward(entry_id: String) -> Bool {
 
 /// Get the parent chain from an entry up to the root
 /// Returns a list starting from the given entry and going up to the root
-pub fn get_parent_chain(entry_id: String) -> Result(List(HistoryEntry), snag.Snag) {
+pub fn get_parent_chain(
+  entry_id: String,
+) -> Result(List(HistoryEntry), snag.Snag) {
   case get_navigation_entry(entry_id) {
     Error(Nil) -> snag.error("Failed to read history entry: " <> entry_id)
     Ok(entry) -> Ok(build_parent_chain(entry, []))
@@ -287,7 +292,7 @@ fn get_child_at_index(children: List(String), index: Int) -> Result(String, Nil)
 fn generate_id() -> String {
   let now = instant.now()
 
-  instant.as_timestamp(now) |> timestamp.to_unix_seconds |> float.to_string
+  instant.as_utc_datetime(now) |> datetime.to_unix_milli |> int.to_string
   <> "-"
   <> instant.to_unique_int(now) |> int.to_string
 }
