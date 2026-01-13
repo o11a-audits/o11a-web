@@ -13,3 +13,6 @@ pub const modal_right_pane_class = dromel.Class(class: "modal-right-pane")
 pub const topic_view_container_id = dromel.Id(id: "topic-view-container")
 
 pub const source_container_class = dromel.Class(class: "source-container")
+
+// Data keys
+pub const nav_entry_id = dromel.DataKey(key: "entry-id")

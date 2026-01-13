@@ -49,6 +49,23 @@ pub fn matches_ref(
 }
 
 // ============================================================================
+// Data Keys
+// ============================================================================
+
+pub type DataKey {
+  DataKey(key: String)
+}
+
+pub fn set_data(element: Element, key: DataKey, value: String) -> Element {
+  element.set_attribute(element, "data-" <> key.key, value)
+  element
+}
+
+pub fn get_data(element: Element, key: DataKey) -> Result(String, Nil) {
+  element.dataset_get(element, key.key)
+}
+
+// ============================================================================
 // Element Creation
 // ============================================================================
 

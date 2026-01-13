@@ -182,7 +182,6 @@ fn render_contract_list(
 
         let item =
           dromel.new_div()
-          |> dromel.set_attribute("data-index", int.to_string(idx))
           |> dromel.set_style(
             "padding: 0.5rem; cursor: pointer; background: "
             <> bg_color

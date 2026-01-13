@@ -126,7 +126,7 @@ fn mount_topic_view(
   // Create the view container
   let view_element =
     dromel.new_div()
-    |> dromel.set_attribute("data-entry-id", entry_id)
+    |> dromel.set_data(elements.nav_entry_id, entry_id)
     |> dromel.set_class(elements.source_container_class)
     |> dromel.set_style(
       "background: var(--color-code-bg); display: none; box-sizing: border-box; margin: 1rem auto;",
@@ -210,7 +210,8 @@ pub fn navigate_to_entry(
         }
         Error(Nil) -> {
           // Create new view
-          let view_element = mount_topic_view(container, entry_id, entry.topic_id)
+          let view_element =
+            mount_topic_view(container, entry_id, entry.topic_id)
 
           // Initialize view state
           let view =
