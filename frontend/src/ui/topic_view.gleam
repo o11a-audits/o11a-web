@@ -126,6 +126,16 @@ fn set_active_topic_view(view: TopicView) -> Nil {
   set_active_topic_view_id(view.entry_id)
 }
 
+@external(javascript, "../mem_ffi.mjs", "get_current_child_topic_index")
+pub fn get_current_child_topic_index() -> Int
+
+@external(javascript, "../mem_ffi.mjs", "set_current_child_topic_index")
+pub fn set_current_child_topic_index(index: Int) -> Nil
+
+pub fn reset_current_child_topic_index() -> Nil {
+  set_current_child_topic_index(0)
+}
+
 // ============================================================================
 // View Mounting
 // ============================================================================
@@ -184,19 +194,16 @@ fn switch_to_view(view: TopicView) -> Nil {
 /// Create or get a view for a navigation entry
 /// If the view already exists, it will be reused
 /// The view will be made visible and set as the active view
-pub fn navigate_to_entry(
-  container: element.Element,
-  entry: navigation_history.HistoryEntry,
-) -> Result(Nil, snag.Snag) {
+pub fn navigate_to_entry(entry: navigation_history.HistoryEntry) -> Nil {
   // Check if view already exists
   case get_topic_view(entry.id) {
     Ok(existing_view) -> {
       // View exists, just show it and hide others
       switch_to_view(existing_view)
-      Ok(Nil)
     }
     Error(Nil) -> {
       // Create new view
+      let container = audit_data.topic_view_container()
       let view_element = mount_topic_view(container, entry.id, entry.topic_id)
 
       // Initialize view state
@@ -218,10 +225,10 @@ pub fn navigate_to_entry(
         fn(result) {
           case result {
             Ok(html) -> {
-              let _ = view_element |> dromel.set_inner_html(html)
+              let _ = view.element |> dromel.set_inner_html(html)
               let children =
                 dromel.query_element_all(
-                  view_element,
+                  view.element,
                   elements.source_topic_tokens,
                 )
 
@@ -234,7 +241,7 @@ pub fn navigate_to_entry(
             }
             Error(error) -> {
               let _ =
-                view_element
+                view.element
                 |> dromel.set_inner_html(
                   "<div style='color: var(--color-body-text); padding: 1rem;'>Error loading source:<br><br>"
                   <> snag.line_print(error)
@@ -246,8 +253,6 @@ pub fn navigate_to_entry(
           }
         },
       )
-
-      Ok(Nil)
     }
   }
 }

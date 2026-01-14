@@ -59,7 +59,7 @@ pub fn navigate_to(
   current_line_number: Int,
   new_topic_id: String,
   new_name: String,
-) -> Result(String, snag.Snag) {
+) -> Result(HistoryEntry, snag.Snag) {
   case get_navigation_entry(current_entry_id) {
     Error(Nil) ->
       snag.error("Failed to read history entry: " <> current_entry_id)
@@ -89,7 +89,7 @@ pub fn navigate_to(
       set_navigation_entry(updated_current_entry.id, updated_current_entry)
       set_navigation_entry(new_entry.id, new_entry)
 
-      Ok(new_entry_id)
+      Ok(new_entry)
     }
   }
 }

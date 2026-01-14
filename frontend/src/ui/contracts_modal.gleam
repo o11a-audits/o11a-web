@@ -398,29 +398,14 @@ fn handle_keydown(
           let topic = contract.topic
           let name = audit_data.topic_metadata_name(contract)
 
-          // Get the view container
-          case dromel.query_document(elements.topic_view_container_id) {
-            Ok(view_container) -> {
-              // Create a root navigation entry for this topic
-              let entry = navigation_history.create_root(topic.id, name)
+          // Create a root navigation entry for this topic
+          let entry = navigation_history.create_root(topic.id, name)
 
-              // Navigate to the entry (creates and displays the view)
-              case topic_view.navigate_to_entry(view_container, entry) {
-                Ok(_) -> {
-                  // Close the modal after successfully navigating
-                  modal.close_modal(overlay)
-                }
-                Error(_) -> {
-                  // Failed to navigate, but still close modal
-                  modal.close_modal(overlay)
-                }
-              }
-            }
-            Error(_) -> {
-              // No view container found, just close modal
-              modal.close_modal(overlay)
-            }
-          }
+          // Navigate to the entry (creates and displays the view)
+          topic_view.navigate_to_entry(entry)
+
+          // Close the modal after successfully navigating
+          modal.close_modal(overlay)
         }
         Error(_) -> {
           // No contract selected, do nothing

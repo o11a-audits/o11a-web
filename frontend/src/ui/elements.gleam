@@ -9,9 +9,6 @@ pub const modal_left_pane_class = dromel.Class(class: "modal-left-pane")
 
 pub const modal_right_pane_class = dromel.Class(class: "modal-right-pane")
 
-// Topic view container
-pub const topic_view_container_id = dromel.Id(id: "topic-view-container")
-
 pub const source_container_class = dromel.Class(class: "source-container")
 
 // Data keys

@@ -13,6 +13,10 @@ export function get_audit_name() {
   return Result$Ok(audit_name);
 }
 
+// =============================================================================
+// App Elements
+// =============================================================================
+
 let app_element;
 
 export function set_app_element(element) {
@@ -25,6 +29,23 @@ export function get_app_element() {
   }
   return Result$Ok(app_element);
 }
+
+let topic_view_container;
+
+export function set_topic_view_container(element) {
+  topic_view_container = element;
+}
+
+export function get_topic_view_container() {
+  if (!topic_view_container) {
+    return Result$Error();
+  }
+  return Result$Ok(topic_view_container);
+}
+
+// =============================================================================
+// Data Requests
+// =============================================================================
 
 let contracts_promise;
 
@@ -170,4 +191,18 @@ export function get_active_topic_view_id() {
 
 export function set_active_topic_view_id(id) {
   active_topic_view_id = id;
+}
+
+// =============================================================================
+// Navigation
+// =============================================================================
+
+let current_child_topic_index = 0;
+
+export function get_current_child_topic_index() {
+  return current_child_topic_index;
+}
+
+export function set_current_child_topic_index(index) {
+  current_child_topic_index = index;
 }

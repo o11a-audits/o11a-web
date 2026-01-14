@@ -50,6 +50,19 @@ pub fn app_element() -> dromel.Element {
   }
 }
 
+@external(javascript, "./mem_ffi.mjs", "set_topic_view_container")
+pub fn set_topic_view_container(element: dromel.Element) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_topic_view_container")
+fn get_topic_view_container() -> Result(dromel.Element, Nil)
+
+pub fn topic_view_container() -> dromel.Element {
+  case get_topic_view_container() {
+    Ok(element) -> element
+    Error(Nil) -> panic as "Failed to retrieve topic view container"
+  }
+}
+
 pub fn with_audit_contracts(callback) {
   case read_contracts() {
     Ok(contracts) -> {
