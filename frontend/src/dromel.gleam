@@ -5,6 +5,7 @@
 
 import gleam/dynamic
 import gleam/dynamic/decode
+import gleam/javascript/array
 import plinth/browser/document
 import plinth/browser/element
 import plinth/browser/event
@@ -196,6 +197,26 @@ pub fn focus(elem: Element) -> Element {
   elem
 }
 
+pub fn query_element(element: Element, ref: ElementRef) -> Result(Element, Nil) {
+  query_element_ffi(element, selector(ref))
+}
+
+@external(javascript, "./dromel_ffi.mjs", "element_query_selector")
+fn query_element_ffi(element: Element, selector: String) -> Result(Element, Nil)
+
+pub fn query_element_all(
+  element: Element,
+  ref: ElementRef,
+) -> array.Array(Element) {
+  query_element_all_ffi(element, selector(ref))
+}
+
+@external(javascript, "./dromel_ffi.mjs", "element_query_selector_all")
+fn query_element_all_ffi(
+  element: Element,
+  selector: String,
+) -> array.Array(Element)
+
 // ============================================================================
 // Event Handling (Chainable - returns element for chaining)
 // ============================================================================
@@ -213,8 +234,12 @@ pub fn add_event_listener(
 // DOM Querying (Non-chainable - returns Result)
 // ============================================================================
 
-pub fn query_selector(ref: ElementRef) -> Result(Element, Nil) {
+pub fn query_document(ref: ElementRef) -> Result(Element, Nil) {
   document.query_selector(selector(ref))
+}
+
+pub fn query_document_all(ref: ElementRef) {
+  document.query_selector_all(selector(ref))
 }
 
 // ============================================================================

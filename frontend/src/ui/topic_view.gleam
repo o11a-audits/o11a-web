@@ -80,6 +80,7 @@
 
 import audit_data
 import dromel
+import gleam/javascript/array
 import navigation_history
 import plinth/browser/element
 import snag
@@ -94,7 +95,7 @@ pub type TopicView {
     entry_id: String,
     topic_id: String,
     element: element.Element,
-    is_visible: Bool,
+    children_topic_tokens: array.Array(element.Element),
   )
 }
 
@@ -108,11 +109,22 @@ fn get_topic_view(entry_id: String) -> Result(TopicView, Nil)
 @external(javascript, "../mem_ffi.mjs", "set_topic_view")
 fn set_topic_view(entry_id: String, view: TopicView) -> Nil
 
-@external(javascript, "../mem_ffi.mjs", "get_active_view_entry_id")
-fn get_active_view_entry_id() -> Result(String, Nil)
+@external(javascript, "../mem_ffi.mjs", "get_active_topic_view_id")
+pub fn get_active_topic_view_id() -> Result(String, Nil)
 
-@external(javascript, "../mem_ffi.mjs", "set_active_view_entry_id")
-fn set_active_view_entry_id(entry_id: String) -> Nil
+pub fn get_active_topic_view() -> Result(TopicView, Nil) {
+  case get_active_topic_view_id() {
+    Ok(id) -> get_topic_view(id)
+    Error(Nil) -> Error(Nil)
+  }
+}
+
+@external(javascript, "../mem_ffi.mjs", "set_active_topic_view_id")
+fn set_active_topic_view_id(id: String) -> Nil
+
+fn set_active_topic_view(view: TopicView) -> Nil {
+  set_active_topic_view_id(view.entry_id)
+}
 
 // ============================================================================
 // View Mounting
@@ -141,26 +153,6 @@ fn mount_topic_view(
 }
 
 // ============================================================================
-// Rendering Functions
-// ============================================================================
-
-fn render_source_text(view_element: element.Element, html: String) -> Nil {
-  let _ = view_element |> dromel.set_inner_html(html)
-  Nil
-}
-
-fn render_error(view_element: element.Element, error: String) -> Nil {
-  let _ =
-    view_element
-    |> dromel.set_inner_html(
-      "<div style='color: var(--color-body-text); padding: 1rem;'>Error loading source:<br><br>"
-      <> error
-      <> "</div>",
-    )
-  Nil
-}
-
-// ============================================================================
 // View Visibility Management
 // ============================================================================
 
@@ -179,11 +171,10 @@ fn hide_view(view_element: element.Element) -> Nil {
 }
 
 /// Switch to a different view by hiding all others and showing the specified one
-fn switch_to_view(entry_id: String, view: TopicView) -> Nil {
-  hide_all_views_except(entry_id)
+fn switch_to_view(view: TopicView) -> Nil {
+  hide_all_views_except(view.entry_id)
   show_view(view.element)
-  set_active_view_entry_id(entry_id)
-  set_topic_view(entry_id, TopicView(..view, is_visible: True))
+  set_active_topic_view(view)
 }
 
 // ============================================================================
@@ -195,51 +186,68 @@ fn switch_to_view(entry_id: String, view: TopicView) -> Nil {
 /// The view will be made visible and set as the active view
 pub fn navigate_to_entry(
   container: element.Element,
-  entry_id: String,
+  entry: navigation_history.HistoryEntry,
 ) -> Result(Nil, snag.Snag) {
-  // Get the navigation entry to retrieve topic_id
-  case navigation_history.get_entry(entry_id) {
-    Error(err) -> Error(err)
-    Ok(entry) -> {
-      // Check if view already exists
-      case get_topic_view(entry_id) {
-        Ok(existing_view) -> {
-          // View exists, just show it and hide others
-          switch_to_view(entry_id, existing_view)
-          Ok(Nil)
-        }
-        Error(Nil) -> {
-          // Create new view
-          let view_element =
-            mount_topic_view(container, entry_id, entry.topic_id)
+  // Check if view already exists
+  case get_topic_view(entry.id) {
+    Ok(existing_view) -> {
+      // View exists, just show it and hide others
+      switch_to_view(existing_view)
+      Ok(Nil)
+    }
+    Error(Nil) -> {
+      // Create new view
+      let view_element = mount_topic_view(container, entry.id, entry.topic_id)
 
-          // Initialize view state
-          let view =
-            TopicView(
-              entry_id: entry_id,
-              topic_id: entry.topic_id,
-              element: view_element,
-              is_visible: False,
-            )
-          set_topic_view(entry_id, view)
+      // Initialize view state
+      let view =
+        TopicView(
+          entry_id: entry.id,
+          topic_id: entry.topic_id,
+          element: view_element,
+          children_topic_tokens: array.from_list([]),
+        )
+      set_topic_view(entry.id, view)
 
-          // Hide all other views and show this one
-          switch_to_view(entry_id, view)
+      // Hide all other views and show this one
+      switch_to_view(view)
 
-          // Load source text
-          audit_data.with_source_text(
-            audit_data.Topic(id: entry.topic_id),
-            fn(result) {
-              case result {
-                Ok(html) -> render_source_text(view_element, html)
-                Error(err) -> render_error(view_element, snag.line_print(err))
-              }
-            },
-          )
+      // Load source text
+      audit_data.with_source_text(
+        audit_data.Topic(id: entry.topic_id),
+        fn(result) {
+          case result {
+            Ok(html) -> {
+              let _ = view_element |> dromel.set_inner_html(html)
+              let children =
+                dromel.query_element_all(
+                  view_element,
+                  elements.source_topic_tokens,
+                )
 
-          Ok(Nil)
-        }
-      }
+              set_topic_view(
+                entry.id,
+                TopicView(..view, children_topic_tokens: children),
+              )
+
+              Nil
+            }
+            Error(error) -> {
+              let _ =
+                view_element
+                |> dromel.set_inner_html(
+                  "<div style='color: var(--color-body-text); padding: 1rem;'>Error loading source:<br><br>"
+                  <> snag.line_print(error)
+                  <> "</div>",
+                )
+
+              Nil
+            }
+          }
+        },
+      )
+
+      Ok(Nil)
     }
   }
 }
@@ -248,15 +256,9 @@ pub fn navigate_to_entry(
 fn hide_all_views_except(except_entry_id: String) -> Nil {
   // Note: In a full implementation, we'd iterate through all views
   // For now, we'll hide the currently active view if it's different
-  case get_active_view_entry_id() {
-    Ok(active_entry_id) if active_entry_id != except_entry_id -> {
-      case get_topic_view(active_entry_id) {
-        Ok(view) -> {
-          hide_view(view.element)
-          set_topic_view(active_entry_id, TopicView(..view, is_visible: False))
-        }
-        Error(_) -> Nil
-      }
+  case get_active_topic_view() {
+    Ok(view) if view.entry_id != except_entry_id -> {
+      hide_view(view.element)
     }
     _ -> Nil
   }
@@ -264,17 +266,17 @@ fn hide_all_views_except(except_entry_id: String) -> Nil {
 
 /// Navigate back in history
 pub fn go_back() -> Result(Nil, snag.Snag) {
-  case get_active_view_entry_id() {
+  case get_active_topic_view() {
     Error(_) -> snag.error("No active view")
-    Ok(current_entry_id) -> {
-      case navigation_history.go_back(current_entry_id) {
+    Ok(active_view) -> {
+      case navigation_history.go_back(active_view.entry_id) {
         Error(err) -> Error(err)
         Ok(#(parent_entry_id, _line_number)) -> {
           // For now, we'll just navigate to the parent entry
           // TODO: Scroll to the line_number
           case get_topic_view(parent_entry_id) {
             Ok(parent_view) -> {
-              switch_to_view(parent_entry_id, parent_view)
+              switch_to_view(parent_view)
               Ok(Nil)
             }
             Error(_) ->
@@ -286,17 +288,18 @@ pub fn go_back() -> Result(Nil, snag.Snag) {
   }
 }
 
-/// Navigate forward in history (to most recent child)
+/// Navigate forward in history (to
+///  most recent child)
 pub fn go_forward() -> Result(Nil, snag.Snag) {
-  case get_active_view_entry_id() {
+  case get_active_topic_view() {
     Error(_) -> snag.error("No active view")
-    Ok(current_entry_id) -> {
-      case navigation_history.go_forward(current_entry_id) {
+    Ok(active_view) -> {
+      case navigation_history.go_forward(active_view.entry_id) {
         Error(err) -> Error(err)
         Ok(child_entry_id) -> {
           case get_topic_view(child_entry_id) {
             Ok(child_view) -> {
-              switch_to_view(child_entry_id, child_view)
+              switch_to_view(child_view)
               Ok(Nil)
             }
             Error(_) ->
@@ -308,26 +311,18 @@ pub fn go_forward() -> Result(Nil, snag.Snag) {
   }
 }
 
-/// Get the currently active entry ID
-pub fn get_active_entry_id() -> Result(String, snag.Snag) {
-  case get_active_view_entry_id() {
-    Ok(entry_id) -> Ok(entry_id)
-    Error(_) -> snag.error("No active view")
-  }
-}
-
 /// Check if can navigate back
 pub fn can_navigate_back() -> Bool {
-  case get_active_view_entry_id() {
-    Ok(entry_id) -> navigation_history.can_go_back(entry_id)
+  case get_active_topic_view() {
+    Ok(topic_view) -> navigation_history.can_go_back(topic_view.entry_id)
     Error(_) -> False
   }
 }
 
 /// Check if can navigate forward
 pub fn can_navigate_forward() -> Bool {
-  case get_active_view_entry_id() {
-    Ok(entry_id) -> navigation_history.can_go_forward(entry_id)
+  case get_active_topic_view() {
+    Ok(topic_view) -> navigation_history.can_go_forward(topic_view.entry_id)
     Error(_) -> False
   }
 }

@@ -148,7 +148,7 @@ export function set_topic_metadata(topic_id, metadata) {
 
 // Topic view management
 let topic_views = {};
-let active_view_entry_id = null;
+let active_topic_view_id = null;
 
 export function get_topic_view(entry_id) {
   if (!topic_views[entry_id]) {
@@ -161,13 +161,13 @@ export function set_topic_view(entry_id, view) {
   topic_views[entry_id] = view;
 }
 
-export function get_active_view_entry_id() {
-  if (!active_view_entry_id) {
+export function get_active_topic_view_id() {
+  if (!active_topic_view_id) {
     return Result$Error();
   }
-  return Result$Ok(active_view_entry_id);
+  return Result$Ok(active_topic_view_id);
 }
 
-export function set_active_view_entry_id(entry_id) {
-  active_view_entry_id = entry_id;
+export function set_active_topic_view_id(id) {
+  active_topic_view_id = id;
 }

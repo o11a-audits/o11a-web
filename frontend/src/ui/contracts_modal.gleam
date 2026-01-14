@@ -1,6 +1,5 @@
 import audit_data
 import dromel
-import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import navigation_history
@@ -400,13 +399,13 @@ fn handle_keydown(
           let name = audit_data.topic_metadata_name(contract)
 
           // Get the view container
-          case dromel.query_selector(elements.topic_view_container_id) {
+          case dromel.query_document(elements.topic_view_container_id) {
             Ok(view_container) -> {
               // Create a root navigation entry for this topic
-              let entry_id = navigation_history.create_root(topic.id, name)
+              let entry = navigation_history.create_root(topic.id, name)
 
               // Navigate to the entry (creates and displays the view)
-              case topic_view.navigate_to_entry(view_container, entry_id) {
+              case topic_view.navigate_to_entry(view_container, entry) {
                 Ok(_) -> {
                   // Close the modal after successfully navigating
                   modal.close_modal(overlay)
@@ -453,7 +452,7 @@ pub fn open() -> Nil {
     })
 
   // Focus the search input
-  case dromel.query_selector(elements.modal_search_input_class) {
+  case dromel.query_document(elements.modal_search_input_class) {
     Ok(input) -> {
       let _ = input |> dromel.focus()
       Nil

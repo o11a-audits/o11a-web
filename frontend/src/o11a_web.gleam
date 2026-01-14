@@ -1,14 +1,17 @@
 import audit_data
 import dromel
 import gleam/io
+import gleam/javascript/array
 import gleam/list
 import gleam/result
+import plinth/browser/element
 import plinth/browser/event
 import plinth/browser/window
 import snag
 import ui/contracts_modal
 import ui/elements
 import ui/modal
+import ui/topic_view
 
 pub fn main() {
   io.println("Hello from o11a_web at " <> audit_data.audit_name())
@@ -59,6 +62,25 @@ pub fn main() {
             event.stop_propagation(event)
             contracts_modal.open()
           }
+          "ArrowDown" | "ArrowUp" -> {
+            echo "got arrow down"
+            case topic_view.get_active_topic_view() {
+              Ok(view) -> {
+                echo "active view:" <> view.topic_id
+
+                echo view.children_topic_tokens
+                  |> array.get(3)
+                  |> result.map(dromel.get_data(_, elements.token_topic_id_key))
+
+                Nil
+              }
+              Error(Nil) -> {
+                echo "no active view"
+                Nil
+              }
+            }
+            Nil
+          }
           _ -> Nil
         }
       }
@@ -69,7 +91,7 @@ pub fn main() {
 }
 
 pub fn populate_audit_name_tag(audit_name) {
-  use header <- result.try(dromel.query_selector(elements.dynamic_header_sel))
+  use header <- result.try(dromel.query_document(elements.dynamic_header_sel))
 
   let audit_name_tag =
     dromel.new_span()

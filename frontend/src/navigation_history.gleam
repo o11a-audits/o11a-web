@@ -38,7 +38,7 @@ fn set_navigation_entry(id: String, entry: HistoryEntry) -> Nil
 // =============================================================================
 
 /// Create a new root entry for a pane's history
-pub fn create_root(topic_id: String, name: String) -> String {
+pub fn create_root(topic_id: String, name: String) {
   let entry_id = generate_id()
   let entry =
     HistoryEntry(
@@ -49,7 +49,7 @@ pub fn create_root(topic_id: String, name: String) -> String {
       children: [],
     )
   set_navigation_entry(entry.id, entry)
-  entry_id
+  entry
 }
 
 /// Navigate to a new location from the current entry
