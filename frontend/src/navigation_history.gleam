@@ -10,16 +10,16 @@ import tempo/instant
 // Types
 // =============================================================================
 
-pub type Parent {
-  Parent(id: String, child_topic_number: Int)
+pub type Relative {
+  Relative(id: String, child_topic_number: Int)
 }
 
 pub type HistoryEntry {
   HistoryEntry(
     id: String,
     topic_id: String,
-    parent: Option(Parent),
-    children: List(String),
+    parent: Option(Relative),
+    children: List(Relative),
   )
 }
 
@@ -31,7 +31,7 @@ pub type HistoryEntry {
 pub fn get_navigation_entry(id: String) -> Result(HistoryEntry, Nil)
 
 @external(javascript, "./mem_ffi.mjs", "set_navigation_entry")
-fn set_navigation_entry(id: String, entry: HistoryEntry) -> Nil
+pub fn set_navigation_entry(id: String, entry: HistoryEntry) -> Nil
 
 // =============================================================================
 // Public API - High-level operations with persistence
@@ -63,7 +63,7 @@ pub fn go_to_new_entry(
         HistoryEntry(
           id: new_entry_id,
           topic_id: new_topic.id,
-          parent: Some(Parent(
+          parent: Some(Relative(
             id: current_entry_id,
             child_topic_number: current_child_topic_number,
           )),
@@ -73,7 +73,7 @@ pub fn go_to_new_entry(
       // Update current entry to add child
       let updated_current_entry =
         HistoryEntry(..current_entry, children: [
-          new_entry_id,
+          Relative(id: new_entry_id, child_topic_number: 0),
           ..current_entry.children
         ])
 
@@ -97,7 +97,7 @@ pub fn go_back(
     Ok(entry) -> {
       case entry.parent {
         None -> snag.error("Already at root, cannot go back")
-        Some(Parent(id: parent_id, child_topic_number: child_num)) ->
+        Some(Relative(id: parent_id, child_topic_number: child_num)) ->
           case get_navigation_entry(parent_id) {
             Error(Nil) -> snag.error("Failed to read parent history entry")
             Ok(parent_entry) -> {
@@ -110,7 +110,7 @@ pub fn go_back(
 }
 
 /// Go forward to the most recent child (first in list)
-pub fn go_forward(current_entry_id: String) -> Result(String, snag.Snag) {
+pub fn go_forward(current_entry_id: String) -> Result(#(String, Int), snag.Snag) {
   case get_navigation_entry(current_entry_id) {
     Error(Nil) ->
       snag.error("Failed to read history entry: " <> current_entry_id)
@@ -118,7 +118,7 @@ pub fn go_forward(current_entry_id: String) -> Result(String, snag.Snag) {
       case entry.children {
         [] -> snag.error("No forward history available")
         [first_child, ..] -> {
-          Ok(first_child)
+          Ok(#(first_child.id, first_child.child_topic_number))
         }
       }
     }
@@ -129,14 +129,14 @@ pub fn go_forward(current_entry_id: String) -> Result(String, snag.Snag) {
 pub fn go_forward_to_branch(
   current_entry_id: String,
   child_index: Int,
-) -> Result(String, snag.Snag) {
+) -> Result(#(String, Int), snag.Snag) {
   case get_navigation_entry(current_entry_id) {
     Error(Nil) ->
       snag.error("Failed to read history entry: " <> current_entry_id)
     Ok(entry) -> {
       case get_child_at_index(entry.children, child_index) {
         Error(Nil) -> snag.error("Child index out of bounds")
-        Ok(child_id) -> Ok(child_id)
+        Ok(child) -> Ok(#(child.id, child.child_topic_number))
       }
     }
   }
@@ -151,8 +151,8 @@ pub fn get_forward_branches(
     Ok(entry) -> {
       let branches =
         entry.children
-        |> list.index_map(fn(child_id, index) {
-          case get_navigation_entry(child_id) {
+        |> list.index_map(fn(child, index) {
+          case get_navigation_entry(child.id) {
             Ok(child_entry) -> Ok(#(index, child_entry))
             Error(_) -> Error(Nil)
           }
@@ -206,7 +206,7 @@ fn build_parent_chain(
   let new_acc = [entry, ..acc]
   case entry.parent {
     None -> new_acc
-    Some(Parent(id: parent_id, ..)) -> {
+    Some(Relative(id: parent_id, ..)) -> {
       case get_navigation_entry(parent_id) {
         Ok(parent_entry) -> build_parent_chain(parent_entry, new_acc)
         Error(_) -> new_acc
@@ -231,20 +231,24 @@ pub fn prune_history(entry_id: String) -> Result(Nil, snag.Snag) {
 fn prune_from_entry(entry: HistoryEntry) -> Nil {
   case entry.parent {
     None -> Nil
-    Some(Parent(id: parent_id, ..)) -> {
+    Some(Relative(id: parent_id, ..)) -> {
       case get_navigation_entry(parent_id) {
         Error(Nil) -> Nil
         Ok(parent_entry) -> {
           // Remove all children except the current entry from parent
           let siblings_to_remove =
             parent_entry.children
-            |> list.filter(fn(child_id) { child_id != entry.id })
+            |> list.filter(fn(child) { child.id != entry.id })
 
           // Delete all sibling branches recursively
-          list.each(siblings_to_remove, delete_branch)
+          list.each(siblings_to_remove, fn(child) { delete_branch(child.id) })
 
           // Update parent to only have current entry as child
-          let pruned_parent = HistoryEntry(..parent_entry, children: [entry.id])
+          let siblings_to_keep =
+            parent_entry.children
+            |> list.filter(fn(child) { child.id == entry.id })
+          let pruned_parent =
+            HistoryEntry(..parent_entry, children: siblings_to_keep)
           set_navigation_entry(pruned_parent.id, pruned_parent)
 
           // Continue pruning up the tree
@@ -260,7 +264,7 @@ fn delete_branch(entry_id: String) -> Nil {
     Error(Nil) -> Nil
     Ok(entry) -> {
       // Recursively delete all children first
-      list.each(entry.children, delete_branch)
+      list.each(entry.children, fn(child) { delete_branch(child.id) })
       // Note: In a real implementation, you'd need a delete_navigation_entry FFI function
       // For now, this structure shows the logic - the actual deletion would happen here
       Nil
@@ -273,7 +277,7 @@ fn delete_branch(entry_id: String) -> Nil {
 // =============================================================================
 
 /// Helper to get element at index in a list
-fn get_child_at_index(children: List(String), index: Int) -> Result(String, Nil) {
+fn get_child_at_index(children: List(a), index: Int) -> Result(a, Nil) {
   case index, children {
     _, [] -> Error(Nil)
     0, [first, ..] -> Ok(first)

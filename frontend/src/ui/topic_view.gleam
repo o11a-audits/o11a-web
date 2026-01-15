@@ -83,6 +83,7 @@ import dromel
 import gleam/int
 import gleam/io
 import gleam/javascript/array
+import gleam/list
 import gleam/result
 import navigation_history
 import plinth/browser/element
@@ -312,13 +313,32 @@ pub fn navigate_back(container) -> Nil {
         Ok(#(parent_entry, child_topic_index)) -> {
           case get_topic_view(parent_entry.id) {
             Ok(parent_view) -> {
+              // Update the parent entry so that the child that this came from
+              // is the first child, and has an updated index
+              let other_children =
+                parent_entry.children
+                |> list.filter(fn(child) { child.id != active_view.entry_id })
+              let updated_parent =
+                navigation_history.HistoryEntry(..parent_entry, children: [
+                  navigation_history.Relative(
+                    active_view.entry_id,
+                    get_current_child_topic_index(container),
+                  ),
+                  ..other_children
+                ])
+              navigation_history.set_navigation_entry(
+                updated_parent.id,
+                updated_parent,
+              )
+
               hide_view(active_view.element)
               set_active_topic_view(container, parent_view)
               set_current_child_topic_index(container, child_topic_index)
+              show_view(parent_view.element)
               let _ =
                 array.get(parent_view.children_topic_tokens, child_topic_index)
                 |> result.map(dromel.focus)
-              show_view(parent_view.element)
+              Nil
             }
             Error(Nil) ->
               snag.new("Cannot navigate back, unable to find prior topic view")
@@ -333,7 +353,7 @@ pub fn navigate_back(container) -> Nil {
 
 /// Navigate forward in history (to
 ///  most recent child)
-pub fn go_forward(container) -> Nil {
+pub fn navigate_forward(container) -> Nil {
   case get_active_topic_view(container) {
     Error(Nil) ->
       snag.new("Cannot navigate Forward, there is no active view")
@@ -347,9 +367,10 @@ pub fn go_forward(container) -> Nil {
           |> snag.line_print
           |> io.println_error
 
-        Ok(child_entry_id) -> {
+        Ok(#(child_entry_id, child_topic_index)) -> {
+          echo "going forward, found" <> int.to_string(child_topic_index)
           case get_topic_view(child_entry_id) {
-            Error(_) ->
+            Error(Nil) ->
               snag.new("Child view not found for entry: " <> child_entry_id)
               |> snag.line_print
               |> io.println_error
@@ -357,11 +378,11 @@ pub fn go_forward(container) -> Nil {
             Ok(child_view) -> {
               hide_view(active_view.element)
               set_active_topic_view(container, child_view)
-              set_current_child_topic_index(container, todo)
-              let _ =
-                array.get(child_view.children_topic_tokens, todo)
-                |> result.map(dromel.focus)
+              set_current_child_topic_index(container, child_topic_index)
               show_view(child_view.element)
+              let _ =
+                array.get(child_view.children_topic_tokens, child_topic_index)
+                |> result.map(dromel.focus)
               Nil
             }
           }
@@ -389,9 +410,8 @@ pub fn can_navigate_forward(container) -> Bool {
 
 fn handle_topic_view_keydown(container) {
   dromel.add_event_listener(container, "keydown", fn(event) {
-    echo "got key " <> event.key(event)
     case event.ctrl_key(event), event.shift_key(event), event.key(event) {
-      _, _, "h" -> {
+      False, False, "h" -> {
         event.prevent_default(event)
         case get_active_topic_view(container) {
           Error(Nil) -> io.println_error("No active topic view")
@@ -404,7 +424,7 @@ fn handle_topic_view_keydown(container) {
               |> result.try(dromel.get_data(_, topic_key))
               |> result.map(audit_data.Topic)
             {
-              Error(Nil) -> io.println_error("Unable to fetch child topic")
+              Error(Nil) -> io.println_error("Unable to read child topic")
               Ok(topic) -> {
                 navigate_to_new_entry(container, topic)
               }
@@ -413,7 +433,17 @@ fn handle_topic_view_keydown(container) {
         }
       }
 
-      False, False, "ArrowDown" -> {
+      False, False, "p" -> {
+        event.prevent_default(event)
+        navigate_back(container)
+      }
+
+      True, False, "p" -> {
+        event.prevent_default(event)
+        navigate_forward(container)
+      }
+
+      False, False, "ArrowDown" | False, False, "," -> {
         event.prevent_default(event)
         case get_active_topic_view(container) {
           Ok(view) -> {
@@ -444,7 +474,7 @@ fn handle_topic_view_keydown(container) {
         Nil
       }
 
-      False, False, "ArrowUp" -> {
+      False, False, "ArrowUp" | False, False, "e" -> {
         event.prevent_default(event)
         case get_active_topic_view(container) {
           Ok(view) -> {
