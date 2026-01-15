@@ -99,6 +99,10 @@ export function set_source_text(topic_id, text) {
   source_text_dict[topic_id] = text;
 }
 
+// =============================================================================
+// Navigation History
+// =============================================================================
+
 let navigation_history = {};
 
 export function set_navigation_entry(id, entry) {
@@ -112,6 +116,23 @@ export function get_navigation_entry(id) {
   }
   return Result$Ok(entry);
 }
+
+let current_entry_id = null;
+
+export function set_current_navigation_entry_id(id) {
+  current_entry_id = id;
+}
+
+export function get_current_navigation_entry_id() {
+  if (!current_entry_id) {
+    return Result$Error();
+  }
+  return Result$Ok(current_entry_id);
+}
+
+// =============================================================================
+// Contracts Modal
+// =============================================================================
 
 let contracts_modal_state = null;
 

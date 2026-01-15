@@ -1,3 +1,4 @@
+import audit_data
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -10,14 +11,13 @@ import tempo/instant
 // =============================================================================
 
 pub type Parent {
-  Parent(id: String, line_number: Int)
+  Parent(id: String, child_topic_number: Int)
 }
 
 pub type HistoryEntry {
   HistoryEntry(
     id: String,
     topic_id: String,
-    name: String,
     parent: Option(Parent),
     children: List(String),
   )
@@ -28,7 +28,7 @@ pub type HistoryEntry {
 // =============================================================================
 
 @external(javascript, "./mem_ffi.mjs", "get_navigation_entry")
-fn get_navigation_entry(id: String) -> Result(HistoryEntry, Nil)
+pub fn get_navigation_entry(id: String) -> Result(HistoryEntry, Nil)
 
 @external(javascript, "./mem_ffi.mjs", "set_navigation_entry")
 fn set_navigation_entry(id: String, entry: HistoryEntry) -> Nil
@@ -38,27 +38,20 @@ fn set_navigation_entry(id: String, entry: HistoryEntry) -> Nil
 // =============================================================================
 
 /// Create a new root entry for a pane's history
-pub fn create_root(topic_id: String, name: String) {
+pub fn create_root(topic: audit_data.Topic) {
   let entry_id = generate_id()
   let entry =
-    HistoryEntry(
-      id: entry_id,
-      topic_id: topic_id,
-      name: name,
-      parent: None,
-      children: [],
-    )
+    HistoryEntry(id: entry_id, topic_id: topic.id, parent: None, children: [])
   set_navigation_entry(entry.id, entry)
   entry
 }
 
 /// Navigate to a new location from the current entry
 /// Creates a new child entry with the parent info set
-pub fn navigate_to(
+pub fn go_to_new_entry(
   current_entry_id: String,
-  current_line_number: Int,
-  new_topic_id: String,
-  new_name: String,
+  current_child_topic_number: Int,
+  new_topic: audit_data.Topic,
 ) -> Result(HistoryEntry, snag.Snag) {
   case get_navigation_entry(current_entry_id) {
     Error(Nil) ->
@@ -69,11 +62,10 @@ pub fn navigate_to(
       let new_entry =
         HistoryEntry(
           id: new_entry_id,
-          topic_id: new_topic_id,
-          name: new_name,
+          topic_id: new_topic.id,
           parent: Some(Parent(
             id: current_entry_id,
-            line_number: current_line_number,
+            child_topic_number: current_child_topic_number,
           )),
           children: [],
         )
@@ -95,16 +87,23 @@ pub fn navigate_to(
 }
 
 /// Go back to parent entry (if exists)
-/// Returns the parent entry ID and the line number to navigate to
-pub fn go_back(current_entry_id: String) -> Result(#(String, Int), snag.Snag) {
+/// Returns the parent entry and the child topic number to navigate to
+pub fn go_back(
+  current_entry_id: String,
+) -> Result(#(HistoryEntry, Int), snag.Snag) {
   case get_navigation_entry(current_entry_id) {
     Error(Nil) ->
       snag.error("Failed to read history entry: " <> current_entry_id)
     Ok(entry) -> {
       case entry.parent {
         None -> snag.error("Already at root, cannot go back")
-        Some(Parent(id: parent_id, line_number: line_num)) ->
-          Ok(#(parent_id, line_num))
+        Some(Parent(id: parent_id, child_topic_number: child_num)) ->
+          case get_navigation_entry(parent_id) {
+            Error(Nil) -> snag.error("Failed to read parent history entry")
+            Ok(parent_entry) -> {
+              Ok(#(parent_entry, child_num))
+            }
+          }
       }
     }
   }
@@ -118,7 +117,9 @@ pub fn go_forward(current_entry_id: String) -> Result(String, snag.Snag) {
     Ok(entry) -> {
       case entry.children {
         [] -> snag.error("No forward history available")
-        [first_child, ..] -> Ok(first_child)
+        [first_child, ..] -> {
+          Ok(first_child)
+        }
       }
     }
   }
@@ -205,20 +206,12 @@ fn build_parent_chain(
   let new_acc = [entry, ..acc]
   case entry.parent {
     None -> new_acc
-    Some(Parent(id: parent_id, line_number: _)) -> {
+    Some(Parent(id: parent_id, ..)) -> {
       case get_navigation_entry(parent_id) {
         Ok(parent_entry) -> build_parent_chain(parent_entry, new_acc)
         Error(_) -> new_acc
       }
     }
-  }
-}
-
-/// Get just the entry data without navigating
-pub fn get_entry(entry_id: String) -> Result(HistoryEntry, snag.Snag) {
-  case get_navigation_entry(entry_id) {
-    Error(Nil) -> snag.error("Failed to read history entry: " <> entry_id)
-    Ok(entry) -> Ok(entry)
   }
 }
 
@@ -238,7 +231,7 @@ pub fn prune_history(entry_id: String) -> Result(Nil, snag.Snag) {
 fn prune_from_entry(entry: HistoryEntry) -> Nil {
   case entry.parent {
     None -> Nil
-    Some(Parent(id: parent_id, line_number: _)) -> {
+    Some(Parent(id: parent_id, ..)) -> {
       case get_navigation_entry(parent_id) {
         Error(Nil) -> Nil
         Ok(parent_entry) -> {

@@ -1,7 +1,6 @@
 import audit_data
 import dromel
 import gleam/io
-import gleam/javascript/array
 import gleam/list
 import gleam/result
 import plinth/browser/event
@@ -18,7 +17,7 @@ pub fn main() {
   let _ = populate_audit_name_tag(audit_data.audit_name())
 
   // Create view container for topic views
-  let _ = setup_view_container()
+  let _ = topic_view.setup_view_container()
 
   audit_data.with_audit_contracts(fn(contracts) {
     case contracts {
@@ -61,73 +60,6 @@ pub fn main() {
             event.stop_propagation(event)
             contracts_modal.open()
           }
-          "ArrowDown" -> {
-            event.prevent_default(event)
-            case topic_view.get_active_topic_view() {
-              Ok(view) -> {
-                let new_index = topic_view.get_current_child_topic_index() + 1
-
-                case
-                  view.children_topic_tokens
-                  |> array.get(new_index)
-                {
-                  Ok(el) -> {
-                    dromel.focus(el)
-                    io.println(
-                      "Focusing element with topic "
-                      <> dromel.get_data(el, elements.token_topic_id_key)
-                      |> result.unwrap("None"),
-                    )
-                    topic_view.set_current_child_topic_index(new_index)
-                  }
-                  Error(Nil) -> {
-                    io.println("no next child")
-                  }
-                }
-
-                Nil
-              }
-              Error(Nil) -> {
-                echo "no active view"
-                Nil
-              }
-            }
-            Nil
-          }
-
-          "ArrowUp" -> {
-            event.prevent_default(event)
-            case topic_view.get_active_topic_view() {
-              Ok(view) -> {
-                let new_index = topic_view.get_current_child_topic_index() - 1
-
-                case
-                  view.children_topic_tokens
-                  |> array.get(new_index)
-                {
-                  Ok(el) -> {
-                    dromel.focus(el)
-                    io.println(
-                      "Focusing element with topic "
-                      <> dromel.get_data(el, elements.token_topic_id_key)
-                      |> result.unwrap("None"),
-                    )
-                    topic_view.set_current_child_topic_index(new_index)
-                  }
-                  Error(Nil) -> {
-                    io.println("no prior child")
-                  }
-                }
-
-                Nil
-              }
-              Error(Nil) -> {
-                echo "no active view"
-                Nil
-              }
-            }
-            Nil
-          }
           _ -> Nil
         }
       }
@@ -148,14 +80,4 @@ pub fn populate_audit_name_tag(audit_name) {
   let _ = header |> dromel.append_child(audit_name_tag)
 
   Ok(Nil)
-}
-
-fn setup_view_container() {
-  let view_container =
-    dromel.new_div()
-    |> dromel.set_style("flex: 1; min-height: 0")
-
-  let _ = audit_data.app_element() |> dromel.append_child(view_container)
-
-  audit_data.set_topic_view_container(view_container)
 }

@@ -1,8 +1,8 @@
 import audit_data
 import dromel
+import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import navigation_history
 import plinth/browser/element
 import plinth/browser/event
 import search
@@ -395,21 +395,16 @@ fn handle_keydown(
       // Get the selected contract and navigate to its topic view
       case get_at(state.filtered_contracts, state.selected_index) {
         Ok(contract) -> {
-          let topic = contract.topic
-          let name = audit_data.topic_metadata_name(contract)
-
-          // Create a root navigation entry for this topic
-          let entry = navigation_history.create_root(topic.id, name)
+          let container = audit_data.topic_view_container()
 
           // Navigate to the entry (creates and displays the view)
-          topic_view.navigate_to_entry(entry)
+          topic_view.navigate_to_new_entry(container, contract.topic)
 
           // Close the modal after successfully navigating
           modal.close_modal(overlay)
         }
-        Error(_) -> {
-          // No contract selected, do nothing
-          Nil
+        Error(Nil) -> {
+          io.println_error("No contract selected in contracts modal")
         }
       }
     }
