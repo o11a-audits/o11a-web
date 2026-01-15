@@ -14,18 +14,35 @@
     </script>
     <div style="position: fixed; top: 0; left: 0; right: 0; z-index: 1">
       <div
+        id="header"
         style="
           background-color: var(--color-body-bg);
           border-bottom: 1px solid var(--color-body-border);
           padding: 0.25rem 0.5rem;
+          display: flex;
+          align-items: center;
         "
       >
         <span class="o11a-brand-text" style="margin-right: 0.5rem">o11a</span
-        ><span id="dynamic-header" style="font-size: 0.9rem"></span>
+        ><span
+          id="dynamic-header"
+          style="
+            font-size: 0.9rem;
+            display: inline-flex;
+            gap: 0.5rem;
+            align-items: center;
+            min-width: 0;
+            overflow: hidden;
+          "
+        ></span>
       </div>
       <div
         id="app"
-        style="display: flex; flex-direction: column; height: calc(100vh - 3.5rem)"
+        style="
+          display: flex;
+          flex-direction: column;
+          height: calc(100vh - 3.5rem);
+        "
       ></div>
     </div>
     <div

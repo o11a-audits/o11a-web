@@ -1,10 +1,13 @@
 import audit_data
+import dromel
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import plinth/browser/element
 import snag
 import tempo/datetime
 import tempo/instant
+import ui/icons
 
 // =============================================================================
 // Types
@@ -28,10 +31,10 @@ pub type HistoryEntry {
 // =============================================================================
 
 @external(javascript, "./mem_ffi.mjs", "get_navigation_entry")
-pub fn get_navigation_entry(id: String) -> Result(HistoryEntry, Nil)
+pub fn get_history_entry(id: String) -> Result(HistoryEntry, Nil)
 
 @external(javascript, "./mem_ffi.mjs", "set_navigation_entry")
-pub fn set_navigation_entry(id: String, entry: HistoryEntry) -> Nil
+pub fn set_history_entry(id: String, entry: HistoryEntry) -> Nil
 
 // =============================================================================
 // Public API - High-level operations with persistence
@@ -42,7 +45,7 @@ pub fn create_root(topic: audit_data.Topic) {
   let entry_id = generate_id()
   let entry =
     HistoryEntry(id: entry_id, topic_id: topic.id, parent: None, children: [])
-  set_navigation_entry(entry.id, entry)
+  set_history_entry(entry.id, entry)
   entry
 }
 
@@ -53,7 +56,7 @@ pub fn go_to_new_entry(
   current_child_topic_number: Int,
   new_topic: audit_data.Topic,
 ) -> Result(HistoryEntry, snag.Snag) {
-  case get_navigation_entry(current_entry_id) {
+  case get_history_entry(current_entry_id) {
     Error(Nil) ->
       snag.error("Failed to read history entry: " <> current_entry_id)
     Ok(current_entry) -> {
@@ -78,8 +81,8 @@ pub fn go_to_new_entry(
         ])
 
       // Write both entries
-      set_navigation_entry(updated_current_entry.id, updated_current_entry)
-      set_navigation_entry(new_entry.id, new_entry)
+      set_history_entry(updated_current_entry.id, updated_current_entry)
+      set_history_entry(new_entry.id, new_entry)
 
       Ok(new_entry)
     }
@@ -91,37 +94,41 @@ pub fn go_to_new_entry(
 pub fn go_back(
   current_entry_id: String,
 ) -> Result(#(HistoryEntry, Int), snag.Snag) {
-  case get_navigation_entry(current_entry_id) {
+  case get_history_entry(current_entry_id) {
     Error(Nil) ->
       snag.error("Failed to read history entry: " <> current_entry_id)
-    Ok(entry) -> {
+    Ok(entry) ->
       case entry.parent {
         None -> snag.error("Already at root, cannot go back")
         Some(Relative(id: parent_id, child_topic_number: child_num)) ->
-          case get_navigation_entry(parent_id) {
+          case get_history_entry(parent_id) {
             Error(Nil) -> snag.error("Failed to read parent history entry")
             Ok(parent_entry) -> {
               Ok(#(parent_entry, child_num))
             }
           }
       }
-    }
   }
 }
 
 /// Go forward to the most recent child (first in list)
-pub fn go_forward(current_entry_id: String) -> Result(#(String, Int), snag.Snag) {
-  case get_navigation_entry(current_entry_id) {
+pub fn go_forward(
+  current_entry_id: String,
+) -> Result(#(HistoryEntry, Int), snag.Snag) {
+  case get_history_entry(current_entry_id) {
     Error(Nil) ->
       snag.error("Failed to read history entry: " <> current_entry_id)
-    Ok(entry) -> {
+    Ok(entry) ->
       case entry.children {
         [] -> snag.error("No forward history available")
-        [first_child, ..] -> {
-          Ok(#(first_child.id, first_child.child_topic_number))
-        }
+        [first_child, ..] ->
+          case get_history_entry(first_child.id) {
+            Error(Nil) -> snag.error("Failed to read child history entry")
+            Ok(child_entry) -> {
+              Ok(#(child_entry, first_child.child_topic_number))
+            }
+          }
       }
-    }
   }
 }
 
@@ -130,7 +137,7 @@ pub fn go_forward_to_branch(
   current_entry_id: String,
   child_index: Int,
 ) -> Result(#(String, Int), snag.Snag) {
-  case get_navigation_entry(current_entry_id) {
+  case get_history_entry(current_entry_id) {
     Error(Nil) ->
       snag.error("Failed to read history entry: " <> current_entry_id)
     Ok(entry) -> {
@@ -143,30 +150,20 @@ pub fn go_forward_to_branch(
 }
 
 /// Get all forward branches from an entry (for UI display)
-pub fn get_forward_branches(
-  entry_id: String,
-) -> Result(List(#(Int, HistoryEntry)), snag.Snag) {
-  case get_navigation_entry(entry_id) {
-    Error(Nil) -> snag.error("Failed to read history entry: " <> entry_id)
-    Ok(entry) -> {
-      let branches =
-        entry.children
-        |> list.index_map(fn(child, index) {
-          case get_navigation_entry(child.id) {
-            Ok(child_entry) -> Ok(#(index, child_entry))
-            Error(_) -> Error(Nil)
-          }
-        })
-        |> list.filter_map(fn(x) { x })
-
-      Ok(branches)
+pub fn get_forward_branches(entry: HistoryEntry) -> List(#(Int, HistoryEntry)) {
+  entry.children
+  |> list.index_map(fn(child, index) {
+    case get_history_entry(child.id) {
+      Ok(child_entry) -> Ok(#(index, child_entry))
+      Error(_) -> Error(Nil)
     }
-  }
+  })
+  |> list.filter_map(fn(x) { x })
 }
 
 /// Check if can navigate back from an entry
 pub fn can_go_back(entry_id: String) -> Bool {
-  case get_navigation_entry(entry_id) {
+  case get_history_entry(entry_id) {
     Error(_) -> False
     Ok(entry) ->
       case entry.parent {
@@ -178,7 +175,7 @@ pub fn can_go_back(entry_id: String) -> Bool {
 
 /// Check if can navigate forward from an entry
 pub fn can_go_forward(entry_id: String) -> Bool {
-  case get_navigation_entry(entry_id) {
+  case get_history_entry(entry_id) {
     Error(_) -> False
     Ok(entry) ->
       case entry.children {
@@ -190,13 +187,8 @@ pub fn can_go_forward(entry_id: String) -> Bool {
 
 /// Get the parent chain from an entry up to the root
 /// Returns a list starting from the given entry and going up to the root
-pub fn get_parent_chain(
-  entry_id: String,
-) -> Result(List(HistoryEntry), snag.Snag) {
-  case get_navigation_entry(entry_id) {
-    Error(Nil) -> snag.error("Failed to read history entry: " <> entry_id)
-    Ok(entry) -> Ok(build_parent_chain(entry, []))
-  }
+pub fn get_parent_chain(entry: HistoryEntry) -> List(HistoryEntry) {
+  build_parent_chain(entry, [])
 }
 
 fn build_parent_chain(
@@ -207,7 +199,7 @@ fn build_parent_chain(
   case entry.parent {
     None -> new_acc
     Some(Relative(id: parent_id, ..)) -> {
-      case get_navigation_entry(parent_id) {
+      case get_history_entry(parent_id) {
         Ok(parent_entry) -> build_parent_chain(parent_entry, new_acc)
         Error(_) -> new_acc
       }
@@ -219,7 +211,7 @@ fn build_parent_chain(
 /// Starting from the given entry, walks up to the root and removes all children
 /// from each parent except the one in the current chain
 pub fn prune_history(entry_id: String) -> Result(Nil, snag.Snag) {
-  case get_navigation_entry(entry_id) {
+  case get_history_entry(entry_id) {
     Error(Nil) -> snag.error("Failed to read history entry: " <> entry_id)
     Ok(entry) -> {
       prune_from_entry(entry)
@@ -232,7 +224,7 @@ fn prune_from_entry(entry: HistoryEntry) -> Nil {
   case entry.parent {
     None -> Nil
     Some(Relative(id: parent_id, ..)) -> {
-      case get_navigation_entry(parent_id) {
+      case get_history_entry(parent_id) {
         Error(Nil) -> Nil
         Ok(parent_entry) -> {
           // Remove all children except the current entry from parent
@@ -249,7 +241,7 @@ fn prune_from_entry(entry: HistoryEntry) -> Nil {
             |> list.filter(fn(child) { child.id == entry.id })
           let pruned_parent =
             HistoryEntry(..parent_entry, children: siblings_to_keep)
-          set_navigation_entry(pruned_parent.id, pruned_parent)
+          set_history_entry(pruned_parent.id, pruned_parent)
 
           // Continue pruning up the tree
           prune_from_entry(parent_entry)
@@ -260,7 +252,7 @@ fn prune_from_entry(entry: HistoryEntry) -> Nil {
 }
 
 fn delete_branch(entry_id: String) -> Nil {
-  case get_navigation_entry(entry_id) {
+  case get_history_entry(entry_id) {
     Error(Nil) -> Nil
     Ok(entry) -> {
       // Recursively delete all children first
@@ -270,6 +262,70 @@ fn delete_branch(entry_id: String) -> Nil {
       Nil
     }
   }
+}
+
+/// Mount a breadcrumb display for the entry's parent chain
+/// Creates breadcrumb elements separated by chevron_right icons
+/// Fetches topic metadata asynchronously to display topic names
+pub fn mount_history_breadcrumb(
+  container: element.Element,
+  entry: HistoryEntry,
+) -> Nil {
+  // Clear the container first
+  let _ = dromel.set_inner_html(container, "")
+
+  // Get the parent chain (from root to current entry) and reverse it
+  // Reverse because container has direction: rtl, so last items appear first (rightmost)
+  let parent_chain = get_parent_chain(entry) |> list.reverse
+
+  // Create breadcrumb elements for each entry in the chain
+  list.index_map(parent_chain, fn(chain_entry, index) {
+    // Add chevron delimiter before each item except the first
+    // (which is actually the last item due to reversal)
+    case index > 0 {
+      True -> {
+        let _ =
+          dromel.new_span()
+          |> dromel.set_inner_html(icons.chevron_right_breadcrumb)
+          |> dromel.set_style(
+            "display: inline-flex; align-items: center; opacity: 0.6; width: 0.75em; height: 0.75em; line-height: 1; flex-shrink: 0;",
+          )
+          |> dromel.append_child(to: container)
+        Nil
+      }
+      False -> Nil
+    }
+
+    // Create the text span for the topic name
+    let text_span =
+      dromel.new_span()
+      |> dromel.set_inner_text("...")
+      |> dromel.set_style("color: var(--color-body-text); white-space: nowrap;")
+
+    let _ = dromel.append_child(container, text_span)
+
+    // Fetch topic metadata and update the text
+    audit_data.with_topic_metadata(
+      audit_data.Topic(id: chain_entry.topic_id),
+      fn(result) {
+        case result {
+          Ok(metadata) -> {
+            let name = audit_data.topic_metadata_name(metadata)
+            let _ = dromel.set_inner_text(text_span, name)
+            Nil
+          }
+          Error(_) -> {
+            let _ = dromel.set_inner_text(text_span, "Unknown")
+            Nil
+          }
+        }
+      },
+    )
+
+    Nil
+  })
+
+  Nil
 }
 
 // =============================================================================

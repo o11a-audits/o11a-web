@@ -16,6 +16,8 @@ pub fn main() {
 
   let _ = populate_audit_name_tag(audit_data.audit_name())
 
+  let _ = mount_history_container()
+
   // Create view container for topic views
   let _ = topic_view.setup_view_container()
 
@@ -75,9 +77,24 @@ pub fn populate_audit_name_tag(audit_name) {
   let audit_name_tag =
     dromel.new_span()
     |> dromel.set_inner_text(audit_name)
-    |> dromel.set_style("margin-right: 0.5rem")
 
   let _ = header |> dromel.append_child(audit_name_tag)
+
+  Ok(Nil)
+}
+
+pub fn mount_history_container() {
+  use header <- result.try(dromel.query_document(elements.dynamic_header_sel))
+
+  let history_container =
+    dromel.new_span()
+    |> dromel.set_style(
+      "display: inline-flex; align-items: center; gap: 0.15rem; border-left: 1px solid var(--color-body-border); padding-left: 0.5rem; direction: rtl; overflow: hidden; flex: 1;",
+    )
+
+  let _ = header |> dromel.append_child(history_container)
+
+  topic_view.set_history_container(history_container)
 
   Ok(Nil)
 }

@@ -174,7 +174,7 @@ pub fn set_inner_text(elem: Element, text: String) -> Element {
 // DOM Manipulation (Chainable - returns parent for chaining)
 // ============================================================================
 
-pub fn append_child(parent: Element, child: Element) -> Element {
+pub fn append_child(to parent: Element, child child: Element) -> Element {
   element.append_child(parent, child)
   parent
 }

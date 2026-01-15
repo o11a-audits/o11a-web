@@ -108,6 +108,17 @@ pub type TopicView {
 // FFI Bindings for State Management
 // ============================================================================
 
+@external(javascript, "../mem_ffi.mjs", "set_history_container")
+pub fn set_history_container(container: element.Element) -> Nil
+
+@external(javascript, "../mem_ffi.mjs", "get_history_container")
+fn get_history_container_ffi() -> Result(element.Element, Nil)
+
+fn get_history_container() {
+  let assert Ok(container) = get_history_container_ffi()
+  container
+}
+
 @external(javascript, "../mem_ffi.mjs", "get_topic_view")
 fn get_topic_view(entry_id: String) -> Result(TopicView, Nil)
 
@@ -214,85 +225,105 @@ pub fn navigate_to_new_entry(
   container: element.Element,
   topic: audit_data.Topic,
 ) {
-  let new_entry = case get_active_topic_view(container) {
-    Ok(active_view) -> {
-      // If there is an active view, hide it
-      hide_view(active_view.element)
-
-      case
-        navigation_history.go_to_new_entry(
-          active_view.entry_id,
-          get_current_child_topic_index(container),
-          topic,
-        )
-      {
-        Ok(entry) -> entry
-        Error(snag) -> {
-          snag.layer(snag, "Unable to navigate to new entry")
-          |> snag.line_print
-          |> io.println_error
-          panic as "Unable to navigate to new entry"
-        }
-      }
+  let active_topic_view_res = get_active_topic_view(container)
+  case active_topic_view_res {
+    Ok(active_view) if active_view.topic_id == topic.id -> {
+      // If the active view is for the same topic, do nothing
+      Nil
     }
-    Error(Nil) -> navigation_history.create_root(topic)
-  }
 
-  // Create new view
-  let view_element =
-    mount_topic_view(container, new_entry.id, new_entry.topic_id)
+    _ -> {
+      let new_entry = case active_topic_view_res {
+        Ok(active_view) -> {
+          // If there is an active view, hide it
+          hide_view(active_view.element)
 
-  // Initialize view state
-  let view =
-    TopicView(
-      entry_id: new_entry.id,
-      topic_id: new_entry.topic_id,
-      element: view_element,
-      children_topic_tokens: array.from_list([]),
-    )
-  set_topic_view(new_entry.id, view)
-
-  // Show the new view
-  set_active_topic_view(container, view)
-  set_current_child_topic_index(container, 0)
-  show_view(view.element)
-
-  // Load source text
-  audit_data.with_source_text(
-    audit_data.Topic(id: new_entry.topic_id),
-    fn(result) {
-      case result {
-        Ok(source_text) -> {
-          let _ = view.element |> dromel.set_inner_html(source_text)
-
-          let children =
-            dromel.query_element_all(view.element, elements.source_topic_tokens)
-
-          set_topic_view(
-            new_entry.id,
-            TopicView(..view, children_topic_tokens: children),
-          )
-
-          let _ = array.get(children, 0) |> result.map(dromel.focus)
-
-          Nil
-        }
-        Error(error) -> {
-          let _ =
-            view.element
-            |> dromel.set_inner_html(
-              "<div style='color: var(--color-body-text); padding: 1rem;'>"
-              <> error
-              |> snag.layer("Unable to fetch source")
-              |> snag.pretty_print
-              <> "</div>",
+          case
+            navigation_history.go_to_new_entry(
+              active_view.entry_id,
+              get_current_child_topic_index(container),
+              topic,
             )
-
-          Nil
+          {
+            Ok(entry) -> entry
+            Error(snag) -> {
+              snag.layer(snag, "Unable to navigate to new entry")
+              |> snag.line_print
+              |> io.println_error
+              panic as "Unable to navigate to new entry"
+            }
+          }
         }
+        Error(Nil) -> navigation_history.create_root(topic)
       }
-    },
-  )
+
+      // Create new view
+      let view_element =
+        mount_topic_view(container, new_entry.id, new_entry.topic_id)
+
+      // Initialize view state
+      let view =
+        TopicView(
+          entry_id: new_entry.id,
+          topic_id: new_entry.topic_id,
+          element: view_element,
+          children_topic_tokens: array.from_list([]),
+        )
+      set_topic_view(new_entry.id, view)
+
+      // Show the new view
+      set_active_topic_view(container, view)
+      set_current_child_topic_index(container, 0)
+      show_view(view.element)
+
+      // Update the breadcrumb
+      navigation_history.mount_history_breadcrumb(
+        get_history_container(),
+        new_entry,
+      )
+
+      // Load source text
+      audit_data.with_source_text(
+        audit_data.Topic(id: new_entry.topic_id),
+        fn(result) {
+          case result {
+            Ok(source_text) -> {
+              let _ = view.element |> dromel.set_inner_html(source_text)
+
+              let children =
+                dromel.query_element_all(
+                  view.element,
+                  elements.source_topic_tokens,
+                )
+
+              set_topic_view(
+                new_entry.id,
+                TopicView(..view, children_topic_tokens: children),
+              )
+
+              let _ = array.get(children, 0) |> result.map(dromel.focus)
+
+              Nil
+            }
+
+            Error(error) -> {
+              let _ =
+                view.element
+                |> dromel.set_inner_html(
+                  "<div style='color: var(--color-body-text); padding: 1rem;'>"
+                  <> error
+                  |> snag.layer("Unable to fetch source")
+                  |> snag.pretty_print
+                  <> "</div>",
+                )
+
+              Nil
+            }
+          }
+        },
+      )
+    }
+  }
 }
 
 /// Navigate back in history
@@ -326,20 +357,29 @@ pub fn navigate_back(container) -> Nil {
                   ),
                   ..other_children
                 ])
-              navigation_history.set_navigation_entry(
+              navigation_history.set_history_entry(
                 updated_parent.id,
                 updated_parent,
               )
 
               hide_view(active_view.element)
+
               set_active_topic_view(container, parent_view)
               set_current_child_topic_index(container, child_topic_index)
               show_view(parent_view.element)
+
+              navigation_history.mount_history_breadcrumb(
+                get_history_container(),
+                parent_entry,
+              )
+
               let _ =
                 array.get(parent_view.children_topic_tokens, child_topic_index)
                 |> result.map(dromel.focus)
+
               Nil
             }
+
             Error(Nil) ->
               snag.new("Cannot navigate back, unable to find prior topic view")
               |> snag.line_print
@@ -367,19 +407,26 @@ pub fn navigate_forward(container) -> Nil {
           |> snag.line_print
           |> io.println_error
 
-        Ok(#(child_entry_id, child_topic_index)) -> {
+        Ok(#(child_entry, child_topic_index)) -> {
           echo "going forward, found" <> int.to_string(child_topic_index)
-          case get_topic_view(child_entry_id) {
+          case get_topic_view(child_entry.id) {
             Error(Nil) ->
-              snag.new("Child view not found for entry: " <> child_entry_id)
+              snag.new("Child view not found for entry: " <> child_entry.id)
               |> snag.line_print
               |> io.println_error
 
             Ok(child_view) -> {
               hide_view(active_view.element)
+
               set_active_topic_view(container, child_view)
               set_current_child_topic_index(container, child_topic_index)
               show_view(child_view.element)
+
+              navigation_history.mount_history_breadcrumb(
+                get_history_container(),
+                child_entry,
+              )
+
               let _ =
                 array.get(child_view.children_topic_tokens, child_topic_index)
                 |> result.map(dromel.focus)
@@ -452,11 +499,6 @@ fn handle_topic_view_keydown(container) {
             case view.children_topic_tokens |> array.get(new_index) {
               Ok(el) -> {
                 dromel.focus(el)
-                io.println(
-                  "Focusing element with topic "
-                  <> dromel.get_data(el, elements.token_topic_id_key)
-                  |> result.unwrap("None"),
-                )
                 set_current_child_topic_index(container, new_index)
               }
               Error(Nil) -> {
@@ -483,11 +525,6 @@ fn handle_topic_view_keydown(container) {
             case view.children_topic_tokens |> array.get(new_index) {
               Ok(el) -> {
                 dromel.focus(el)
-                io.println(
-                  "Focusing element with topic "
-                  <> dromel.get_data(el, elements.token_topic_id_key)
-                  |> result.unwrap("None"),
-                )
                 set_current_child_topic_index(container, new_index)
               }
               Error(Nil) -> {

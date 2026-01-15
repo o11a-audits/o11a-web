@@ -215,8 +215,21 @@ export function set_active_topic_view_id(id) {
 }
 
 // =============================================================================
-// Navigation
+// Topic View
 // =============================================================================
+
+let history_container;
+
+export function set_history_container(container) {
+  history_container = container;
+}
+
+export function get_history_container() {
+  if (!history_container) {
+    return Result$Error();
+  }
+  return Result$Ok(history_container);
+}
 
 let current_child_topic_index = 0;
 
