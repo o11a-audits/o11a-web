@@ -3,6 +3,7 @@ import gleam/dynamic/decode
 import gleam/fetch
 import gleam/http/request
 import gleam/javascript/promise
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import plinth/browser/document
@@ -240,7 +241,13 @@ fn unnamed_topic_kind_decoder() -> decode.Decoder(UnnamedTopicKind) {
 }
 
 pub type TopicMetadata {
-  NamedTopic(topic: Topic, scope: Scope, kind: NamedTopicKind, name: String)
+  NamedTopic(
+    topic: Topic,
+    scope: Scope,
+    kind: NamedTopicKind,
+    name: String,
+    references: List(Topic),
+  )
   UnnamedTopic(topic: Topic, scope: Scope, kind: UnnamedTopicKind)
 }
 
@@ -258,7 +265,17 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
   case maybe_name {
     Some(name) -> {
       use kind <- decode.then(named_topic_kind_decoder())
-      decode.success(NamedTopic(topic:, scope:, kind:, name:))
+      use reference_ids <- decode.field(
+        "references",
+        decode.list(decode.string),
+      )
+      decode.success(NamedTopic(
+        topic:,
+        scope:,
+        kind:,
+        name:,
+        references: list.map(reference_ids, Topic),
+      ))
     }
     None -> {
       use kind <- decode.then(unnamed_topic_kind_decoder())
