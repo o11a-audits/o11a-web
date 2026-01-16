@@ -30,10 +30,10 @@ pub type HistoryEntry {
 // FFI - Memory Layer
 // =============================================================================
 
-@external(javascript, "./mem_ffi.mjs", "get_navigation_entry")
+@external(javascript, "./mem_ffi.mjs", "get_history_entry")
 pub fn get_history_entry(id: String) -> Result(HistoryEntry, Nil)
 
-@external(javascript, "./mem_ffi.mjs", "set_navigation_entry")
+@external(javascript, "./mem_ffi.mjs", "set_history_entry")
 pub fn set_history_entry(id: String, entry: HistoryEntry) -> Nil
 
 // =============================================================================
@@ -49,8 +49,8 @@ pub fn create_root(topic: audit_data.Topic) {
   entry
 }
 
-/// Navigate to a new location from the current entry
-/// Creates a new child entry with the parent info set
+/// Create a new child history entry from the current entry
+/// Sets up parent-child relationship between entries
 pub fn go_to_new_entry(
   current_entry_id: String,
   current_child_topic_number: Int,
@@ -90,7 +90,7 @@ pub fn go_to_new_entry(
 }
 
 /// Go back to parent entry (if exists)
-/// Returns the parent entry and the child topic number to navigate to
+/// Returns the parent entry and the child topic number it was entered from
 pub fn go_back(
   current_entry_id: String,
 ) -> Result(#(HistoryEntry, Int), snag.Snag) {
@@ -161,7 +161,7 @@ pub fn get_forward_branches(entry: HistoryEntry) -> List(#(Int, HistoryEntry)) {
   |> list.filter_map(fn(x) { x })
 }
 
-/// Check if can navigate back from an entry
+/// Check if a parent entry exists
 pub fn can_go_back(entry_id: String) -> Bool {
   case get_history_entry(entry_id) {
     Error(_) -> False
@@ -173,7 +173,7 @@ pub fn can_go_back(entry_id: String) -> Bool {
   }
 }
 
-/// Check if can navigate forward from an entry
+/// Check if child entries exist
 pub fn can_go_forward(entry_id: String) -> Bool {
   case get_history_entry(entry_id) {
     Error(_) -> False
@@ -257,7 +257,7 @@ fn delete_branch(entry_id: String) -> Nil {
     Ok(entry) -> {
       // Recursively delete all children first
       list.each(entry.children, fn(child) { delete_branch(child.id) })
-      // Note: In a real implementation, you'd need a delete_navigation_entry FFI function
+      // Note: In a real implementation, you'd need a delete_history_entry FFI function
       // For now, this structure shows the logic - the actual deletion would happen here
       Nil
     }

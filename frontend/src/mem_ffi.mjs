@@ -100,34 +100,34 @@ export function set_source_text(topic_id, text) {
 }
 
 // =============================================================================
-// Navigation History
+// History Entries
 // =============================================================================
 
-let navigation_history = {};
+let history_entries = {};
 
-export function set_navigation_entry(id, entry) {
-  navigation_history[id] = entry;
+export function set_history_entry(id, entry) {
+  history_entries[id] = entry;
 }
 
-export function get_navigation_entry(id) {
-  let entry = navigation_history[id];
+export function get_history_entry(id) {
+  let entry = history_entries[id];
   if (!entry) {
     return Result$Error();
   }
   return Result$Ok(entry);
 }
 
-let current_entry_id = null;
+let current_history_entry_id = null;
 
-export function set_current_navigation_entry_id(id) {
-  current_entry_id = id;
+export function set_current_history_entry_id(id) {
+  current_history_entry_id = id;
 }
 
-export function get_current_navigation_entry_id() {
-  if (!current_entry_id) {
+export function get_current_history_entry_id() {
+  if (!current_history_entry_id) {
     return Result$Error();
   }
-  return Result$Ok(current_entry_id);
+  return Result$Ok(current_history_entry_id);
 }
 
 // =============================================================================
