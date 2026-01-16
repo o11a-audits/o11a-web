@@ -21,36 +21,6 @@ pub fn main() {
   // Create view container for topic views
   let _ = topic_view.setup_view_container()
 
-  audit_data.with_audit_contracts(fn(contracts) {
-    case contracts {
-      Error(snag) -> {
-        echo snag.line_print(snag) as "contracts: "
-        Nil
-      }
-      Ok(contracts) -> {
-        // Fetch source text for each contract's topic
-        contracts
-        |> list.each(fn(contract) {
-          audit_data.with_source_text(contract.topic, fn(source_text) {
-            case source_text {
-              Error(snag) -> {
-                echo snag.line_print(snag) as "source_text error: "
-                Nil
-              }
-              Ok(text) -> {
-                let _ =
-                  echo text as "source_text for " <> contract.topic.id <> ": "
-                Nil
-              }
-            }
-          })
-        })
-
-        Nil
-      }
-    }
-  })
-
   window.add_event_listener("keydown", fn(event) {
     // Only handle global shortcuts when not in input context
     case modal.is_in_input_context() {
@@ -97,4 +67,37 @@ pub fn mount_history_container() {
   topic_view.set_history_container(history_container)
 
   Ok(Nil)
+}
+
+pub fn prefetch_hot() {
+  // Prefetch audit contracts
+  audit_data.with_audit_contracts(fn(contracts) {
+    case contracts {
+      Error(snag) ->
+        snag.layer(snag, "Unable to fetch audit contracts")
+        |> snag.line_print
+        |> io.println_error
+
+      Ok(contracts) -> {
+        // Prefetch source text for each contract's topic
+        list.each(contracts, fn(contract) {
+          audit_data.with_source_text(contract.topic, fn(source_text) {
+            case source_text {
+              Error(snag) ->
+                snag.layer(
+                  snag,
+                  "Unable to fetch source text for topic " <> contract.topic.id,
+                )
+                |> snag.line_print
+                |> io.println_error
+
+              Ok(_text) -> Nil
+            }
+          })
+        })
+
+        Nil
+      }
+    }
+  })
 }
