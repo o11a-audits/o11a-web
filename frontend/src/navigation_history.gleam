@@ -270,6 +270,7 @@ fn delete_branch(entry_id: String) -> Nil {
 pub fn mount_history_breadcrumb(
   container: element.Element,
   entry: HistoryEntry,
+  populate_entry_name: fn(HistoryEntry, element.Element) -> Nil,
 ) -> Nil {
   // Clear the container first
   let _ = dromel.set_inner_html(container, "")
@@ -304,25 +305,7 @@ pub fn mount_history_breadcrumb(
 
     let _ = dromel.append_child(container, text_span)
 
-    // Fetch topic metadata and update the text
-    audit_data.with_topic_metadata(
-      audit_data.Topic(id: chain_entry.topic_id),
-      fn(result) {
-        case result {
-          Ok(metadata) -> {
-            let name = audit_data.topic_metadata_name(metadata)
-            let _ = dromel.set_inner_text(text_span, name)
-            Nil
-          }
-          Error(_) -> {
-            let _ = dromel.set_inner_text(text_span, "Unknown")
-            Nil
-          }
-        }
-      },
-    )
-
-    Nil
+    populate_entry_name(chain_entry, text_span)
   })
 
   Nil

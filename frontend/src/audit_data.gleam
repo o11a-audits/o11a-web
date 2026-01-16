@@ -168,7 +168,13 @@ pub type FunctionKind {
   FreeFunction
 }
 
-pub type TopicKind {
+pub type VariableMutability {
+  Constant
+  Immutable
+  Mutable
+}
+
+pub type NamedTopicKind {
   TopicContract(ContractKind)
   TopicFunction(FunctionKind)
   Modifier
@@ -177,15 +183,17 @@ pub type TopicKind {
   Struct
   Enum
   EnumMember
-  Constant
-  StateVariable
+  StateVariable(VariableMutability)
   LocalVariable
+}
+
+pub type UnnamedTopicKind {
   OperatorInvocation
   DocumentationSection
   DocumentationParagraph
 }
 
-fn topic_kind_decoder() -> decode.Decoder(TopicKind) {
+fn named_topic_kind_decoder() -> decode.Decoder(NamedTopicKind) {
   use kind_str <- decode.field("kind", decode.string)
   use maybe_sub_kind <- decode.optional_field(
     "sub_kind",
@@ -211,25 +219,34 @@ fn topic_kind_decoder() -> decode.Decoder(TopicKind) {
     "Struct", None -> decode.success(Struct)
     "Enum", None -> decode.success(Enum)
     "EnumMember", None -> decode.success(EnumMember)
-    "Constant", None -> decode.success(Constant)
-    "StateVariable", None -> decode.success(StateVariable)
+    "StateVariable", Some("Constant") -> decode.success(StateVariable(Constant))
+    "StateVariable", Some("Immutable") ->
+      decode.success(StateVariable(Immutable))
+    "StateVariable", Some("Mutable") -> decode.success(StateVariable(Mutable))
     "LocalVariable", None -> decode.success(LocalVariable)
-    "OperatorInvocation", None -> decode.success(OperatorInvocation)
-    "DocumentationSection", None -> decode.success(DocumentationSection)
-    "DocumentationParagraph", None -> decode.success(DocumentationParagraph)
-    _, _ -> decode.failure(DocumentationParagraph, "TopicKind")
+    _, _ -> decode.failure(LocalVariable, "NamedTopicKind")
+  }
+}
+
+fn unnamed_topic_kind_decoder() -> decode.Decoder(UnnamedTopicKind) {
+  use kind_str <- decode.field("kind", decode.string)
+
+  case kind_str {
+    "OperatorInvocation" -> decode.success(OperatorInvocation)
+    "DocumentationSection" -> decode.success(DocumentationSection)
+    "DocumentationParagraph" -> decode.success(DocumentationParagraph)
+    _ -> decode.failure(DocumentationParagraph, "UnnamedTopicKind")
   }
 }
 
 pub type TopicMetadata {
-  NamedTopic(topic: Topic, scope: Scope, kind: TopicKind, name: String)
-  UnnamedTopic(topic: Topic, scope: Scope, kind: TopicKind)
+  NamedTopic(topic: Topic, scope: Scope, kind: NamedTopicKind, name: String)
+  UnnamedTopic(topic: Topic, scope: Scope, kind: UnnamedTopicKind)
 }
 
 fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
   use topic_id <- decode.field("topic_id", decode.string)
   use scope <- decode.field("scope", scope_decoder())
-  use kind <- decode.then(topic_kind_decoder())
   use maybe_name <- decode.optional_field(
     "name",
     None,
@@ -239,35 +256,55 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
   let topic = Topic(id: topic_id)
 
   case maybe_name {
-    Some(name) -> decode.success(NamedTopic(topic:, scope:, kind:, name:))
-    None -> decode.success(UnnamedTopic(topic:, scope:, kind:))
+    Some(name) -> {
+      use kind <- decode.then(named_topic_kind_decoder())
+      decode.success(NamedTopic(topic:, scope:, kind:, name:))
+    }
+    None -> {
+      use kind <- decode.then(unnamed_topic_kind_decoder())
+      decode.success(UnnamedTopic(topic:, scope:, kind:))
+    }
   }
 }
 
 pub fn topic_metadata_name(metadata: TopicMetadata) -> String {
   case metadata {
-    NamedTopic(name: name, ..) -> name
-    UnnamedTopic(kind: kind, ..) -> topic_kind_to_string(kind)
+    NamedTopic(name:, ..) -> name
+    UnnamedTopic(kind:, ..) -> unnamed_topic_kind_to_string(kind)
   }
 }
 
-fn topic_kind_to_string(kind: TopicKind) -> String {
+pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
+  case metadata {
+    NamedTopic(name:, kind:, ..) ->
+      case kind {
+        TopicContract(..) -> "<span class=\"contract\">" <> name <> "</span>"
+        TopicFunction(Function) | TopicFunction(FreeFunction) ->
+          "<span class=\"function\">" <> name <> "</span>"
+        TopicFunction(Receive) -> "<span class=\"keyword\">receive</span>"
+        TopicFunction(Fallback) -> "<span class=\"keyword\">fallback</span>"
+        TopicFunction(Constructor) ->
+          "<span class=\"keyword\">constructor</span>"
+        Modifier -> "<span class=\"modifier\">" <> name <> "</span>"
+        Event -> "<span class=\"event\">" <> name <> "</span>"
+        TopicError -> "<span class=\"error\">" <> name <> "</span>"
+        Struct -> "<span class=\"struct\">" <> name <> "</span>"
+        Enum -> "<span class=\"enum\">" <> name <> "</span>"
+        EnumMember -> "<span class=\"enum-value\">" <> name <> "</span>"
+        StateVariable(Constant) ->
+          "<span class=\"constant\">" <> name <> "</span>"
+        StateVariable(Immutable) ->
+          "<span class=\"immutable-state-variable\">" <> name <> "</span>"
+        StateVariable(Mutable) ->
+          "<span class=\"state-variable\">" <> name <> "</span>"
+        LocalVariable -> "<span class=\"identifier\">" <> name <> "</span>"
+      }
+    UnnamedTopic(kind:, ..) -> unnamed_topic_kind_to_string(kind)
+  }
+}
+
+fn unnamed_topic_kind_to_string(kind: UnnamedTopicKind) -> String {
   case kind {
-    TopicContract(contract_kind) -> contract_kind_to_string(contract_kind)
-    TopicFunction(Constructor) -> "constructor"
-    TopicFunction(Fallback) -> "fallback"
-    TopicFunction(Receive) -> "receive"
-    TopicFunction(Function) -> "function"
-    TopicFunction(FreeFunction) -> "free function"
-    Modifier -> "modifier"
-    Event -> "event"
-    TopicError -> "error"
-    Struct -> "struct"
-    Enum -> "enum"
-    EnumMember -> "enum member"
-    Constant -> "constant"
-    StateVariable -> "state variable"
-    LocalVariable -> "local variable"
     OperatorInvocation -> "operator invocation"
     DocumentationSection -> "documentation section"
     DocumentationParagraph -> "documentation paragraph"

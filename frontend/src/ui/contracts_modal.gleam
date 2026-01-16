@@ -195,11 +195,23 @@ fn render_contract_list(
           )
 
         // Add icon based on contract kind
-        let icon_svg = case contract.kind {
-          audit_data.TopicContract(audit_data.Contract) -> icons.file_braces
-          audit_data.TopicContract(audit_data.Interface) -> icons.file_sliders
-          audit_data.TopicContract(audit_data.Library) -> icons.file_exclamation
-          audit_data.TopicContract(audit_data.Abstract) -> icons.file_question
+        let icon_svg = case contract {
+          audit_data.NamedTopic(
+            kind: audit_data.TopicContract(audit_data.Contract),
+            ..,
+          ) -> icons.file_braces
+          audit_data.NamedTopic(
+            kind: audit_data.TopicContract(audit_data.Interface),
+            ..,
+          ) -> icons.file_sliders
+          audit_data.NamedTopic(
+            kind: audit_data.TopicContract(audit_data.Library),
+            ..,
+          ) -> icons.file_exclamation
+          audit_data.NamedTopic(
+            kind: audit_data.TopicContract(audit_data.Abstract),
+            ..,
+          ) -> icons.file_question
           _ -> icons.file_braces
         }
 
@@ -219,8 +231,8 @@ fn render_contract_list(
           dromel.new_span()
           |> dromel.set_inner_html(highlighted_name)
 
-        let kind_label = case contract.kind {
-          audit_data.TopicContract(kind) ->
+        let kind_label = case contract {
+          audit_data.NamedTopic(kind: audit_data.TopicContract(kind), ..) ->
             audit_data.contract_kind_to_string(kind)
           _ -> ""
         }

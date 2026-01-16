@@ -280,6 +280,7 @@ pub fn navigate_to_new_entry(
       navigation_history.mount_history_breadcrumb(
         get_history_container(),
         new_entry,
+        populate_topic_name,
       )
 
       // Load source text
@@ -371,6 +372,7 @@ pub fn navigate_back(container) -> Nil {
               navigation_history.mount_history_breadcrumb(
                 get_history_container(),
                 parent_entry,
+                populate_topic_name,
               )
 
               let _ =
@@ -425,6 +427,7 @@ pub fn navigate_forward(container) -> Nil {
               navigation_history.mount_history_breadcrumb(
                 get_history_container(),
                 child_entry,
+                populate_topic_name,
               )
 
               let _ =
@@ -546,4 +549,27 @@ fn handle_topic_view_keydown(container) {
   })
 
   container
+}
+
+fn populate_topic_name(
+  chain_entry: navigation_history.HistoryEntry,
+  item: dromel.Element,
+) {
+  // Fetch topic metadata and update the text
+  audit_data.with_topic_metadata(
+    audit_data.Topic(id: chain_entry.topic_id),
+    fn(result) {
+      case result {
+        Ok(metadata) -> {
+          let name = audit_data.topic_metadata_highlighted_name(metadata)
+          let _ = dromel.set_inner_html(item, name)
+          Nil
+        }
+        Error(_) -> {
+          let _ = dromel.set_inner_text(item, "Unknown")
+          Nil
+        }
+      }
+    },
+  )
 }
