@@ -14,7 +14,7 @@
 //// let _ = audit_data.app_element() |> dromel.append_child(view_container)
 ////
 //// // 2. Create a root navigation entry
-//// let root_entry_id = navigation_history.create_root(
+//// let root_entry_id = history_graph.create_root(
 ////   topic_id: "contract-123",
 ////   name: "MyContract"
 //// )
@@ -32,7 +32,7 @@
 ////     let line_number = 42
 ////
 ////     // Create child entry
-////     case navigation_history.navigate_to(
+////     case history_graph.navigate_to(
 ////       current_entry_id,
 ////       line_number,
 ////       new_topic_id: "function-456",
@@ -85,7 +85,7 @@ import gleam/io
 import gleam/javascript/array
 import gleam/list
 import gleam/result
-import navigation_history
+import history_graph
 import plinth/browser/element
 import plinth/browser/event
 import snag
@@ -239,7 +239,7 @@ pub fn navigate_to_new_entry(
           hide_view(active_view.element)
 
           case
-            navigation_history.go_to_new_entry(
+            history_graph.go_to_new_entry(
               active_view.entry_id,
               get_current_child_topic_index(container),
               topic,
@@ -254,7 +254,7 @@ pub fn navigate_to_new_entry(
             }
           }
         }
-        Error(Nil) -> navigation_history.create_root(topic)
+        Error(Nil) -> history_graph.create_root(topic)
       }
 
       // Create new view
@@ -277,7 +277,7 @@ pub fn navigate_to_new_entry(
       show_view(view.element)
 
       // Update the breadcrumb
-      navigation_history.mount_history_breadcrumb(
+      history_graph.mount_history_breadcrumb(
         get_history_container(),
         new_entry,
         populate_topic_name,
@@ -336,7 +336,7 @@ pub fn navigate_back(container) -> Nil {
       |> io.println_error
 
     Ok(active_view) -> {
-      case navigation_history.go_back(active_view.entry_id) {
+      case history_graph.go_back(active_view.entry_id) {
         Error(snag) ->
           snag.layer(snag, "Cannot navigate back")
           |> snag.line_print
@@ -351,17 +351,14 @@ pub fn navigate_back(container) -> Nil {
                 parent_entry.children
                 |> list.filter(fn(child) { child.id != active_view.entry_id })
               let updated_parent =
-                navigation_history.HistoryEntry(..parent_entry, children: [
-                  navigation_history.Relative(
+                history_graph.HistoryEntry(..parent_entry, children: [
+                  history_graph.Relative(
                     active_view.entry_id,
                     get_current_child_topic_index(container),
                   ),
                   ..other_children
                 ])
-              navigation_history.set_history_entry(
-                updated_parent.id,
-                updated_parent,
-              )
+              history_graph.set_history_entry(updated_parent.id, updated_parent)
 
               hide_view(active_view.element)
 
@@ -369,7 +366,7 @@ pub fn navigate_back(container) -> Nil {
               set_current_child_topic_index(container, child_topic_index)
               show_view(parent_view.element)
 
-              navigation_history.mount_history_breadcrumb(
+              history_graph.mount_history_breadcrumb(
                 get_history_container(),
                 parent_entry,
                 populate_topic_name,
@@ -403,7 +400,7 @@ pub fn navigate_forward(container) -> Nil {
       |> io.println_error
 
     Ok(active_view) -> {
-      case navigation_history.go_forward(active_view.entry_id) {
+      case history_graph.go_forward(active_view.entry_id) {
         Error(snag) ->
           snag.layer(snag, "Cannot navigate forward")
           |> snag.line_print
@@ -424,7 +421,7 @@ pub fn navigate_forward(container) -> Nil {
               set_current_child_topic_index(container, child_topic_index)
               show_view(child_view.element)
 
-              navigation_history.mount_history_breadcrumb(
+              history_graph.mount_history_breadcrumb(
                 get_history_container(),
                 child_entry,
                 populate_topic_name,
@@ -445,7 +442,7 @@ pub fn navigate_forward(container) -> Nil {
 /// Check if can navigate back
 pub fn can_navigate_back(container) -> Bool {
   case get_active_topic_view(container) {
-    Ok(topic_view) -> navigation_history.can_go_back(topic_view.entry_id)
+    Ok(topic_view) -> history_graph.can_go_back(topic_view.entry_id)
     Error(_) -> False
   }
 }
@@ -453,7 +450,7 @@ pub fn can_navigate_back(container) -> Bool {
 /// Check if can navigate forward
 pub fn can_navigate_forward(container) -> Bool {
   case get_active_topic_view(container) {
-    Ok(topic_view) -> navigation_history.can_go_forward(topic_view.entry_id)
+    Ok(topic_view) -> history_graph.can_go_forward(topic_view.entry_id)
     Error(_) -> False
   }
 }
@@ -552,7 +549,7 @@ fn handle_topic_view_keydown(container) {
 }
 
 fn populate_topic_name(
-  chain_entry: navigation_history.HistoryEntry,
+  chain_entry: history_graph.HistoryEntry,
   item: dromel.Element,
 ) {
   // Fetch topic metadata and update the text
