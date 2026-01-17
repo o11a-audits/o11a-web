@@ -57,7 +57,6 @@ body {
 }
 
 .source-container {
-  height: 100%;
   width: 40ch;
   overflow-y: auto;
   overflow-x: clip;
@@ -231,4 +230,8 @@ code::selection,
 .string::selection,
 .number::selection {
   background-color: var(--color-code-selection-bg);
+}
+
+.hidden {
+  display: none;
 }

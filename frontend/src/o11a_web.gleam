@@ -18,9 +18,6 @@ pub fn main() {
 
   let _ = mount_history_container()
 
-  // Create view container for topic views
-  let _ = topic_view.setup_view_container()
-
   window.add_event_listener("keydown", fn(event) {
     // Only handle global shortcuts when not in input context
     case modal.is_in_input_context() {

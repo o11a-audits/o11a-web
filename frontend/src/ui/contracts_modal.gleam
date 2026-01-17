@@ -120,7 +120,7 @@ fn mount_contracts_modal(container: element.Element) -> Nil {
   let left_pane =
     dromel.new_div()
     |> dromel.set_class(elements.modal_left_pane_class)
-    |> dromel.append_class(elements.source_container_class)
+    |> dromel.add_class(elements.source_container_class)
     |> dromel.set_style(
       "background: var(--color-body-bg); padding: 0.5rem; flex: 1;",
     )
@@ -135,7 +135,7 @@ fn mount_contracts_modal(container: element.Element) -> Nil {
   let right_pane =
     dromel.new_div()
     |> dromel.set_class(elements.modal_right_pane_class)
-    |> dromel.append_class(elements.source_container_class)
+    |> dromel.add_class(elements.source_container_class)
     |> dromel.set_style("background: var(--color-code-bg); padding: 1rem;")
     |> dromel.set_inner_html("Loading...")
 
@@ -407,7 +407,7 @@ fn handle_keydown(
       // Get the selected contract and navigate to its topic view
       case get_at(state.filtered_contracts, state.selected_index) {
         Ok(contract) -> {
-          let container = audit_data.topic_view_container()
+          let container = topic_view.topic_view_container()
 
           // Navigate to the entry (creates and displays the view)
           topic_view.navigate_to_new_entry(container, contract.topic)

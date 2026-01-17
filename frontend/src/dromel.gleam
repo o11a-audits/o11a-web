@@ -6,6 +6,8 @@
 import gleam/dynamic
 import gleam/dynamic/decode
 import gleam/javascript/array
+import gleam/list
+import gleam/string
 import plinth/browser/document
 import plinth/browser/element
 import plinth/browser/event
@@ -115,7 +117,7 @@ pub fn set_class(elem: Element, ref: ElementRef) -> Element {
   }
 }
 
-pub fn append_class(elem: Element, ref: ElementRef) -> Element {
+pub fn add_class(elem: Element, ref: ElementRef) -> Element {
   case ref {
     Id(_) -> panic as "Unable to set an id ref as class"
     Class(class) -> {
@@ -127,6 +129,27 @@ pub fn append_class(elem: Element, ref: ElementRef) -> Element {
       elem
     }
     Selector(_) -> panic as "Unable to set a selector ref as class"
+  }
+}
+
+pub fn remove_class(elem: Element, ref: ElementRef) -> Element {
+  case ref {
+    Id(_) -> panic as "Unable to remove an id ref as class"
+    Class(class_to_remove) -> {
+      case element.get_attribute(elem, "class") {
+        Ok(existing) -> {
+          let new_class =
+            existing
+            |> string.split(" ")
+            |> list.filter(fn(c) { c != class_to_remove })
+            |> string.join(" ")
+          element.set_attribute(elem, "class", new_class)
+          elem
+        }
+        Error(_) -> elem
+      }
+    }
+    Selector(_) -> panic as "Unable to remove a selector ref as class"
   }
 }
 

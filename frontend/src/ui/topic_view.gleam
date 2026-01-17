@@ -100,6 +100,7 @@ pub type TopicView {
     entry_id: String,
     topic_id: String,
     element: element.Element,
+    references_panel: element.Element,
     children_topic_tokens: array.Array(element.Element),
   )
 }
@@ -117,6 +118,37 @@ fn get_history_container_ffi() -> Result(element.Element, Nil)
 fn get_history_container() {
   let assert Ok(container) = get_history_container_ffi()
   container
+}
+
+@external(javascript, "../mem_ffi.mjs", "set_topic_view_container")
+pub fn set_topic_view_container(element: dromel.Element) -> Nil
+
+@external(javascript, "../mem_ffi.mjs", "get_topic_view_container")
+fn get_topic_view_container() -> Result(dromel.Element, Nil)
+
+pub fn topic_view_container() -> dromel.Element {
+  case get_topic_view_container() {
+    Ok(element) -> element
+    Error(Nil) -> setup_view_container()
+  }
+}
+
+const view_container_id = dromel.Id("topic_view_container")
+
+fn setup_view_container() {
+  let view_container =
+    dromel.new_div()
+    |> dromel.set_id(view_container_id)
+    |> dromel.set_style(
+      "display: flex; flex: 1; min-height: 0; justify-content: center; gap: 0.5rem; padding: 0.5rem; background: var(--color-body-bg);",
+    )
+    |> handle_topic_view_keydown
+
+  let _ = audit_data.app_element() |> dromel.append_child(view_container)
+
+  set_topic_view_container(view_container)
+
+  view_container
 }
 
 @external(javascript, "../mem_ffi.mjs", "get_topic_view")
@@ -163,54 +195,55 @@ fn get_current_child_topic_index(container: element.Element) -> Int {
 // View Mounting
 // ============================================================================
 
-pub fn setup_view_container() {
-  let view_container =
-    dromel.new_div()
-    |> dromel.set_style("flex: 1; min-height: 0")
-    |> handle_topic_view_keydown
-
-  let _ = audit_data.app_element() |> dromel.append_child(view_container)
-
-  audit_data.set_topic_view_container(view_container)
-}
-
 fn mount_topic_view(
   container: element.Element,
-  entry_id: String,
-  _topic_id: String,
-) -> element.Element {
-  // Create the view container
+  entry: history_graph.HistoryEntry,
+) -> #(element.Element, element.Element) {
+  // Create the source view element
   let view_element =
     dromel.new_div()
-    |> dromel.set_data(elements.nav_entry_id, entry_id)
+    |> dromel.set_data(elements.nav_entry_id, entry.id)
     |> dromel.set_class(elements.source_container_class)
+    |> dromel.add_class(hidden_class)
     |> dromel.set_style(
-      "background: var(--color-code-bg); display: none; box-sizing: border-box; margin: 1rem auto;",
+      "background: var(--color-code-bg); box-sizing: border-box;",
     )
     |> dromel.set_inner_html(
       "<div style='color: var(--color-body-text);'>Loading...</div>",
     )
 
-  let _ = container |> dromel.append_child(view_element)
+  // Create the references panel element
+  let references_panel =
+    dromel.new_div()
+    |> dromel.set_style(
+      "width: 40ch; padding: 1rem; background: var(--color-code-bg); border-left: 1px solid var(--color-border); overflow-y: auto;",
+    )
+    |> dromel.set_class(hidden_class)
+    |> dromel.set_inner_html(
+      "<div style='color: var(--color-body-text); font-size: 0.9rem;'>Loading references...</div>",
+    )
 
-  view_element
+  let _ = container |> dromel.append_child(view_element)
+  let _ = container |> dromel.append_child(references_panel)
+
+  #(view_element, references_panel)
 }
 
 // ============================================================================
 // View Visibility Management
 // ============================================================================
 
-fn show_view(view_element: element.Element) -> Nil {
-  let _ =
-    view_element
-    |> dromel.add_style("display: block;")
+const hidden_class = dromel.Class("hidden")
+
+fn show_view(view: TopicView) -> Nil {
+  let _ = view.element |> dromel.remove_class(hidden_class)
+  let _ = view.references_panel |> dromel.remove_class(hidden_class)
   Nil
 }
 
-fn hide_view(view_element: element.Element) -> Nil {
-  let _ =
-    view_element
-    |> dromel.add_style("display: none;")
+fn hide_view(view: TopicView) -> Nil {
+  let _ = view.element |> dromel.add_class(hidden_class)
+  let _ = view.references_panel |> dromel.add_class(hidden_class)
   Nil
 }
 
@@ -236,7 +269,7 @@ pub fn navigate_to_new_entry(
       let new_entry = case active_topic_view_res {
         Ok(active_view) -> {
           // If there is an active view, hide it
-          hide_view(active_view.element)
+          hide_view(active_view)
 
           case
             history_graph.go_to_new_entry(
@@ -258,8 +291,8 @@ pub fn navigate_to_new_entry(
       }
 
       // Create new view
-      let view_element =
-        mount_topic_view(container, new_entry.id, new_entry.topic_id)
+      let #(view_element, references_panel) =
+        mount_topic_view(container, new_entry)
 
       // Initialize view state
       let view =
@@ -267,6 +300,7 @@ pub fn navigate_to_new_entry(
           entry_id: new_entry.id,
           topic_id: new_entry.topic_id,
           element: view_element,
+          references_panel: references_panel,
           children_topic_tokens: array.from_list([]),
         )
       set_topic_view(new_entry.id, view)
@@ -274,7 +308,7 @@ pub fn navigate_to_new_entry(
       // Show the new view
       set_active_topic_view(container, view)
       set_current_child_topic_index(container, 0)
-      show_view(view.element)
+      show_view(view)
 
       // Update the breadcrumb
       history_graph.mount_history_breadcrumb(
@@ -323,6 +357,34 @@ pub fn navigate_to_new_entry(
           }
         },
       )
+
+      // Load topic metadata and populate references panel
+      audit_data.with_topic_metadata(
+        audit_data.Topic(id: new_entry.topic_id),
+        fn(result) {
+          case result {
+            Ok(audit_data.NamedTopic(references: references, ..)) -> {
+              populate_references_panel(container, references_panel, references)
+            }
+            Ok(audit_data.UnnamedTopic(..)) -> {
+              let _ =
+                references_panel
+                |> dromel.set_inner_html(
+                  "<div style='color: var(--color-body-text); font-size: 0.9rem;'>No references</div>",
+                )
+              Nil
+            }
+            Error(_) -> {
+              let _ =
+                references_panel
+                |> dromel.set_inner_html(
+                  "<div style='color: var(--color-body-text); font-size: 0.9rem;'>Unable to load references</div>",
+                )
+              Nil
+            }
+          }
+        },
+      )
     }
   }
 }
@@ -360,11 +422,11 @@ pub fn navigate_back(container) -> Nil {
                 ])
               history_graph.set_history_entry(updated_parent.id, updated_parent)
 
-              hide_view(active_view.element)
+              hide_view(active_view)
 
               set_active_topic_view(container, parent_view)
               set_current_child_topic_index(container, child_topic_index)
-              show_view(parent_view.element)
+              show_view(parent_view)
 
               history_graph.mount_history_breadcrumb(
                 get_history_container(),
@@ -415,11 +477,11 @@ pub fn navigate_forward(container) -> Nil {
               |> io.println_error
 
             Ok(child_view) -> {
-              hide_view(active_view.element)
+              hide_view(active_view)
 
               set_active_topic_view(container, child_view)
               set_current_child_topic_index(container, child_topic_index)
-              show_view(child_view.element)
+              show_view(child_view)
 
               history_graph.mount_history_breadcrumb(
                 get_history_container(),
@@ -569,4 +631,79 @@ fn populate_topic_name(
       }
     },
   )
+}
+
+fn populate_references_panel(
+  container: element.Element,
+  panel: element.Element,
+  references: List(audit_data.Topic),
+) {
+  case references {
+    [] -> {
+      let _ =
+        panel
+        |> dromel.set_inner_html(
+          "<div style='color: var(--color-body-text); font-size: 0.9rem;'>No references</div>",
+        )
+      Nil
+    }
+    _ -> {
+      let _ =
+        panel
+        |> dromel.set_inner_html(
+          "<div style='color: var(--color-body-text); font-size: 0.9rem; font-weight: bold; margin-bottom: 0.5rem;'>References</div>",
+        )
+
+      list.each(references, fn(ref_topic) {
+        let item =
+          dromel.new_div()
+          |> dromel.set_style(
+            "padding: 0.25rem 0.5rem; cursor: pointer; color: var(--color-body-text); font-size: 0.85rem;",
+          )
+          |> dromel.set_inner_text("Loading...")
+          |> dromel.add_event_listener("click", fn(_event) {
+            navigate_to_new_entry(container, ref_topic)
+          })
+          |> dromel.add_event_listener("mouseenter", fn(ev) {
+            case dromel.cast(event.target(ev)) {
+              Ok(target) -> {
+                let _ =
+                  target
+                  |> dromel.add_style("background: var(--color-hover-bg);")
+                Nil
+              }
+              Error(_) -> Nil
+            }
+          })
+          |> dromel.add_event_listener("mouseleave", fn(ev) {
+            case dromel.cast(event.target(ev)) {
+              Ok(target) -> {
+                let _ =
+                  target
+                  |> dromel.add_style("background: transparent;")
+                Nil
+              }
+              Error(_) -> Nil
+            }
+          })
+
+        let _ = panel |> dromel.append_child(item)
+
+        // Fetch the topic name
+        audit_data.with_topic_metadata(ref_topic, fn(result) {
+          case result {
+            Ok(metadata) -> {
+              let name = audit_data.topic_metadata_highlighted_name(metadata)
+              let _ = dromel.set_inner_html(item, name)
+              Nil
+            }
+            Error(_) -> {
+              let _ = dromel.set_inner_text(item, "Unknown")
+              Nil
+            }
+          }
+        })
+      })
+    }
+  }
 }
