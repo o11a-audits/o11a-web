@@ -140,7 +140,7 @@ fn setup_view_container() {
     dromel.new_div()
     |> dromel.set_id(view_container_id)
     |> dromel.set_style(
-      "display: flex; flex: 1; min-height: 0; justify-content: center; gap: 0.5rem; padding: 0.5rem; background: var(--color-body-bg);",
+      "display: flex; flex: 1; min-height: 0; justify-content: center; gap: 0.5rem; background: var(--color-body-bg);",
     )
     |> handle_topic_view_keydown
 
@@ -195,6 +195,8 @@ fn get_current_child_topic_index(container: element.Element) -> Int {
 // View Mounting
 // ============================================================================
 
+const panel_style = "border-radius: 8px; border: 1px solid var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg);"
+
 fn mount_topic_view(
   container: element.Element,
   entry: history_graph.HistoryEntry,
@@ -205,26 +207,34 @@ fn mount_topic_view(
     |> dromel.set_data(elements.nav_entry_id, entry.id)
     |> dromel.set_class(elements.source_container_class)
     |> dromel.add_class(hidden_class)
-    |> dromel.set_style(
-      "background: var(--color-code-bg); box-sizing: border-box;",
-    )
+    |> dromel.set_style(panel_style)
+    |> dromel.add_style("height: 100%;")
     |> dromel.set_inner_html(
-      "<div style='color: var(--color-body-text);'>Loading...</div>",
+      "<div style='color: var(--color-body-text);'>Loading topic source...</div>",
     )
+
+  let view_container =
+    dromel.new_div()
+    |> dromel.set_style("position: relative; padding-top: 0.5rem;")
+    |> dromel.append_child(view_element)
 
   // Create the references panel element
   let references_panel =
     dromel.new_div()
-    |> dromel.set_style(
-      "width: 40ch; padding: 1rem; background: var(--color-code-bg); border-left: 1px solid var(--color-border); overflow-y: auto;",
-    )
-    |> dromel.set_class(hidden_class)
+    |> dromel.set_class(elements.source_container_class)
+    |> dromel.add_class(hidden_class)
+    |> dromel.set_style(panel_style)
     |> dromel.set_inner_html(
-      "<div style='color: var(--color-body-text); font-size: 0.9rem;'>Loading references...</div>",
+      "<div style='color: var(--color-body-text);'>Loading references...</div>",
     )
 
-  let _ = container |> dromel.append_child(view_element)
-  let _ = container |> dromel.append_child(references_panel)
+  let references_container =
+    dromel.new_div()
+    |> dromel.set_style("position: relative; padding-top: 0.5rem;")
+    |> dromel.append_child(references_panel)
+
+  let _ = container |> dromel.append_child(view_container)
+  let _ = container |> dromel.append_child(references_container)
 
   #(view_element, references_panel)
 }
@@ -648,12 +658,6 @@ fn populate_references_panel(
       Nil
     }
     _ -> {
-      let _ =
-        panel
-        |> dromel.set_inner_html(
-          "<div style='color: var(--color-body-text); font-size: 0.9rem; font-weight: bold; margin-bottom: 0.5rem;'>References</div>",
-        )
-
       list.each(references, fn(ref_topic) {
         let item =
           dromel.new_div()
