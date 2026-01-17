@@ -2,6 +2,7 @@ import dromel
 import gleam/dynamic/decode
 import gleam/fetch
 import gleam/http/request
+import gleam/io
 import gleam/javascript/promise
 import gleam/list
 import gleam/option.{None, Some}
@@ -70,10 +71,11 @@ pub fn with_audit_contracts(callback) {
 
       promise.await(promise, fn(contracts) {
         case contracts {
-          Ok(contracts) -> {
-            set_contracts(contracts)
-          }
-          Error(_) -> Nil
+          Ok(contracts) -> set_contracts(contracts)
+          Error(error) ->
+            snag.layer(error, "Unable to fetch contracts")
+            |> snag.line_print
+            |> io.println_error
         }
         callback(contracts)
 
@@ -431,10 +433,11 @@ pub fn with_source_text(topic: Topic, callback) {
 
       promise.await(promise, fn(source_text) {
         case source_text {
-          Ok(source_text) -> {
-            set_source_text(topic.id, source_text)
-          }
-          Error(_) -> Nil
+          Ok(source_text) -> set_source_text(topic.id, source_text)
+          Error(error) ->
+            snag.layer(error, "Unable to fetch source text")
+            |> snag.line_print
+            |> io.println_error
         }
         callback(source_text)
 
@@ -489,10 +492,7 @@ fn fetch_topic_metadata(topic: Topic) {
 
 pub fn with_topic_metadata(topic: Topic, callback) {
   case read_topic_metadata(topic.id) {
-    Ok(metadata) -> {
-      callback(Ok(metadata))
-      Nil
-    }
+    Ok(metadata) -> callback(Ok(metadata))
     Error(_) -> {
       let promise = case read_topic_metadata_promise(topic.id) {
         Ok(promise) -> promise
@@ -505,10 +505,11 @@ pub fn with_topic_metadata(topic: Topic, callback) {
 
       promise.await(promise, fn(metadata) {
         case metadata {
-          Ok(metadata) -> {
-            set_topic_metadata(topic.id, metadata)
-          }
-          Error(_) -> Nil
+          Ok(metadata) -> set_topic_metadata(topic.id, metadata)
+          Error(error) ->
+            snag.layer(error, "Unable to fetch metadata")
+            |> snag.line_print
+            |> io.println_error
         }
         callback(metadata)
 
@@ -581,10 +582,11 @@ pub fn with_in_scope_files(callback) {
 
       promise.await(promise, fn(files) {
         case files {
-          Ok(files) -> {
-            set_in_scope_files(files)
-          }
-          Error(_) -> Nil
+          Ok(files) -> set_in_scope_files(files)
+          Error(error) ->
+            snag.layer(error, "Unable to fetch in-scope files")
+            |> snag.line_print
+            |> io.println_error
         }
         callback(files |> result.unwrap([]))
 

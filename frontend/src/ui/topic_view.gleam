@@ -89,7 +89,6 @@ import history_graph
 import plinth/browser/element
 import plinth/browser/event
 import snag
-import tempo/date
 import ui/elements
 
 // ============================================================================
@@ -225,9 +224,6 @@ fn mount_topic_view(
     |> dromel.set_class(elements.source_container_class)
     |> dromel.add_class(hidden_class)
     |> dromel.set_style(panel_style)
-    |> dromel.set_inner_html(
-      "<div style='color: var(--color-body-text);'>Loading references...</div>",
-    )
 
   let references_container =
     dromel.new_div()
@@ -369,10 +365,30 @@ pub fn navigate_to_new_entry(
         },
       )
 
-      // Set if out of scope
+      // Load topic metadata and populate references panel
       audit_data.with_topic_metadata(topic, fn(metadata) {
         case metadata {
           Ok(metadata) -> {
+            // Populate references panel
+            case metadata {
+              audit_data.NamedTopic(references: references, ..) -> {
+                populate_references_panel(
+                  container,
+                  references_panel,
+                  references,
+                )
+              }
+              audit_data.UnnamedTopic(..) -> {
+                let _ =
+                  references_panel
+                  |> dromel.set_inner_html(
+                    "<div style='color: var(--color-body-text); font-size: 0.9rem;'>No references</div>",
+                  )
+                Nil
+              }
+            }
+
+            // Set if out of scope
             audit_data.with_in_scope_files(fn(in_scope_files) {
               case list.contains(in_scope_files, metadata.scope.container) {
                 True -> Nil
@@ -381,48 +397,21 @@ pub fn navigate_to_new_entry(
                     view.element,
                     "border-color: var(--color-body-out-of-scope-bg)",
                   )
-                  |> dromel.add_class(dromel.Class("out-of-scope-tmp"))
                   Nil
                 }
               }
             })
           }
-
-          Error(error) -> {
-            snag.layer(error, "Unable to fetch metadata")
-            |> snag.line_print
-            |> io.println_error
+          Error(_) -> {
+            let _ =
+              references_panel
+              |> dromel.set_inner_html(
+                "<div style='color: var(--color-body-text); font-size: 0.9rem;'>Unable to load references</div>",
+              )
+            Nil
           }
         }
       })
-
-      // Load topic metadata and populate references panel
-      audit_data.with_topic_metadata(
-        audit_data.Topic(id: new_entry.topic_id),
-        fn(result) {
-          case result {
-            Ok(audit_data.NamedTopic(references: references, ..)) -> {
-              populate_references_panel(container, references_panel, references)
-            }
-            Ok(audit_data.UnnamedTopic(..)) -> {
-              let _ =
-                references_panel
-                |> dromel.set_inner_html(
-                  "<div style='color: var(--color-body-text); font-size: 0.9rem;'>No references</div>",
-                )
-              Nil
-            }
-            Error(_) -> {
-              let _ =
-                references_panel
-                |> dromel.set_inner_html(
-                  "<div style='color: var(--color-body-text); font-size: 0.9rem;'>Unable to load references</div>",
-                )
-              Nil
-            }
-          }
-        },
-      )
     }
   }
 }

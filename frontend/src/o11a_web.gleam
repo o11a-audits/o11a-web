@@ -18,6 +18,8 @@ pub fn main() {
 
   let _ = mount_history_container()
 
+  let _ = prefetch_hot_data()
+
   window.add_event_listener("keydown", fn(event) {
     // Only handle global shortcuts when not in input context
     case modal.is_in_input_context() {
@@ -66,7 +68,7 @@ pub fn mount_history_container() {
   Ok(Nil)
 }
 
-pub fn prefetch_hot() {
+pub fn prefetch_hot_data() {
   // Prefetch audit contracts
   audit_data.with_audit_contracts(fn(contracts) {
     case contracts {
@@ -97,4 +99,7 @@ pub fn prefetch_hot() {
       }
     }
   })
+
+  // Prefetch in scope files
+  audit_data.with_in_scope_files(fn(_files) { Nil })
 }
