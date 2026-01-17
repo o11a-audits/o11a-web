@@ -89,6 +89,7 @@ import history_graph
 import plinth/browser/element
 import plinth/browser/event
 import snag
+import tempo/date
 import ui/elements
 
 // ============================================================================
@@ -367,6 +368,33 @@ pub fn navigate_to_new_entry(
           }
         },
       )
+
+      // Set if out of scope
+      audit_data.with_topic_metadata(topic, fn(metadata) {
+        case metadata {
+          Ok(metadata) -> {
+            audit_data.with_in_scope_files(fn(in_scope_files) {
+              case list.contains(in_scope_files, metadata.scope.container) {
+                True -> Nil
+                False -> {
+                  dromel.add_style(
+                    view.element,
+                    "border-color: var(--color-body-out-of-scope-bg)",
+                  )
+                  |> dromel.add_class(dromel.Class("out-of-scope-tmp"))
+                  Nil
+                }
+              }
+            })
+          }
+
+          Error(error) -> {
+            snag.layer(error, "Unable to fetch metadata")
+            |> snag.line_print
+            |> io.println_error
+          }
+        }
+      })
 
       // Load topic metadata and populate references panel
       audit_data.with_topic_metadata(

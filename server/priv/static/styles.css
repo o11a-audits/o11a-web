@@ -12,6 +12,7 @@
 :root {
   --color-brand-purple: #b490ff;
   --color-body-bg: #363b46;
+  --color-body-out-of-scope-bg: #7b3131;
   --color-body-text: #abb2bf;
   --color-body-border: #545963;
   --color-code-bg: #282c34;

@@ -5,6 +5,7 @@ import gleam/http/request
 import gleam/javascript/promise
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/string
 import plinth/browser/document
 import plinth/browser/window
@@ -565,7 +566,7 @@ fn fetch_in_scope_files() {
 pub fn with_in_scope_files(callback) {
   case read_in_scope_files() {
     Ok(files) -> {
-      callback(Ok(files))
+      callback(files)
       Nil
     }
     Error(_) -> {
@@ -585,7 +586,7 @@ pub fn with_in_scope_files(callback) {
           }
           Error(_) -> Nil
         }
-        callback(files)
+        callback(files |> result.unwrap([]))
 
         promise.resolve(Nil)
       })
