@@ -240,3 +240,33 @@ export function get_current_child_topic_index() {
 export function set_current_child_topic_index(index) {
   current_child_topic_index = index;
 }
+
+// =============================================================================
+// In Scope Files
+// =============================================================================
+
+let in_scope_files_promise;
+
+export function set_in_scope_files_promise(promise) {
+  in_scope_files_promise = promise;
+}
+
+export function get_in_scope_files_promise() {
+  if (!in_scope_files_promise) {
+    return Result$Error();
+  }
+  return Result$Ok(in_scope_files_promise);
+}
+
+let in_scope_files;
+
+export function set_in_scope_files(val) {
+  in_scope_files = val;
+}
+
+export function get_in_scope_files() {
+  if (!in_scope_files) {
+    return Result$Error();
+  }
+  return Result$Ok(in_scope_files);
+}

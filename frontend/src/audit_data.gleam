@@ -518,3 +518,79 @@ pub fn with_topic_metadata(topic: Topic, callback) {
     }
   }
 }
+
+@external(javascript, "./mem_ffi.mjs", "set_in_scope_files_promise")
+fn set_in_scope_files_promise(
+  promise: promise.Promise(Result(List(String), snag.Snag)),
+) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_in_scope_files_promise")
+fn read_in_scope_files_promise() -> Result(
+  promise.Promise(Result(List(String), snag.Snag)),
+  Nil,
+)
+
+@external(javascript, "./mem_ffi.mjs", "get_in_scope_files")
+fn read_in_scope_files() -> Result(List(String), snag.Snag)
+
+@external(javascript, "./mem_ffi.mjs", "set_in_scope_files")
+fn set_in_scope_files(files: List(String)) -> Nil
+
+fn fetch_in_scope_files() {
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/"
+      <> audit_name()
+      <> "/in_scope_files",
+    )
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_json_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  let in_scope_files =
+    decode.run(resp.body, {
+      use files <- decode.field("in_scope_files", decode.list(decode.string))
+      decode.success(files)
+    })
+    |> snag.map_error(string.inspect)
+
+  promise.resolve(in_scope_files)
+}
+
+pub fn with_in_scope_files(callback) {
+  case read_in_scope_files() {
+    Ok(files) -> {
+      callback(Ok(files))
+      Nil
+    }
+    Error(_) -> {
+      let promise = case read_in_scope_files_promise() {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_in_scope_files()
+          set_in_scope_files_promise(promise)
+          promise
+        }
+      }
+
+      promise.await(promise, fn(files) {
+        case files {
+          Ok(files) -> {
+            set_in_scope_files(files)
+          }
+          Error(_) -> Nil
+        }
+        callback(files)
+
+        promise.resolve(Nil)
+      })
+
+      Nil
+    }
+  }
+}
