@@ -22,7 +22,7 @@ pub fn audit_name() -> String {
   case get_audit_name() {
     Ok(name) -> name
     Error(Nil) -> {
-      case window.pathname() |> echo |> string.split("/") {
+      case window.pathname() |> string.split("/") {
         ["", audit_name, ..] -> {
           set_audit_name(audit_name)
           audit_name

@@ -3,6 +3,7 @@ import dromel
 import gleam/io
 import gleam/list
 import gleam/result
+import gleam/string
 import plinth/browser/event
 import plinth/browser/window
 import snag
@@ -19,6 +20,8 @@ pub fn main() {
   let _ = mount_history_container()
 
   let _ = prefetch_hot_data()
+
+  let _ = open_url()
 
   window.add_event_listener("keydown", fn(event) {
     // Only handle global shortcuts when not in input context
@@ -102,4 +105,18 @@ pub fn prefetch_hot_data() {
 
   // Prefetch in scope files
   audit_data.with_in_scope_files(fn(_files) { Nil })
+}
+
+fn open_url() {
+  case window.pathname() |> string.split("/") {
+    // URL pattern: /:audit_id/:topic_id
+    ["", _audit_id, topic_id] -> {
+      let container = topic_view.topic_view_container()
+      topic_view.navigate_to_new_entry(
+        container,
+        audit_data.Topic(id: topic_id),
+      )
+    }
+    _ -> Nil
+  }
 }
