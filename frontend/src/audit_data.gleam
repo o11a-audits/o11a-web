@@ -95,11 +95,11 @@ pub type Scope {
   Container(container: String)
   Component(container: String, component: Topic)
   Member(container: String, component: Topic, member: Topic)
-  Statement(
+  SemanticBlock(
     container: String,
     component: Topic,
     member: Topic,
-    statement: Topic,
+    semantic_block: Topic,
   )
 }
 
@@ -116,13 +116,13 @@ fn scope_decoder() -> decode.Decoder(Scope) {
     None,
     decode.optional(decode.string),
   )
-  use maybe_statement <- decode.optional_field(
-    "statement",
+  use maybe_semantic_block <- decode.optional_field(
+    "semantic_block",
     None,
     decode.optional(decode.string),
   )
 
-  case scope_type, maybe_component, maybe_member, maybe_statement {
+  case scope_type, maybe_component, maybe_member, maybe_semantic_block {
     "Container", None, None, None -> {
       decode.success(Container(container: container))
     }
@@ -139,12 +139,12 @@ fn scope_decoder() -> decode.Decoder(Scope) {
         member: Topic(id: member),
       ))
     }
-    "Statement", Some(component), Some(member), Some(statement) -> {
-      decode.success(Statement(
+    "SemanticBlock", Some(component), Some(member), Some(semantic_block) -> {
+      decode.success(SemanticBlock(
         container: container,
         component: Topic(id: component),
         member: Topic(id: member),
-        statement: Topic(id: statement),
+        semantic_block: Topic(id: semantic_block),
       ))
     }
     _, _, _, _ -> decode.failure(Container(container: ""), "Scope")
@@ -179,9 +179,33 @@ pub type NamedTopicKind {
 }
 
 pub type UnnamedTopicKind {
-  OperatorInvocation
+  VariableMutation
+  Arithmetic
+  Comparison
+  Logical
+  Bitwise
+  Conditional
+  FunctionCall
+  TypeConversion
+  StructConstruction
+  NewExpression
+  UnnamedSemanticBlock
+  Break
+  Continue
+  DoWhile
+  Emit
+  For
+  If
+  InlineAssembly
+  Placeholder
+  Return
+  Revert
+  Try
+  UncheckedBlock
+  While
   DocumentationSection
   DocumentationParagraph
+  Other
 }
 
 fn named_topic_kind_decoder() -> decode.Decoder(NamedTopicKind) {
@@ -223,10 +247,34 @@ fn unnamed_topic_kind_decoder() -> decode.Decoder(UnnamedTopicKind) {
   use kind_str <- decode.field("kind", decode.string)
 
   case kind_str {
-    "OperatorInvocation" -> decode.success(OperatorInvocation)
+    "VariableMutation" -> decode.success(VariableMutation)
+    "Arithmetic" -> decode.success(Arithmetic)
+    "Comparison" -> decode.success(Comparison)
+    "Logical" -> decode.success(Logical)
+    "Bitwise" -> decode.success(Bitwise)
+    "Conditional" -> decode.success(Conditional)
+    "FunctionCall" -> decode.success(FunctionCall)
+    "TypeConversion" -> decode.success(TypeConversion)
+    "StructConstruction" -> decode.success(StructConstruction)
+    "NewExpression" -> decode.success(NewExpression)
+    "SemanticBlock" -> decode.success(UnnamedSemanticBlock)
+    "Break" -> decode.success(Break)
+    "Continue" -> decode.success(Continue)
+    "DoWhile" -> decode.success(DoWhile)
+    "Emit" -> decode.success(Emit)
+    "For" -> decode.success(For)
+    "If" -> decode.success(If)
+    "InlineAssembly" -> decode.success(InlineAssembly)
+    "Placeholder" -> decode.success(Placeholder)
+    "Return" -> decode.success(Return)
+    "Revert" -> decode.success(Revert)
+    "Try" -> decode.success(Try)
+    "UncheckedBlock" -> decode.success(UncheckedBlock)
+    "While" -> decode.success(While)
     "DocumentationSection" -> decode.success(DocumentationSection)
     "DocumentationParagraph" -> decode.success(DocumentationParagraph)
-    _ -> decode.failure(DocumentationParagraph, "UnnamedTopicKind")
+    "Other" -> decode.success(Other)
+    _ -> decode.failure(Other, "UnnamedTopicKind")
   }
 }
 
@@ -277,7 +325,7 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
 pub fn topic_metadata_name(metadata: TopicMetadata) -> String {
   case metadata {
     NamedTopic(name:, ..) -> name
-    UnnamedTopic(kind:, ..) -> unnamed_topic_kind_to_string(kind)
+    UnnamedTopic(topic:, ..) -> topic.id
   }
 }
 
@@ -306,15 +354,36 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
           "<span class=\"state-variable\">" <> name <> "</span>"
         LocalVariable -> "<span class=\"identifier\">" <> name <> "</span>"
       }
-    UnnamedTopic(kind:, ..) -> unnamed_topic_kind_to_string(kind)
-  }
-}
-
-fn unnamed_topic_kind_to_string(kind: UnnamedTopicKind) -> String {
-  case kind {
-    OperatorInvocation -> "operator invocation"
-    DocumentationSection -> "documentation section"
-    DocumentationParagraph -> "documentation paragraph"
+    UnnamedTopic(kind:, ..) ->
+      case kind {
+        VariableMutation -> "<span class=\"keyword\">MutationStatement</span>"
+        Arithmetic -> "<span class=\"operator\">ArithmeticExpression</span>"
+        Comparison -> "<span class=\"operator\">ComparisonExpression</span>"
+        Logical -> "<span class=\"operator\">BooleanExpression</span>"
+        Bitwise -> "<span class=\"operator\">BitwiseExpression</span>"
+        Conditional -> "<span class=\"keyword\">ConditionalStatement</span>"
+        FunctionCall -> "<span class=\"function\">FunctionCall</span>"
+        TypeConversion -> "<span class=\"operator\">TypeConversion</span>"
+        StructConstruction -> "<span class=\"struct\">StructConstruction</span>"
+        NewExpression -> "<span class=\"keyword\">NewExpression</span>"
+        UnnamedSemanticBlock -> "<span class=\"block\">Block</span>"
+        Break -> "<span class=\"keyword\">BreakStatement</span>"
+        Continue -> "<span class=\"keyword\">ContinueStatement</span>"
+        DoWhile -> "<span class=\"keyword\">DoWhileStatement</span>"
+        Emit -> "<span class=\"keyword\">EmitStatement</span>"
+        For -> "<span class=\"keyword\">ForStatement</span>"
+        If -> "<span class=\"keyword\">IfStatement</span>"
+        InlineAssembly -> "<span class=\"keyword\">InlineAssembly</span>"
+        Placeholder -> "<span class=\"keyword\">PlaceholderStatement</span>"
+        Return -> "<span class=\"keyword\">ReturnStatement</span>"
+        Revert -> "<span class=\"keyword\">RevertStatement</span>"
+        Try -> "<span class=\"keyword\">TryStatement</span>"
+        UncheckedBlock -> "<span class=\"keyword\">UncheckedBlock</span>"
+        While -> "<span class=\"keyword\">WhileStatement</span>"
+        DocumentationSection -> "<span>DocumentationSection</span>"
+        DocumentationParagraph -> "<span>DocumentationParagraph</span>"
+        Other -> "<span>Other</span>"
+      }
   }
 }
 
@@ -507,7 +576,7 @@ pub fn with_topic_metadata(topic: Topic, callback) {
         case metadata {
           Ok(metadata) -> set_topic_metadata(topic.id, metadata)
           Error(error) ->
-            snag.layer(error, "Unable to fetch metadata")
+            snag.layer(error, "Unable to fetch metadata for topic " <> topic.id)
             |> snag.line_print
             |> io.println_error
         }

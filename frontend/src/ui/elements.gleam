@@ -16,4 +16,6 @@ pub const nav_entry_id = dromel.DataKey(key: "entry-id")
 
 pub const token_topic_id_key = dromel.DataKey(key: "topic")
 
-pub const source_topic_tokens = dromel.Selector(selector: "span[data-topic]")
+pub const source_topic_tokens = dromel.Selector(
+  selector: "div[data-topic], span[data-topic]",
+)
