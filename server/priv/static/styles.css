@@ -235,3 +235,12 @@ code::selection,
 .hidden {
   display: none;
 }
+
+[data-topic]:focus {
+  outline: none;
+  background-color: var(--color-code-selection-bg);
+  border-radius: 4px;
+}
+span[data-topic]:focus {
+  text-decoration: underline;
+}

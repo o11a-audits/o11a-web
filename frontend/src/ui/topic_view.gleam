@@ -99,9 +99,11 @@ pub type TopicView {
   TopicView(
     entry_id: String,
     topic_id: String,
-    element: element.Element,
+    topic_panel: element.Element,
+    topic_container: element.Element,
     references_panel: element.Element,
-    children_topic_tokens: array.Array(element.Element),
+    references_container: element.Element,
+    topic_children_tokens: array.Array(element.Element),
   )
 }
 
@@ -195,45 +197,50 @@ fn get_current_child_topic_index(container: element.Element) -> Int {
 // View Mounting
 // ============================================================================
 
-const panel_style = "border-radius: 8px; border: 1px solid var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg);"
+const panel_style = "border-radius: 8px; border: 1px solid var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg); max-height: 100%;"
 
-fn mount_topic_view(
-  container: element.Element,
-  entry: history_graph.HistoryEntry,
-) -> #(element.Element, element.Element) {
+fn mount_topic_view(container: element.Element) {
   // Create the source view element
-  let view_element =
+  let topic_panel =
     dromel.new_div()
-    |> dromel.set_data(elements.nav_entry_id, entry.id)
     |> dromel.set_class(elements.source_container_class)
-    |> dromel.add_class(hidden_class)
     |> dromel.set_style(panel_style)
-    |> dromel.add_style("height: 100%;")
     |> dromel.set_inner_html(
       "<div style='color: var(--color-body-text);'>Loading topic source...</div>",
     )
 
-  let view_container =
+  let topic_title =
+    dromel.new_div()
+    |> dromel.set_inner_text("Topic")
+    |> dromel.set_style("padding-left: 0.5rem; margin-bottom: 0.5rem;")
+
+  let topic_container =
     dromel.new_div()
     |> dromel.set_style("position: relative; padding-top: 0.5rem;")
-    |> dromel.append_child(view_element)
+    |> dromel.append_child(topic_title)
+    |> dromel.append_child(topic_panel)
 
   // Create the references panel element
   let references_panel =
     dromel.new_div()
     |> dromel.set_class(elements.source_container_class)
-    |> dromel.add_class(hidden_class)
     |> dromel.set_style(panel_style)
+
+  let references_title =
+    dromel.new_div()
+    |> dromel.set_inner_text("References")
+    |> dromel.set_style("padding-left: 0.5rem; margin-bottom: 0.5rem;")
 
   let references_container =
     dromel.new_div()
     |> dromel.set_style("position: relative; padding-top: 0.5rem;")
+    |> dromel.append_child(references_title)
     |> dromel.append_child(references_panel)
 
-  let _ = container |> dromel.append_child(view_container)
+  let _ = container |> dromel.append_child(topic_container)
   let _ = container |> dromel.append_child(references_container)
 
-  #(view_element, references_panel)
+  #(topic_panel, topic_container, references_panel, references_container)
 }
 
 // ============================================================================
@@ -243,14 +250,14 @@ fn mount_topic_view(
 const hidden_class = dromel.Class("hidden")
 
 fn show_view(view: TopicView) -> Nil {
-  let _ = view.element |> dromel.remove_class(hidden_class)
-  let _ = view.references_panel |> dromel.remove_class(hidden_class)
+  let _ = view.topic_container |> dromel.remove_class(hidden_class)
+  let _ = view.references_container |> dromel.remove_class(hidden_class)
   Nil
 }
 
 fn hide_view(view: TopicView) -> Nil {
-  let _ = view.element |> dromel.add_class(hidden_class)
-  let _ = view.references_panel |> dromel.add_class(hidden_class)
+  let _ = view.topic_container |> dromel.add_class(hidden_class)
+  let _ = view.references_container |> dromel.add_class(hidden_class)
   Nil
 }
 
@@ -298,17 +305,23 @@ pub fn navigate_to_new_entry(
       }
 
       // Create new view
-      let #(view_element, references_panel) =
-        mount_topic_view(container, new_entry)
+      let #(
+        topic_panel,
+        topic_container,
+        references_panel,
+        references_container,
+      ) = mount_topic_view(container)
 
       // Initialize view state
       let view =
         TopicView(
           entry_id: new_entry.id,
           topic_id: new_entry.topic_id,
-          element: view_element,
-          references_panel: references_panel,
-          children_topic_tokens: array.from_list([]),
+          topic_panel:,
+          topic_container:,
+          references_panel:,
+          references_container:,
+          topic_children_tokens: array.from_list([]),
         )
       set_topic_view(new_entry.id, view)
 
@@ -330,17 +343,17 @@ pub fn navigate_to_new_entry(
         fn(result) {
           case result {
             Ok(source_text) -> {
-              let _ = view.element |> dromel.set_inner_html(source_text)
+              let _ = view.topic_panel |> dromel.set_inner_html(source_text)
 
               let children =
                 dromel.query_element_all(
-                  view.element,
+                  view.topic_panel,
                   elements.source_topic_tokens,
                 )
 
               set_topic_view(
                 new_entry.id,
-                TopicView(..view, children_topic_tokens: children),
+                TopicView(..view, topic_children_tokens: children),
               )
 
               let _ = array.get(children, 0) |> result.map(dromel.focus)
@@ -350,7 +363,7 @@ pub fn navigate_to_new_entry(
 
             Error(error) -> {
               let _ =
-                view.element
+                view.topic_panel
                 |> dromel.set_inner_html(
                   "<div style='color: var(--color-body-text); padding: 1rem;'>"
                   <> error
@@ -394,7 +407,7 @@ pub fn navigate_to_new_entry(
                 True -> Nil
                 False -> {
                   dromel.add_style(
-                    view.element,
+                    view.topic_panel,
                     "border-color: var(--color-body-out-of-scope-bg)",
                   )
                   Nil
@@ -462,7 +475,7 @@ pub fn navigate_back(container) -> Nil {
               )
 
               let _ =
-                array.get(parent_view.children_topic_tokens, child_topic_index)
+                array.get(parent_view.topic_children_tokens, child_topic_index)
                 |> result.map(dromel.focus)
 
               Nil
@@ -517,7 +530,7 @@ pub fn navigate_forward(container) -> Nil {
               )
 
               let _ =
-                array.get(child_view.children_topic_tokens, child_topic_index)
+                array.get(child_view.topic_children_tokens, child_topic_index)
                 |> result.map(dromel.focus)
               Nil
             }
@@ -554,7 +567,7 @@ fn handle_topic_view_keydown(container) {
           Ok(view) -> {
             case
               array.get(
-                view.children_topic_tokens,
+                view.topic_children_tokens,
                 get_current_child_topic_index(container),
               )
               |> result.try(dromel.get_data(_, topic_key))
@@ -585,7 +598,7 @@ fn handle_topic_view_keydown(container) {
           Ok(view) -> {
             let new_index = get_current_child_topic_index(container) + 1
 
-            case view.children_topic_tokens |> array.get(new_index) {
+            case view.topic_children_tokens |> array.get(new_index) {
               Ok(el) -> {
                 dromel.focus(el)
                 set_current_child_topic_index(container, new_index)
@@ -611,7 +624,7 @@ fn handle_topic_view_keydown(container) {
           Ok(view) -> {
             let new_index = get_current_child_topic_index(container) - 1
 
-            case view.children_topic_tokens |> array.get(new_index) {
+            case view.topic_children_tokens |> array.get(new_index) {
               Ok(el) -> {
                 dromel.focus(el)
                 set_current_child_topic_index(container, new_index)
