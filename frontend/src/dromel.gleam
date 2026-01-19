@@ -272,3 +272,13 @@ pub fn query_document_all(ref: ElementRef) {
 pub fn cast(target: dynamic.Dynamic) -> Result(Element, decode.DecodeError) {
   element.cast(target)
 }
+
+// ============================================================================
+// Scroll Position
+// ============================================================================
+
+@external(javascript, "./dromel_ffi.mjs", "get_scroll_top")
+pub fn get_scroll_top(elem: Element) -> Float
+
+@external(javascript, "./dromel_ffi.mjs", "set_scroll_top")
+pub fn set_scroll_top(elem: Element, value: Float) -> Nil

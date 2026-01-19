@@ -11,3 +11,11 @@ export function element_query_selector(element, selector) {
 export function element_query_selector_all(element, selector) {
   return element.querySelectorAll(selector);
 }
+
+export function get_scroll_top(element) {
+  return element.scrollTop;
+}
+
+export function set_scroll_top(element, value) {
+  element.scrollTop = value;
+}

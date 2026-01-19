@@ -214,6 +214,24 @@ export function set_active_topic_view_id(id) {
   active_topic_view_id = id;
 }
 
+// Active view elements (transient DOM elements for the currently displayed view)
+let active_view_elements = null;
+
+export function get_active_view_elements() {
+  if (!active_view_elements) {
+    return Result$Error();
+  }
+  return Result$Ok(active_view_elements);
+}
+
+export function set_active_view_elements(elements) {
+  active_view_elements = elements;
+}
+
+export function clear_active_view_elements() {
+  active_view_elements = null;
+}
+
 // =============================================================================
 // Topic View
 // =============================================================================
