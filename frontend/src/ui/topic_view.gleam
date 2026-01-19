@@ -117,9 +117,16 @@ pub fn set_history_container(container: element.Element) -> Nil
 @external(javascript, "../mem_ffi.mjs", "get_history_container")
 fn get_history_container_ffi() -> Result(element.Element, Nil)
 
+@external(javascript, "../mem_ffi.mjs", "replace_url")
+fn replace_url(url: String) -> Nil
+
 fn get_history_container() {
   let assert Ok(container) = get_history_container_ffi()
   container
+}
+
+fn update_url_for_topic(topic_id: String) -> Nil {
+  replace_url("/" <> audit_data.audit_name() <> "/" <> topic_id)
 }
 
 @external(javascript, "../mem_ffi.mjs", "set_topic_view_container")
@@ -330,6 +337,9 @@ pub fn navigate_to_new_entry(
       set_current_child_topic_index(container, 0)
       show_view(view)
 
+      // Update the URL to reflect the active topic
+      update_url_for_topic(new_entry.topic_id)
+
       // Update the breadcrumb
       history_graph.mount_history_breadcrumb(
         get_history_container(),
@@ -468,6 +478,9 @@ pub fn navigate_back(container) -> Nil {
               set_current_child_topic_index(container, child_topic_index)
               show_view(parent_view)
 
+              // Update the URL to reflect the active topic
+              update_url_for_topic(parent_entry.topic_id)
+
               history_graph.mount_history_breadcrumb(
                 get_history_container(),
                 parent_entry,
@@ -522,6 +535,9 @@ pub fn navigate_forward(container) -> Nil {
               set_active_topic_view(container, child_view)
               set_current_child_topic_index(container, child_topic_index)
               show_view(child_view)
+
+              // Update the URL to reflect the active topic
+              update_url_for_topic(child_entry.topic_id)
 
               history_graph.mount_history_breadcrumb(
                 get_history_container(),

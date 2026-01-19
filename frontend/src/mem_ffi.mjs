@@ -270,3 +270,11 @@ export function get_in_scope_files() {
   }
   return Result$Ok(in_scope_files);
 }
+
+// =============================================================================
+// URL Management
+// =============================================================================
+
+export function replace_url(url) {
+  window.history.replaceState(null, "", url);
+}
