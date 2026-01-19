@@ -85,6 +85,7 @@ import gleam/int
 import gleam/io
 import gleam/javascript/array
 import gleam/list
+import gleam/option
 import gleam/result
 import history_graph
 import plinth/browser/element
@@ -108,6 +109,10 @@ pub type TopicView {
 
 type ActiveViewElements {
   ActiveViewElements(
+    previous_topic_title: element.Element,
+    previous_topic_panel: element.Element,
+    previous_topic_container: element.Element,
+    topic_title: element.Element,
     topic_panel: element.Element,
     topic_container: element.Element,
     references_panel: element.Element,
@@ -224,7 +229,30 @@ fn get_current_child_topic_index(container: element.Element) -> Int {
 
 const panel_style = "border-radius: 8px; border: 1px solid var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg); max-height: 100%;"
 
+const title_style = "position: absolute; bottom: -1rem; right: 0.5rem;"
+
+const previous_topic_base_title = "Previous Topic"
+
+const current_topic_base_title = "Current Topic"
+
 fn mount_topic_view(container: element.Element) -> ActiveViewElements {
+  // Create the previous topic panel element (muted border)
+  let previous_topic_panel =
+    dromel.new_div()
+    |> dromel.set_class(elements.source_container_class)
+    |> dromel.set_style(panel_style)
+
+  let previous_topic_title =
+    dromel.new_div()
+    |> dromel.set_inner_text("Previous Topic")
+    |> dromel.set_style(title_style)
+
+  let previous_topic_container =
+    dromel.new_div()
+    |> dromel.set_style("position: relative; padding-top: 0.5rem;")
+    |> dromel.append_child(previous_topic_title)
+    |> dromel.append_child(previous_topic_panel)
+
   // Create the source view element
   let topic_panel =
     dromel.new_div()
@@ -234,9 +262,15 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
       "<div style='color: var(--color-body-text);'>Loading topic source...</div>",
     )
 
+  let topic_title =
+    dromel.new_div()
+    |> dromel.set_inner_text("Current Topic")
+    |> dromel.set_style(title_style)
+
   let topic_container =
     dromel.new_div()
     |> dromel.set_style("position: relative; padding-top: 0.5rem;")
+    |> dromel.append_child(topic_title)
     |> dromel.append_child(topic_panel)
 
   // Create the references panel element
@@ -248,7 +282,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
   let references_title =
     dromel.new_div()
     |> dromel.set_inner_text("References")
-    |> dromel.set_style("padding-left: 0.5rem; margin-bottom: 0.5rem;")
+    |> dromel.set_style(title_style)
 
   let references_container =
     dromel.new_div()
@@ -256,11 +290,16 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
     |> dromel.append_child(references_title)
     |> dromel.append_child(references_panel)
 
+  let _ = container |> dromel.append_child(previous_topic_container)
   let _ = container |> dromel.append_child(topic_container)
   let _ = container |> dromel.append_child(references_container)
 
   let elements =
     ActiveViewElements(
+      previous_topic_title:,
+      previous_topic_panel:,
+      previous_topic_container:,
+      topic_title:,
       topic_panel:,
       topic_container:,
       references_panel:,
@@ -283,6 +322,7 @@ fn remove_active_view(container: element.Element) -> Nil {
       set_topic_view(view.entry_id, updated_view)
 
       // Remove DOM elements
+      let _ = dromel.remove(elements.previous_topic_container)
       let _ = dromel.remove(elements.topic_container)
       let _ = dromel.remove(elements.references_container)
 
@@ -301,6 +341,7 @@ fn remove_active_view(container: element.Element) -> Nil {
 /// Callback for loading source text into a new view (scroll position 0, focus first child)
 fn on_source_text_loaded_new(
   elements: ActiveViewElements,
+  topic: audit_data.Topic,
 ) -> fn(Result(String, snag.Snag)) -> Nil {
   fn(result) {
     case result {
@@ -318,6 +359,13 @@ fn on_source_text_loaded_new(
         )
 
         let _ = array.get(children, 0) |> result.map(dromel.focus)
+
+        // Update the title with the topic name
+        update_title_with_topic_name(
+          elements.topic_title,
+          current_topic_base_title,
+          topic,
+        )
 
         Nil
       }
@@ -344,6 +392,7 @@ fn on_source_text_loaded_restore(
   elements: ActiveViewElements,
   scroll_position: Float,
   child_topic_index: Int,
+  topic: audit_data.Topic,
 ) -> fn(Result(String, snag.Snag)) -> Nil {
   fn(result) {
     case result {
@@ -365,6 +414,13 @@ fn on_source_text_loaded_restore(
 
         let _ =
           array.get(children, child_topic_index) |> result.map(dromel.focus)
+
+        // Update the title with the topic name
+        update_title_with_topic_name(
+          elements.topic_title,
+          current_topic_base_title,
+          topic,
+        )
 
         Nil
       }
@@ -437,6 +493,119 @@ fn on_topic_metadata_loaded(
   }
 }
 
+/// Callback for loading source text into the previous topic panel
+fn on_previous_source_text_loaded(
+  elements: ActiveViewElements,
+  child_topic_index: Int,
+  scroll_position: Float,
+  topic: audit_data.Topic,
+) -> fn(Result(String, snag.Snag)) -> Nil {
+  fn(result) {
+    case result {
+      Ok(source_text) -> {
+        let _ =
+          elements.previous_topic_panel |> dromel.set_inner_html(source_text)
+        dromel.set_scroll_top(elements.previous_topic_panel, scroll_position)
+
+        // Highlight the previous topic index
+        let _ =
+          dromel.query_element_all(
+            elements.previous_topic_panel,
+            elements.source_topic_tokens,
+          )
+          |> array.get(child_topic_index)
+          |> result.map(fn(element) {
+            element |> dromel.add_style("text-decoration: underline;")
+          })
+
+        // Update the title with the topic name
+        update_title_with_topic_name(
+          elements.previous_topic_title,
+          previous_topic_base_title,
+          topic,
+        )
+
+        Nil
+      }
+      Error(_) -> {
+        // Silently fail - previous topic panel is optional
+        Nil
+      }
+    }
+  }
+}
+
+/// Load the previous topic panel content based on the parent entry in history
+fn load_previous_topic_panel(
+  entry_id: String,
+  elements: ActiveViewElements,
+) -> Nil {
+  case history_graph.get_history_entry(entry_id) {
+    Error(Nil) -> set_no_previous_topic(elements)
+    Ok(entry) ->
+      case entry.parent {
+        option.None -> set_no_previous_topic(elements)
+        option.Some(history_graph.Relative(id: parent_id, child_topic_index:)) ->
+          case history_graph.get_history_entry(parent_id) {
+            Error(Nil) -> set_no_previous_topic(elements)
+            Ok(parent_entry) -> {
+              // Get the stored scroll position for the parent view
+              let scroll_position = case get_topic_view(parent_entry.id) {
+                Ok(parent_view) -> parent_view.scroll_position
+                Error(Nil) -> 0.0
+              }
+
+              let topic = audit_data.Topic(id: parent_entry.topic_id)
+              audit_data.with_source_text(
+                topic,
+                on_previous_source_text_loaded(
+                  elements,
+                  child_topic_index,
+                  scroll_position,
+                  topic,
+                ),
+              )
+            }
+          }
+      }
+  }
+}
+
+fn set_no_previous_topic(elements: ActiveViewElements) -> Nil {
+  let _ =
+    elements.previous_topic_panel
+    |> dromel.set_inner_html(
+      "<div style='color: var(--color-body-text); font-size: 0.9rem;'>No previous topic</div>",
+    )
+  let _ =
+    elements.previous_topic_title
+    |> dromel.set_inner_text("Previous Topic")
+  Nil
+}
+
+/// Update a title element with the format "[TITLE] - [TOPIC NAME]"
+fn update_title_with_topic_name(
+  title_element: element.Element,
+  base_title: String,
+  topic: audit_data.Topic,
+) -> Nil {
+  audit_data.with_topic_metadata(topic, fn(result) {
+    case result {
+      Ok(metadata) -> {
+        let name = audit_data.topic_metadata_highlighted_name(metadata)
+        let _ =
+          title_element
+          |> dromel.set_inner_html(base_title <> " - " <> name)
+        Nil
+      }
+      Error(_) -> {
+        let _ = title_element |> dromel.set_inner_text(base_title)
+        Nil
+      }
+    }
+  })
+}
+
 // ============================================================================
 // Public API
 // ============================================================================
@@ -506,10 +675,13 @@ pub fn navigate_to_new_entry(
         populate_topic_name,
       )
 
+      // Load previous topic panel content
+      load_previous_topic_panel(new_entry.id, elements)
+
       // Load source text
       audit_data.with_source_text(
         audit_data.Topic(id: new_entry.topic_id),
-        on_source_text_loaded_new(elements),
+        on_source_text_loaded_new(elements, topic),
       )
 
       // Load topic metadata and populate references panel
@@ -572,19 +744,24 @@ pub fn navigate_back(container) -> Nil {
                 populate_topic_name,
               )
 
+              // Load previous topic panel content
+              load_previous_topic_panel(parent_entry.id, elements)
+
               // Load source text and restore scroll position
+              let parent_topic = audit_data.Topic(id: parent_entry.topic_id)
               audit_data.with_source_text(
-                audit_data.Topic(id: parent_entry.topic_id),
+                parent_topic,
                 on_source_text_loaded_restore(
                   elements,
                   parent_view.scroll_position,
                   child_topic_index,
+                  parent_topic,
                 ),
               )
 
               // Load topic metadata and populate references panel
               audit_data.with_topic_metadata(
-                audit_data.Topic(id: parent_entry.topic_id),
+                parent_topic,
                 on_topic_metadata_loaded(container, elements),
               )
 
@@ -643,19 +820,24 @@ pub fn navigate_forward(container) -> Nil {
                 populate_topic_name,
               )
 
+              // Load previous topic panel content
+              load_previous_topic_panel(child_entry.id, elements)
+
               // Load source text and restore scroll position
+              let child_topic = audit_data.Topic(id: child_entry.topic_id)
               audit_data.with_source_text(
-                audit_data.Topic(id: child_entry.topic_id),
+                child_topic,
                 on_source_text_loaded_restore(
                   elements,
                   child_view.scroll_position,
                   child_topic_index,
+                  child_topic,
                 ),
               )
 
               // Load topic metadata and populate references panel
               audit_data.with_topic_metadata(
-                audit_data.Topic(id: child_entry.topic_id),
+                child_topic,
                 on_topic_metadata_loaded(container, elements),
               )
 

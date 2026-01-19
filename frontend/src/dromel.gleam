@@ -188,6 +188,9 @@ pub fn set_inner_html(elem: Element, html: String) -> Element {
   elem
 }
 
+@external(javascript, "./dromel_ffi.mjs", "get_inner_html")
+pub fn get_inner_html(elem: Element) -> String
+
 pub fn set_inner_text(elem: Element, text: String) -> Element {
   element.set_inner_text(elem, text)
   elem

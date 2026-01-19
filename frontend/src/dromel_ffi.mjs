@@ -19,3 +19,7 @@ export function get_scroll_top(element) {
 export function set_scroll_top(element, value) {
   element.scrollTop = value;
 }
+
+export function get_inner_html(element) {
+  return element.innerHTML;
+}

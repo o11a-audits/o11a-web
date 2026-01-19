@@ -14,7 +14,7 @@ import ui/icons
 // =============================================================================
 
 pub type Relative {
-  Relative(id: String, child_topic_number: Int)
+  Relative(id: String, child_topic_index: Int)
 }
 
 pub type HistoryEntry {
@@ -68,7 +68,7 @@ pub fn go_to_new_entry(
           topic_id: new_topic.id,
           parent: Some(Relative(
             id: current_entry_id,
-            child_topic_number: current_child_topic_number,
+            child_topic_index: current_child_topic_number,
           )),
           children: [],
         )
@@ -76,7 +76,7 @@ pub fn go_to_new_entry(
       // Update current entry to add child
       let updated_current_entry =
         HistoryEntry(..current_entry, children: [
-          Relative(id: new_entry_id, child_topic_number: 0),
+          Relative(id: new_entry_id, child_topic_index: 0),
           ..current_entry.children
         ])
 
@@ -100,11 +100,11 @@ pub fn go_back(
     Ok(entry) ->
       case entry.parent {
         None -> snag.error("Already at root, cannot go back")
-        Some(Relative(id: parent_id, child_topic_number: child_num)) ->
+        Some(Relative(id: parent_id, child_topic_index:)) ->
           case get_history_entry(parent_id) {
             Error(Nil) -> snag.error("Failed to read parent history entry")
             Ok(parent_entry) -> {
-              Ok(#(parent_entry, child_num))
+              Ok(#(parent_entry, child_topic_index))
             }
           }
       }
@@ -125,7 +125,7 @@ pub fn go_forward(
           case get_history_entry(first_child.id) {
             Error(Nil) -> snag.error("Failed to read child history entry")
             Ok(child_entry) -> {
-              Ok(#(child_entry, first_child.child_topic_number))
+              Ok(#(child_entry, first_child.child_topic_index))
             }
           }
       }
@@ -143,7 +143,7 @@ pub fn go_forward_to_branch(
     Ok(entry) -> {
       case get_child_at_index(entry.children, child_index) {
         Error(Nil) -> snag.error("Child index out of bounds")
-        Ok(child) -> Ok(#(child.id, child.child_topic_number))
+        Ok(child) -> Ok(#(child.id, child.child_topic_index))
       }
     }
   }
