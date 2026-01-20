@@ -92,6 +92,7 @@ import plinth/browser/element
 import plinth/browser/event
 import snag
 import ui/elements
+import ui/icons
 
 // ============================================================================
 // Topic View State
@@ -109,10 +110,10 @@ pub type TopicView {
 
 type ActiveViewElements {
   ActiveViewElements(
-    previous_topic_title: element.Element,
+    previous_topic_scope: element.Element,
     previous_topic_panel: element.Element,
     previous_topic_container: element.Element,
-    topic_title: element.Element,
+    topic_scope: element.Element,
     topic_panel: element.Element,
     topic_container: element.Element,
     references_panel: element.Element,
@@ -229,13 +230,9 @@ fn get_current_child_topic_index(container: element.Element) -> Int {
 
 const panel_style = "border-radius: 8px; border: 1px solid var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg); max-height: 100%;"
 
-const title_style = "margin-left: 0.5rem; margin-bottom: 0.5rem;"
+const scope_style = "display: inline-flex; align-items: center; gap: 0.25rem; margin-left: 0.5rem; margin-bottom: 0.5rem; direction: rtl; overflow: hidden; max-width: 40ch;"
 
 const footer_style = "position: absolute; bottom: -1rem; right: 0.5rem;"
-
-const previous_topic_base_title = "Previous Topic"
-
-const current_topic_base_title = "Current Topic"
 
 fn mount_topic_view(container: element.Element) -> ActiveViewElements {
   // Create the previous topic panel element (muted border)
@@ -244,10 +241,9 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
     |> dromel.set_class(elements.source_container_class)
     |> dromel.set_style(panel_style)
 
-  let previous_topic_title =
+  let previous_topic_scope =
     dromel.new_div()
-    |> dromel.set_inner_text("Previous Topic")
-    |> dromel.set_style(title_style)
+    |> dromel.set_style(scope_style)
 
   let previous_topic_footer =
     dromel.new_div()
@@ -257,7 +253,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
   let previous_topic_container =
     dromel.new_div()
     |> dromel.set_style("position: relative; padding-top: 0.5rem;")
-    |> dromel.append_child(previous_topic_title)
+    |> dromel.append_child(previous_topic_scope)
     |> dromel.append_child(previous_topic_panel)
     |> dromel.append_child(previous_topic_footer)
 
@@ -270,10 +266,9 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
       "<div style='color: var(--color-body-text);'>Loading topic source...</div>",
     )
 
-  let topic_title =
+  let topic_scope =
     dromel.new_div()
-    |> dromel.set_inner_text("Current Topic")
-    |> dromel.set_style(title_style)
+    |> dromel.set_style(scope_style)
 
   let topic_footer =
     dromel.new_div()
@@ -283,7 +278,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
   let topic_container =
     dromel.new_div()
     |> dromel.set_style("position: relative; padding-top: 0.5rem;")
-    |> dromel.append_child(topic_title)
+    |> dromel.append_child(topic_scope)
     |> dromel.append_child(topic_panel)
     |> dromel.append_child(topic_footer)
 
@@ -314,10 +309,10 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
 
   let elements =
     ActiveViewElements(
-      previous_topic_title:,
+      previous_topic_scope:,
       previous_topic_panel:,
       previous_topic_container:,
-      topic_title:,
+      topic_scope:,
       topic_panel:,
       topic_container:,
       references_panel:,
@@ -378,12 +373,8 @@ fn on_source_text_loaded_new(
 
         let _ = array.get(children, 0) |> result.map(dromel.focus)
 
-        // Update the title with the topic name
-        update_title_with_topic_name(
-          elements.topic_title,
-          current_topic_base_title,
-          topic,
-        )
+        // Update the scope breadcrumb
+        populate_topic_scope(elements.topic_scope, topic)
 
         Nil
       }
@@ -433,12 +424,8 @@ fn on_source_text_loaded_restore(
         let _ =
           array.get(children, child_topic_index) |> result.map(dromel.focus)
 
-        // Update the title with the topic name
-        update_title_with_topic_name(
-          elements.topic_title,
-          current_topic_base_title,
-          topic,
-        )
+        // Update the scope breadcrumb
+        populate_topic_scope(elements.topic_scope, topic)
 
         Nil
       }
@@ -531,12 +518,8 @@ fn on_previous_source_text_loaded(
             element |> dromel.add_style("text-decoration: underline;")
           })
 
-        // Update the title with the topic name
-        update_title_with_topic_name(
-          elements.previous_topic_title,
-          previous_topic_base_title,
-          topic,
-        )
+        // Update the scope breadcrumb
+        populate_topic_scope(elements.previous_topic_scope, topic)
 
         Nil
       }
@@ -590,29 +573,118 @@ fn set_no_previous_topic(elements: ActiveViewElements) -> Nil {
     |> dromel.set_inner_html(
       "<div style='color: var(--color-body-text); font-size: 0.9rem;'>No previous topic</div>",
     )
-  let _ =
-    elements.previous_topic_title
-    |> dromel.set_inner_text("Previous Topic")
+  let _ = elements.previous_topic_scope |> dromel.set_inner_html("")
   Nil
 }
 
-/// Update a title element with the format "[TITLE] - [TOPIC NAME]"
-fn update_title_with_topic_name(
-  title_element: element.Element,
-  base_title: String,
+// ============================================================================
+// Topic Scope Breadcrumb
+// ============================================================================
+
+const scope_item_style = "color: var(--color-body-text); white-space: nowrap;"
+
+const scope_chevron_style = "display: inline-flex; align-items: center; opacity: 0.6; width: 0.75em; height: 0.75em; line-height: 1; flex-shrink: 0;"
+
+/// Populate a scope container with a breadcrumb showing Component > Member > Name
+fn populate_topic_scope(
+  scope_container: element.Element,
   topic: audit_data.Topic,
 ) -> Nil {
   audit_data.with_topic_metadata(topic, fn(result) {
     case result {
       Ok(metadata) -> {
-        let name = audit_data.topic_metadata_highlighted_name(metadata)
+        mount_scope_breadcrumb(scope_container, metadata)
+      }
+      Error(_) -> {
+        let _ = dromel.set_inner_html(scope_container, "")
+        Nil
+      }
+    }
+  })
+}
+
+/// Mount a breadcrumb display for a topic's scope
+/// Creates breadcrumb elements separated by chevron_right icons
+/// Similar pattern to mount_history_breadcrumb in history_graph.gleam
+fn mount_scope_breadcrumb(
+  container: element.Element,
+  metadata: audit_data.TopicMetadata,
+) -> Nil {
+  // Clear the container first
+  let _ = dromel.set_inner_html(container, "")
+
+  // Build list of scope items based on scope type
+  // Only show component and optionally member (never the topic name)
+  // Reverse because container has direction: rtl, so last items appear first (rightmost)
+  let scope_items =
+    case metadata.scope {
+      audit_data.Container(container:) -> [ScopeItemText(container)]
+      audit_data.Component(component:, ..) -> [ScopeItemTopic(component)]
+      audit_data.Member(component:, member:, ..) -> [
+        ScopeItemTopic(component),
+        ScopeItemTopic(member),
+      ]
+      audit_data.SemanticBlock(component:, member:, ..) -> [
+        ScopeItemTopic(component),
+        ScopeItemTopic(member),
+      ]
+    }
+    |> list.reverse
+
+  // Create breadcrumb elements for each item in the scope
+  list.index_map(scope_items, fn(item, index) {
+    // Add chevron delimiter before each item except the first
+    case index > 0 {
+      True -> {
         let _ =
-          title_element
-          |> dromel.set_inner_html(base_title <> " - " <> name)
+          dromel.new_span()
+          |> dromel.set_inner_html(icons.chevron_right_breadcrumb)
+          |> dromel.set_style(scope_chevron_style)
+          |> dromel.append_child(to: container)
+        Nil
+      }
+      False -> Nil
+    }
+
+    // Create the text span
+    let text_span =
+      dromel.new_span()
+      |> dromel.set_inner_text("...")
+      |> dromel.set_style(scope_item_style)
+
+    let _ = dromel.append_child(container, text_span)
+
+    // Populate the span based on item type
+    case item {
+      ScopeItemText(text) -> {
+        let _ = dromel.set_inner_text(text_span, text)
+        Nil
+      }
+      ScopeItemTopic(topic) -> {
+        populate_scope_item_name(topic, text_span)
+      }
+    }
+  })
+
+  Nil
+}
+
+type ScopeItem {
+  ScopeItemText(text: String)
+  ScopeItemTopic(topic: audit_data.Topic)
+}
+
+/// Populate a scope item span with the topic's highlighted name
+fn populate_scope_item_name(topic: audit_data.Topic, span: element.Element) {
+  audit_data.with_topic_metadata(topic, fn(result) {
+    case result {
+      Ok(metadata) -> {
+        let name = audit_data.topic_metadata_highlighted_name(metadata)
+        let _ = dromel.set_inner_html(span, name)
         Nil
       }
       Error(_) -> {
-        let _ = title_element |> dromel.set_inner_text(base_title)
+        let _ = dromel.set_inner_text(span, "?")
         Nil
       }
     }
@@ -1013,10 +1085,10 @@ fn populate_references_panel(
     }
     _ -> {
       list.each(references, fn(ref_topic) {
-        let reference_title =
+        let reference_scope =
           dromel.new_div()
           |> dromel.set_class(reference_title_class)
-          |> dromel.set_style("padding-left: 0.5rem; margin-bottom: 0.5rem;")
+          |> dromel.set_style(scope_style)
 
         let reference_source =
           dromel.new_div()
@@ -1029,25 +1101,13 @@ fn populate_references_panel(
           dromel.new_div()
           |> dromel.set_class(reference_class_container)
           |> dromel.set_style("max-height: 100%;")
-          |> dromel.append_child(reference_title)
+          |> dromel.append_child(reference_scope)
           |> dromel.append_child(reference_source)
 
         let _ = panel |> dromel.append_child(reference_container)
 
-        // Fetch the topic name
-        audit_data.with_topic_metadata(ref_topic, fn(result) {
-          case result {
-            Ok(metadata) -> {
-              let name = audit_data.topic_metadata_highlighted_name(metadata)
-              let _ = dromel.set_inner_html(reference_title, name)
-              Nil
-            }
-            Error(_) -> {
-              let _ = dromel.set_inner_text(reference_container, "Unknown")
-              Nil
-            }
-          }
-        })
+        // Populate the scope breadcrumb
+        populate_topic_scope(reference_scope, ref_topic)
 
         audit_data.with_source_text(ref_topic, fn(result) {
           case result {
