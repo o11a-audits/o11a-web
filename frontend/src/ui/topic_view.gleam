@@ -229,7 +229,9 @@ fn get_current_child_topic_index(container: element.Element) -> Int {
 
 const panel_style = "border-radius: 8px; border: 1px solid var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg); max-height: 100%;"
 
-const title_style = "position: absolute; bottom: -1rem; right: 0.5rem;"
+const title_style = "margin-left: 0.5rem; margin-bottom: 0.5rem;"
+
+const footer_style = "position: absolute; bottom: -1rem; right: 0.5rem;"
 
 const previous_topic_base_title = "Previous Topic"
 
@@ -247,11 +249,17 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
     |> dromel.set_inner_text("Previous Topic")
     |> dromel.set_style(title_style)
 
+  let previous_topic_footer =
+    dromel.new_div()
+    |> dromel.set_inner_text("Previous Topic")
+    |> dromel.set_style(footer_style)
+
   let previous_topic_container =
     dromel.new_div()
     |> dromel.set_style("position: relative; padding-top: 0.5rem;")
     |> dromel.append_child(previous_topic_title)
     |> dromel.append_child(previous_topic_panel)
+    |> dromel.append_child(previous_topic_footer)
 
   // Create the source view element
   let topic_panel =
@@ -267,27 +275,37 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
     |> dromel.set_inner_text("Current Topic")
     |> dromel.set_style(title_style)
 
+  let topic_footer =
+    dromel.new_div()
+    |> dromel.set_style(footer_style)
+    |> dromel.set_inner_text("Current Topic")
+
   let topic_container =
     dromel.new_div()
     |> dromel.set_style("position: relative; padding-top: 0.5rem;")
     |> dromel.append_child(topic_title)
     |> dromel.append_child(topic_panel)
+    |> dromel.append_child(topic_footer)
 
   // Create the references panel element
   let references_panel =
     dromel.new_div()
     |> dromel.set_class(elements.source_container_class)
-    |> dromel.set_style(panel_style)
+    |> dromel.set_style(
+      "min-height: 0; display: flex; flex-direction: column; gap: 0.5rem; height: 100%; width: unset;",
+    )
 
-  let references_title =
+  let references_footer =
     dromel.new_div()
     |> dromel.set_inner_text("References")
-    |> dromel.set_style(title_style)
+    |> dromel.set_style(footer_style)
 
   let references_container =
     dromel.new_div()
-    |> dromel.set_style("position: relative; padding-top: 0.5rem;")
-    |> dromel.append_child(references_title)
+    |> dromel.set_style(
+      "position: relative; padding-top: 0.5rem; max-height: 100%;",
+    )
+    |> dromel.append_child(references_footer)
     |> dromel.append_child(references_panel)
 
   let _ = container |> dromel.append_child(previous_topic_container)
@@ -444,19 +462,14 @@ fn on_source_text_loaded_restore(
 
 /// Callback for loading topic metadata and populating the references panel
 fn on_topic_metadata_loaded(
-  container: element.Element,
   elements: ActiveViewElements,
 ) -> fn(Result(audit_data.TopicMetadata, snag.Snag)) -> Nil {
   fn(metadata) {
     case metadata {
       Ok(metadata) -> {
         case metadata {
-          audit_data.NamedTopic(references: references, ..) -> {
-            populate_references_panel(
-              container,
-              elements.references_panel,
-              references,
-            )
+          audit_data.NamedTopic(references:, ..) -> {
+            populate_references_panel(elements.references_panel, references)
           }
           audit_data.UnnamedTopic(..) -> {
             let _ =
@@ -685,10 +698,7 @@ pub fn navigate_to_new_entry(
       )
 
       // Load topic metadata and populate references panel
-      audit_data.with_topic_metadata(
-        topic,
-        on_topic_metadata_loaded(container, elements),
-      )
+      audit_data.with_topic_metadata(topic, on_topic_metadata_loaded(elements))
     }
   }
 }
@@ -762,7 +772,7 @@ pub fn navigate_back(container) -> Nil {
               // Load topic metadata and populate references panel
               audit_data.with_topic_metadata(
                 parent_topic,
-                on_topic_metadata_loaded(container, elements),
+                on_topic_metadata_loaded(elements),
               )
 
               Nil
@@ -838,7 +848,7 @@ pub fn navigate_forward(container) -> Nil {
               // Load topic metadata and populate references panel
               audit_data.with_topic_metadata(
                 child_topic,
-                on_topic_metadata_loaded(container, elements),
+                on_topic_metadata_loaded(elements),
               )
 
               Nil
@@ -982,8 +992,13 @@ fn populate_topic_name(
   )
 }
 
+const reference_class_container = dromel.Class("topic-reference-container")
+
+const reference_title_class = dromel.Class("topic-reference-title")
+
+const reference_source_class = dromel.Class("topic-reference-source")
+
 fn populate_references_panel(
-  container: element.Element,
   panel: element.Element,
   references: List(audit_data.Topic),
 ) {
@@ -998,50 +1013,61 @@ fn populate_references_panel(
     }
     _ -> {
       list.each(references, fn(ref_topic) {
-        let item =
+        let reference_title =
           dromel.new_div()
-          |> dromel.set_style(
-            "padding: 0.25rem 0.5rem; cursor: pointer; color: var(--color-body-text); font-size: 0.85rem;",
-          )
-          |> dromel.set_inner_text("Loading...")
-          |> dromel.add_event_listener("click", fn(_event) {
-            navigate_to_new_entry(container, ref_topic)
-          })
-          |> dromel.add_event_listener("mouseenter", fn(ev) {
-            case dromel.cast(event.target(ev)) {
-              Ok(target) -> {
-                let _ =
-                  target
-                  |> dromel.add_style("background: var(--color-hover-bg);")
-                Nil
-              }
-              Error(_) -> Nil
-            }
-          })
-          |> dromel.add_event_listener("mouseleave", fn(ev) {
-            case dromel.cast(event.target(ev)) {
-              Ok(target) -> {
-                let _ =
-                  target
-                  |> dromel.add_style("background: transparent;")
-                Nil
-              }
-              Error(_) -> Nil
-            }
-          })
+          |> dromel.set_class(reference_title_class)
+          |> dromel.set_style("padding-left: 0.5rem; margin-bottom: 0.5rem;")
 
-        let _ = panel |> dromel.append_child(item)
+        let reference_source =
+          dromel.new_div()
+          |> dromel.set_class(reference_source_class)
+          |> dromel.add_class(elements.source_container_class)
+          |> dromel.set_style(panel_style)
+          |> dromel.add_style("padding-left: 0.5rem;")
+
+        let reference_container =
+          dromel.new_div()
+          |> dromel.set_class(reference_class_container)
+          |> dromel.set_style("max-height: 100%;")
+          |> dromel.append_child(reference_title)
+          |> dromel.append_child(reference_source)
+
+        let _ = panel |> dromel.append_child(reference_container)
 
         // Fetch the topic name
         audit_data.with_topic_metadata(ref_topic, fn(result) {
           case result {
             Ok(metadata) -> {
               let name = audit_data.topic_metadata_highlighted_name(metadata)
-              let _ = dromel.set_inner_html(item, name)
+              let _ = dromel.set_inner_html(reference_title, name)
               Nil
             }
             Error(_) -> {
-              let _ = dromel.set_inner_text(item, "Unknown")
+              let _ = dromel.set_inner_text(reference_container, "Unknown")
+              Nil
+            }
+          }
+        })
+
+        audit_data.with_source_text(ref_topic, fn(result) {
+          case result {
+            Ok(source_text) -> {
+              let _ = reference_source |> dromel.set_inner_html(source_text)
+
+              Nil
+            }
+
+            Error(error) -> {
+              let _ =
+                reference_source
+                |> dromel.set_inner_html(
+                  "<div style='color: var(--color-body-text); padding: 1rem;'>"
+                  <> error
+                  |> snag.layer("Unable to fetch source")
+                  |> snag.pretty_print
+                  <> "</div>",
+                )
+
               Nil
             }
           }
