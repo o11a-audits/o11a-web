@@ -616,17 +616,20 @@ fn mount_scope_breadcrumb(
   // Build list of scope items based on scope type
   // Only show component and optionally member (never the topic name)
   // Reverse because container has direction: rtl, so last items appear first (rightmost)
+  // Special case: if the topic is a contract, show its name instead of the file name
   let scope_items =
     case metadata.scope {
-      audit_data.Container(container:) -> [ScopeItemText(container)]
-      audit_data.Component(component:, ..) -> [ScopeItemTopic(component)]
+      audit_data.Container(..) -> [
+        metadata.topic,
+      ]
+      audit_data.Component(component:, ..) -> [component]
       audit_data.Member(component:, member:, ..) -> [
-        ScopeItemTopic(component),
-        ScopeItemTopic(member),
+        component,
+        member,
       ]
       audit_data.SemanticBlock(component:, member:, ..) -> [
-        ScopeItemTopic(component),
-        ScopeItemTopic(member),
+        component,
+        member,
       ]
     }
     |> list.reverse
@@ -654,41 +657,22 @@ fn mount_scope_breadcrumb(
 
     let _ = dromel.append_child(container, text_span)
 
-    // Populate the span based on item type
-    case item {
-      ScopeItemText(text) -> {
-        let _ = dromel.set_inner_text(text_span, text)
-        Nil
+    audit_data.with_topic_metadata(item, fn(result) {
+      case result {
+        Ok(metadata) -> {
+          let name = audit_data.topic_metadata_highlighted_name(metadata)
+          let _ = dromel.set_inner_html(text_span, name)
+          Nil
+        }
+        Error(_) -> {
+          let _ = dromel.set_inner_text(text_span, "?")
+          Nil
+        }
       }
-      ScopeItemTopic(topic) -> {
-        populate_scope_item_name(topic, text_span)
-      }
-    }
+    })
   })
 
   Nil
-}
-
-type ScopeItem {
-  ScopeItemText(text: String)
-  ScopeItemTopic(topic: audit_data.Topic)
-}
-
-/// Populate a scope item span with the topic's highlighted name
-fn populate_scope_item_name(topic: audit_data.Topic, span: element.Element) {
-  audit_data.with_topic_metadata(topic, fn(result) {
-    case result {
-      Ok(metadata) -> {
-        let name = audit_data.topic_metadata_highlighted_name(metadata)
-        let _ = dromel.set_inner_html(span, name)
-        Nil
-      }
-      Error(_) -> {
-        let _ = dromel.set_inner_text(span, "?")
-        Nil
-      }
-    }
-  })
 }
 
 // ============================================================================
