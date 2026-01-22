@@ -92,6 +92,7 @@ pub type Topic {
 }
 
 pub type Scope {
+  Global
   Container(container: String)
   Component(container: String, component: Topic)
   Member(container: String, component: Topic, member: Topic)
@@ -105,7 +106,11 @@ pub type Scope {
 
 fn scope_decoder() -> decode.Decoder(Scope) {
   use scope_type <- decode.field("scope_type", decode.string)
-  use container <- decode.field("container", decode.string)
+  use maybe_container <- decode.optional_field(
+    "container",
+    None,
+    decode.optional(decode.string),
+  )
   use maybe_component <- decode.optional_field(
     "component",
     None,
@@ -122,24 +127,38 @@ fn scope_decoder() -> decode.Decoder(Scope) {
     decode.optional(decode.string),
   )
 
-  case scope_type, maybe_component, maybe_member, maybe_semantic_block {
-    "Container", None, None, None -> {
+  case
+    scope_type,
+    maybe_container,
+    maybe_component,
+    maybe_member,
+    maybe_semantic_block
+  {
+    "Global", None, None, None, None -> {
+      decode.success(Global)
+    }
+    "Container", Some(container), None, None, None -> {
       decode.success(Container(container: container))
     }
-    "Component", Some(component), None, None -> {
+    "Component", Some(container), Some(component), None, None -> {
       decode.success(Component(
         container: container,
         component: Topic(id: component),
       ))
     }
-    "Member", Some(component), Some(member), None -> {
+    "Member", Some(container), Some(component), Some(member), None -> {
       decode.success(Member(
         container: container,
         component: Topic(id: component),
         member: Topic(id: member),
       ))
     }
-    "SemanticBlock", Some(component), Some(member), Some(semantic_block) -> {
+    "SemanticBlock",
+      Some(container),
+      Some(component),
+      Some(member),
+      Some(semantic_block)
+    -> {
       decode.success(SemanticBlock(
         container: container,
         component: Topic(id: component),
@@ -147,7 +166,19 @@ fn scope_decoder() -> decode.Decoder(Scope) {
         semantic_block: Topic(id: semantic_block),
       ))
     }
-    _, _, _, _ -> decode.failure(Container(container: ""), "Scope")
+    _, _, _, _, _ -> decode.failure(Container(container: ""), "Scope")
+  }
+}
+
+pub fn is_in_scope(scope, in_scope_files in_scope_files) {
+  case scope {
+    Global -> True
+    Container(container)
+    | Component(container:, ..)
+    | Member(container:, ..)
+    | SemanticBlock(container:, ..) -> {
+      list.contains(in_scope_files, container)
+    }
   }
 }
 
@@ -176,6 +207,7 @@ pub type NamedTopicKind {
   EnumMember
   StateVariable(VariableMutability)
   LocalVariable
+  Builtin
 }
 
 pub type UnnamedTopicKind {
@@ -239,6 +271,7 @@ fn named_topic_kind_decoder() -> decode.Decoder(NamedTopicKind) {
       decode.success(StateVariable(Immutable))
     "StateVariable", Some("Mutable") -> decode.success(StateVariable(Mutable))
     "LocalVariable", None -> decode.success(LocalVariable)
+    "Builtin", None -> decode.success(Builtin)
     _, _ -> decode.failure(LocalVariable, "NamedTopicKind")
   }
 }
@@ -353,6 +386,7 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
         StateVariable(Mutable) ->
           "<span class=\"state-variable\">" <> name <> "</span>"
         LocalVariable -> "<span class=\"identifier\">" <> name <> "</span>"
+        Builtin -> "<span class=\"global\">" <> name <> "</span>"
       }
     UnnamedTopic(kind:, ..) ->
       case kind {
@@ -633,10 +667,11 @@ fn fetch_in_scope_files() {
   promise.resolve(in_scope_files)
 }
 
-pub fn with_in_scope_files(callback) {
+pub fn with_is_in_scope(scope, callback) {
   case read_in_scope_files() {
     Ok(files) -> {
-      callback(files)
+      is_in_scope(scope, files)
+      |> callback
       Nil
     }
     Error(_) -> {
@@ -657,7 +692,9 @@ pub fn with_in_scope_files(callback) {
             |> snag.line_print
             |> io.println_error
         }
-        callback(files |> result.unwrap([]))
+
+        is_in_scope(scope, files |> result.unwrap([]))
+        |> callback
 
         promise.resolve(Nil)
       })

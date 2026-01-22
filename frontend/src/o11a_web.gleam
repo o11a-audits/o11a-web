@@ -102,9 +102,6 @@ pub fn prefetch_hot_data() {
       }
     }
   })
-
-  // Prefetch in scope files
-  audit_data.with_in_scope_files(fn(_files) { Nil })
 }
 
 fn open_url() {

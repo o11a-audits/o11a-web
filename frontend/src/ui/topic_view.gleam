@@ -468,8 +468,8 @@ fn on_topic_metadata_loaded(
           }
         }
 
-        audit_data.with_in_scope_files(fn(in_scope_files) {
-          case list.contains(in_scope_files, metadata.scope.container) {
+        audit_data.with_is_in_scope(metadata.scope, fn(is_in_scope) {
+          case is_in_scope {
             True -> Nil
             False -> {
               dromel.add_style(
@@ -619,7 +619,7 @@ fn mount_scope_breadcrumb(
   // Special case: if the topic is a contract, show its name instead of the file name
   let scope_items =
     case metadata.scope {
-      audit_data.Container(..) -> [
+      audit_data.Global | audit_data.Container(..) -> [
         metadata.topic,
       ]
       audit_data.Component(component:, ..) -> [component]
@@ -969,60 +969,58 @@ fn handle_topic_view_keydown(container) {
 
       False, False, "ArrowDown" | False, False, "," -> {
         event.prevent_default(event)
-        case get_active_view_elements() {
-          Ok(elements) -> {
-            let new_index = get_current_child_topic_index(container) + 1
-
-            case elements.topic_children_tokens |> array.get(new_index) {
-              Ok(el) -> {
-                dromel.focus(el)
-                set_current_child_topic_index(container, new_index)
-              }
-              Error(Nil) -> {
-                io.println("no next child")
-              }
-            }
-
-            Nil
-          }
-          Error(Nil) -> {
-            io.println_error("no active view")
-            Nil
-          }
-        }
-        Nil
+        navigate_to_child(container, 1)
+      }
+      False, True, "ArrowDown" | False, True, "<" -> {
+        event.prevent_default(event)
+        navigate_to_child(container, 10)
       }
 
       False, False, "ArrowUp" | False, False, "e" -> {
         event.prevent_default(event)
-        case get_active_view_elements() {
-          Ok(elements) -> {
-            let new_index = get_current_child_topic_index(container) - 1
-
-            case elements.topic_children_tokens |> array.get(new_index) {
-              Ok(el) -> {
-                dromel.focus(el)
-                set_current_child_topic_index(container, new_index)
-              }
-              Error(Nil) -> {
-                io.println("no prior child")
-              }
-            }
-
-            Nil
-          }
-          Error(Nil) -> {
-            io.println_error("no active view")
-            Nil
-          }
-        }
-        Nil
+        navigate_to_child(container, -1)
       }
+      False, True, "ArrowUp" | False, True, "E" -> {
+        event.prevent_default(event)
+        navigate_to_child(container, -10)
+      }
+
       _, _, _ -> Nil
     }
   })
 
   container
+}
+
+fn navigate_to_child(container, index_diff) {
+  io.println("Navigating to child " <> int.to_string(index_diff))
+  case get_active_view_elements() {
+    Ok(elements) -> {
+      let new_index = case
+        get_current_child_topic_index(container) + index_diff
+      {
+        n if n <= 0 -> 0
+        n ->
+          case array.size(elements.topic_children_tokens) - 1 {
+            size if n > size -> size
+            _size -> n
+          }
+      }
+
+      case elements.topic_children_tokens |> array.get(new_index) {
+        Ok(el) -> {
+          dromel.focus(el)
+          set_current_child_topic_index(container, new_index)
+        }
+        Error(Nil) -> {
+          io.println("no child index diff of " <> int.to_string(index_diff))
+        }
+      }
+    }
+    Error(Nil) -> {
+      io.println_error("no active view")
+    }
+  }
 }
 
 fn populate_topic_name(
