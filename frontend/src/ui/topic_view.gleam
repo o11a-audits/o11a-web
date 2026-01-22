@@ -351,57 +351,12 @@ fn remove_active_view(container: element.Element) -> Nil {
 // Source Text Loading Callbacks
 // ============================================================================
 
-/// Callback for loading source text into a new view (scroll position 0, focus first child)
-fn on_source_text_loaded_new(
-  elements: ActiveViewElements,
-  topic: audit_data.Topic,
-) -> fn(Result(String, snag.Snag)) -> Nil {
-  fn(result) {
-    case result {
-      Ok(source_text) -> {
-        let _ = elements.topic_panel |> dromel.set_inner_html(source_text)
-
-        let children =
-          dromel.query_element_all(
-            elements.topic_panel,
-            elements.source_topic_tokens,
-          )
-
-        set_active_view_elements(
-          ActiveViewElements(..elements, topic_children_tokens: children),
-        )
-
-        let _ = array.get(children, 0) |> result.map(dromel.focus)
-
-        // Update the scope breadcrumb
-        populate_topic_scope(elements.topic_scope, topic)
-
-        Nil
-      }
-
-      Error(error) -> {
-        let _ =
-          elements.topic_panel
-          |> dromel.set_inner_html(
-            "<div style='color: var(--color-body-text); padding: 1rem;'>"
-            <> error
-            |> snag.layer("Unable to fetch source")
-            |> snag.pretty_print
-            <> "</div>",
-          )
-
-        Nil
-      }
-    }
-  }
-}
-
 /// Callback for loading source text when restoring a view (restore scroll position, focus specific child)
 fn on_source_text_loaded_restore(
   elements: ActiveViewElements,
-  scroll_position: Float,
-  child_topic_index: Int,
   topic: audit_data.Topic,
+  scroll_position scroll_position: Float,
+  child_topic_index child_topic_index: Int,
 ) -> fn(Result(String, snag.Snag)) -> Nil {
   fn(result) {
     case result {
@@ -425,7 +380,7 @@ fn on_source_text_loaded_restore(
           array.get(children, child_topic_index) |> result.map(dromel.focus)
 
         // Update the scope breadcrumb
-        populate_topic_scope(elements.topic_scope, topic)
+        populate_topic_scope(elements.topic_scope, elements.topic_panel, topic)
 
         Nil
       }
@@ -455,10 +410,10 @@ fn on_topic_metadata_loaded(
     case metadata {
       Ok(metadata) -> {
         case metadata {
-          audit_data.NamedTopic(references:, ..) -> {
+          audit_data.NamedTopic(references: [_, ..] as references, ..) -> {
             populate_references_panel(elements.references_panel, references)
           }
-          audit_data.UnnamedTopic(..) -> {
+          _ -> {
             let _ =
               elements.references_panel
               |> dromel.set_inner_html(
@@ -467,19 +422,6 @@ fn on_topic_metadata_loaded(
             Nil
           }
         }
-
-        audit_data.with_is_in_scope(metadata.scope, fn(is_in_scope) {
-          case is_in_scope {
-            True -> Nil
-            False -> {
-              dromel.add_style(
-                elements.topic_panel,
-                "border-color: var(--color-body-out-of-scope-bg)",
-              )
-              Nil
-            }
-          }
-        })
       }
       Error(_) -> {
         let _ =
@@ -519,7 +461,11 @@ fn on_previous_source_text_loaded(
           })
 
         // Update the scope breadcrumb
-        populate_topic_scope(elements.previous_topic_scope, topic)
+        populate_topic_scope(
+          elements.previous_topic_scope,
+          elements.previous_topic_panel,
+          topic,
+        )
 
         Nil
       }
@@ -588,12 +534,25 @@ const scope_chevron_style = "display: inline-flex; align-items: center; opacity:
 /// Populate a scope container with a breadcrumb showing Component > Member > Name
 fn populate_topic_scope(
   scope_container: element.Element,
+  source_panel: element.Element,
   topic: audit_data.Topic,
 ) -> Nil {
   audit_data.with_topic_metadata(topic, fn(result) {
     case result {
       Ok(metadata) -> {
         mount_scope_breadcrumb(scope_container, metadata)
+        audit_data.with_is_in_scope(metadata.scope, fn(is_in_scope) {
+          case is_in_scope {
+            True -> Nil
+            False -> {
+              dromel.add_style(
+                source_panel,
+                "border-color: var(--color-body-out-of-scope-bg)",
+              )
+              Nil
+            }
+          }
+        })
       }
       Error(_) -> {
         let _ = dromel.set_inner_html(scope_container, "")
@@ -750,7 +709,12 @@ pub fn navigate_to_new_entry(
       // Load source text
       audit_data.with_source_text(
         audit_data.Topic(id: new_entry.topic_id),
-        on_source_text_loaded_new(elements, topic),
+        on_source_text_loaded_restore(
+          elements,
+          topic,
+          scroll_position: 0.0,
+          child_topic_index: 0,
+        ),
       )
 
       // Load topic metadata and populate references panel
@@ -819,9 +783,9 @@ pub fn navigate_back(container) -> Nil {
                 parent_topic,
                 on_source_text_loaded_restore(
                   elements,
+                  parent_topic,
                   parent_view.scroll_position,
                   child_topic_index,
-                  parent_topic,
                 ),
               )
 
@@ -895,9 +859,9 @@ pub fn navigate_forward(container) -> Nil {
                 child_topic,
                 on_source_text_loaded_restore(
                   elements,
+                  child_topic,
                   child_view.scroll_position,
                   child_topic_index,
-                  child_topic,
                 ),
               )
 
@@ -1089,7 +1053,7 @@ fn populate_references_panel(
         let _ = panel |> dromel.append_child(reference_container)
 
         // Populate the scope breadcrumb
-        populate_topic_scope(reference_scope, ref_topic)
+        populate_topic_scope(reference_scope, reference_source, ref_topic)
 
         audit_data.with_source_text(ref_topic, fn(result) {
           case result {
