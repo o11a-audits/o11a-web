@@ -104,6 +104,12 @@ pub type TopicView {
   TopicView(entry_id: String, topic_id: String, scroll_position: Float)
 }
 
+/// ActivePanel tracks which panel currently has keyboard focus
+pub type ActivePanel {
+  TopicPanel
+  ReferencesPanel
+}
+
 // ============================================================================
 // Active View Elements (transient, only exists for currently displayed view)
 // ============================================================================
@@ -119,6 +125,7 @@ type ActiveViewElements {
     references_panel: element.Element,
     references_container: element.Element,
     topic_children_tokens: array.Array(element.Element),
+    references_topic_tokens: array.Array(element.Element),
   )
 }
 
@@ -205,6 +212,10 @@ const current_child_topic_index_key = dromel.DataKey(
   "current_child_topic_index",
 )
 
+const current_references_index_key = dromel.DataKey("current_references_index")
+
+const active_panel_key = dromel.DataKey("active_panel")
+
 const topic_key = dromel.DataKey("topic")
 
 fn set_current_child_topic_index(container: element.Element, index: Int) -> Nil {
@@ -221,6 +232,38 @@ fn get_current_child_topic_index(container: element.Element) -> Int {
   dromel.get_data(container, current_child_topic_index_key)
   |> result.try(int.parse)
   |> result.unwrap(0)
+}
+
+fn set_current_references_index(container: element.Element, index: Int) -> Nil {
+  let _ =
+    dromel.set_data(
+      container,
+      current_references_index_key,
+      int.to_string(index),
+    )
+  Nil
+}
+
+fn get_current_references_index(container: element.Element) -> Int {
+  dromel.get_data(container, current_references_index_key)
+  |> result.try(int.parse)
+  |> result.unwrap(0)
+}
+
+fn set_active_panel(container: element.Element, panel: ActivePanel) -> Nil {
+  let panel_str = case panel {
+    TopicPanel -> "topic"
+    ReferencesPanel -> "references"
+  }
+  let _ = dromel.set_data(container, active_panel_key, panel_str)
+  Nil
+}
+
+fn get_active_panel(container: element.Element) -> ActivePanel {
+  case dromel.get_data(container, active_panel_key) {
+    Ok("references") -> ReferencesPanel
+    _ -> TopicPanel
+  }
 }
 
 // ============================================================================
@@ -317,6 +360,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
       references_panel:,
       references_container:,
       topic_children_tokens: array.from_list([]),
+      references_topic_tokens: array.from_list([]),
     )
 
   set_active_view_elements(elements)
@@ -691,6 +735,8 @@ pub fn navigate_to_new_entry(
       // Set as active view
       set_active_topic_view(container, view)
       set_current_child_topic_index(container, 0)
+      set_current_references_index(container, 0)
+      set_active_panel(container, TopicPanel)
 
       // Update the URL to reflect the active topic
       update_url_for_topic(new_entry.topic_id)
@@ -763,6 +809,8 @@ pub fn navigate_back(container) -> Nil {
 
               set_active_topic_view(container, parent_view)
               set_current_child_topic_index(container, child_topic_index)
+              set_current_references_index(container, 0)
+              set_active_panel(container, TopicPanel)
 
               // Update the URL to reflect the active topic
               update_url_for_topic(parent_entry.topic_id)
@@ -839,6 +887,8 @@ pub fn navigate_forward(container) -> Nil {
 
               set_active_topic_view(container, child_view)
               set_current_child_topic_index(container, child_topic_index)
+              set_current_references_index(container, 0)
+              set_active_panel(container, TopicPanel)
 
               // Update the URL to reflect the active topic
               update_url_for_topic(child_entry.topic_id)
@@ -901,23 +951,9 @@ pub fn handle_topic_view_keydown(event) {
   case event.ctrl_key(event), event.shift_key(event), event.key(event) {
     False, False, "h" -> {
       event.prevent_default(event)
-      case get_active_view_elements() {
-        Error(Nil) -> io.println_error("No active topic view")
-        Ok(elements) -> {
-          case
-            array.get(
-              elements.topic_children_tokens,
-              get_current_child_topic_index(container),
-            )
-            |> result.try(dromel.get_data(_, topic_key))
-            |> result.map(audit_data.Topic)
-          {
-            Error(Nil) -> io.println_error("Unable to read child topic")
-            Ok(topic) -> {
-              navigate_to_new_entry(container, topic)
-            }
-          }
-        }
+      case get_active_panel(container) {
+        TopicPanel -> navigate_into_topic(container)
+        ReferencesPanel -> navigate_into_reference(container)
       }
     }
 
@@ -931,25 +967,105 @@ pub fn handle_topic_view_keydown(event) {
       navigate_forward(container)
     }
 
+    False, False, "ArrowRight" -> {
+      event.prevent_default(event)
+      case get_active_panel(container) {
+        TopicPanel -> {
+          // Gather reference tokens lazily when entering references panel
+          gather_references_topic_tokens()
+          set_active_panel(container, ReferencesPanel)
+          // Focus the first reference token if available
+          navigate_to_reference(container, 0)
+        }
+        ReferencesPanel -> Nil
+      }
+    }
+
+    False, False, "ArrowLeft" -> {
+      event.prevent_default(event)
+      case get_active_panel(container) {
+        ReferencesPanel -> {
+          set_active_panel(container, TopicPanel)
+          // Refocus the current topic child
+          navigate_to_child(container, 0)
+        }
+        TopicPanel -> Nil
+      }
+    }
+
     False, False, "ArrowDown" | False, False, "," -> {
       event.prevent_default(event)
-      navigate_to_child(container, 1)
+      case get_active_panel(container) {
+        TopicPanel -> navigate_to_child(container, 1)
+        ReferencesPanel -> navigate_to_reference(container, 1)
+      }
     }
     False, True, "ArrowDown" | False, True, "<" -> {
       event.prevent_default(event)
-      navigate_to_child(container, 10)
+      case get_active_panel(container) {
+        TopicPanel -> navigate_to_child(container, 10)
+        ReferencesPanel -> navigate_to_reference(container, 10)
+      }
     }
 
     False, False, "ArrowUp" | False, False, "e" -> {
       event.prevent_default(event)
-      navigate_to_child(container, -1)
+      case get_active_panel(container) {
+        TopicPanel -> navigate_to_child(container, -1)
+        ReferencesPanel -> navigate_to_reference(container, -1)
+      }
     }
     False, True, "ArrowUp" | False, True, "E" -> {
       event.prevent_default(event)
-      navigate_to_child(container, -10)
+      case get_active_panel(container) {
+        TopicPanel -> navigate_to_child(container, -10)
+        ReferencesPanel -> navigate_to_reference(container, -10)
+      }
     }
 
     _, _, _ -> Nil
+  }
+}
+
+fn navigate_into_topic(container) {
+  case get_active_view_elements() {
+    Error(Nil) -> io.println_error("No active topic view")
+    Ok(elements) -> {
+      case
+        array.get(
+          elements.topic_children_tokens,
+          get_current_child_topic_index(container),
+        )
+        |> result.try(dromel.get_data(_, topic_key))
+        |> result.map(audit_data.Topic)
+      {
+        Error(Nil) -> io.println_error("Unable to read child topic")
+        Ok(topic) -> {
+          navigate_to_new_entry(container, topic)
+        }
+      }
+    }
+  }
+}
+
+fn navigate_into_reference(container) {
+  case get_active_view_elements() {
+    Error(Nil) -> io.println_error("No active topic view")
+    Ok(elements) -> {
+      case
+        array.get(
+          elements.references_topic_tokens,
+          get_current_references_index(container),
+        )
+        |> result.try(dromel.get_data(_, topic_key))
+        |> result.map(audit_data.Topic)
+      {
+        Error(Nil) -> io.println_error("Unable to read reference topic")
+        Ok(topic) -> {
+          navigate_to_new_entry(container, topic)
+        }
+      }
+    }
   }
 }
 
@@ -975,6 +1091,36 @@ fn navigate_to_child(container, index_diff) {
         }
         Error(Nil) -> {
           io.println("no child index diff of " <> int.to_string(index_diff))
+        }
+      }
+    }
+    Error(Nil) -> {
+      io.println_error("no active view")
+    }
+  }
+}
+
+fn navigate_to_reference(container, index_diff) {
+  io.println("Navigating to reference " <> int.to_string(index_diff))
+  case get_active_view_elements() {
+    Ok(elements) -> {
+      let current_index = get_current_references_index(container)
+      let new_index = case current_index + index_diff {
+        n if n <= 0 -> 0
+        n ->
+          case array.size(elements.references_topic_tokens) - 1 {
+            size if n > size -> size
+            _size -> n
+          }
+      }
+
+      case elements.references_topic_tokens |> array.get(new_index) {
+        Ok(el) -> {
+          dromel.focus(el)
+          set_current_references_index(container, new_index)
+        }
+        Error(Nil) -> {
+          io.println("no reference index diff of " <> int.to_string(index_diff))
         }
       }
     }
@@ -1077,5 +1223,22 @@ fn populate_references_panel(
         })
       })
     }
+  }
+}
+
+fn gather_references_topic_tokens() -> Nil {
+  case get_active_view_elements() {
+    Ok(active_elements) -> {
+      let tokens =
+        dromel.query_element_all(
+          active_elements.references_panel,
+          elements.source_topic_tokens,
+        )
+      set_active_view_elements(
+        ActiveViewElements(..active_elements, references_topic_tokens: tokens),
+      )
+      Nil
+    }
+    Error(Nil) -> Nil
   }
 }
