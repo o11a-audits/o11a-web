@@ -20,19 +20,6 @@ const modal_overlay_ref = dromel.Id(id: "modal-overlay")
 const modal_container_ref = dromel.Id(id: "modal-container")
 
 // ============================================================================
-// Focus Context Management
-// ============================================================================
-
-@external(javascript, "../mem_ffi.mjs", "set_input_context")
-pub fn set_input_context() -> Nil
-
-@external(javascript, "../mem_ffi.mjs", "clear_input_context")
-pub fn clear_input_context() -> Nil
-
-@external(javascript, "../mem_ffi.mjs", "is_in_input_context")
-pub fn is_in_input_context() -> Bool
-
-// ============================================================================
 // Modal Lifecycle
 // ============================================================================
 
@@ -75,5 +62,5 @@ pub fn open_modal(render: fn(element.Element) -> Nil) -> Modal {
 
 pub fn close_modal(overlay: element.Element) -> Nil {
   let _ = dromel.remove(overlay)
-  clear_input_context()
+  Nil
 }

@@ -1,4 +1,5 @@
 import audit_data
+import context
 import dromel
 import gleam/io
 import gleam/list
@@ -9,11 +10,12 @@ import plinth/browser/window
 import snag
 import ui/contracts_modal
 import ui/elements
-import ui/modal
 import ui/topic_view
 
 pub fn main() {
   io.println("Hello from o11a_web at " <> audit_data.audit_name())
+
+  context.init_context()
 
   let _ = populate_audit_name_tag(audit_data.audit_name())
 
@@ -23,22 +25,7 @@ pub fn main() {
 
   let _ = open_url()
 
-  window.add_event_listener("keydown", fn(event) {
-    // Only handle global shortcuts when not in input context
-    case modal.is_in_input_context() {
-      True -> Nil
-      False -> {
-        case event.key(event) {
-          "t" -> {
-            event.prevent_default(event)
-            event.stop_propagation(event)
-            contracts_modal.open()
-          }
-          _ -> Nil
-        }
-      }
-    }
-  })
+  window.add_event_listener("keydown", handle_window_keydown)
 
   Ok(Nil)
 }
@@ -115,5 +102,24 @@ fn open_url() {
       )
     }
     _ -> Nil
+  }
+}
+
+fn handle_window_keydown(event) {
+  // Only handle global shortcuts when not in input context
+  case
+    context.get_current_context(),
+    event.key(event),
+    event.ctrl_key(event),
+    event.shift_key(event)
+  {
+    context.Input, _, _, _ -> Nil
+    _, "t", _, _ -> {
+      event.prevent_default(event)
+      event.stop_propagation(event)
+      contracts_modal.open()
+    }
+    context.Default, _, _, _ -> topic_view.handle_topic_view_keydown(event)
+    _, _, _, _ -> Nil
   }
 }

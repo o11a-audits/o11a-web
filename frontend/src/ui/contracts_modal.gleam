@@ -1,4 +1,5 @@
 import audit_data
+import context
 import dromel
 import gleam/io
 import gleam/list
@@ -111,8 +112,12 @@ fn mount_contracts_modal(container: element.Element) -> Nil {
         Error(_) -> Nil
       }
     })
-    |> dromel.add_event_listener("focus", fn(_e) { modal.set_input_context() })
-    |> dromel.add_event_listener("blur", fn(_e) { modal.clear_input_context() })
+    |> dromel.add_event_listener("focus", fn(_e) {
+      context.add_context(context.Input)
+    })
+    |> dromel.add_event_listener("blur", fn(_e) {
+      context.remove_context(context.Input)
+    })
 
   let _ = search_container |> dromel.append_child(search_input)
 
@@ -342,15 +347,19 @@ fn handle_search_input(query: String, state: ContractsModalState) -> Nil {
 
 fn handle_keydown(
   e: event.Event(event.UIEvent(event.KeyboardEvent)),
-  state: ContractsModalState,
   overlay: element.Element,
 ) -> Nil {
+  let state = case get_contracts_modal_state() {
+    Ok(state) -> state
+    Error(_) -> panic as "no modal state"
+  }
   let list_length = list.length(state.filtered_contracts)
 
   case event.key(e) {
     "Escape" -> {
       event.prevent_default(e)
       modal.close_modal(overlay)
+      context.remove_context(context.ContractsModal)
     }
 
     "ArrowDown" if list_length > 0 -> {
@@ -414,6 +423,7 @@ fn handle_keydown(
 
           // Close the modal after successfully navigating
           modal.close_modal(overlay)
+          context.remove_context(context.ContractsModal)
         }
         Error(Nil) -> {
           io.println_error("No contract selected in contracts modal")
@@ -437,10 +447,7 @@ pub fn open() -> Nil {
   let _ =
     modal_elements.overlay
     |> dromel.add_event_listener("keydown", fn(e) {
-      case get_contracts_modal_state() {
-        Ok(state) -> handle_keydown(e, state, modal_elements.overlay)
-        Error(_) -> Nil
-      }
+      handle_keydown(e, modal_elements.overlay)
     })
 
   // Focus the search input
@@ -454,6 +461,8 @@ pub fn open() -> Nil {
 
   // Fetch contracts and initialize
   audit_data.with_audit_contracts(fn(result) { on_contracts_loaded(result) })
+
+  context.add_context(context.ContractsModal)
 }
 
 fn on_contracts_loaded(

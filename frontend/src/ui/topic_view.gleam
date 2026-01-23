@@ -175,7 +175,6 @@ fn setup_view_container() {
     |> dromel.set_style(
       "display: flex; flex: 1; min-height: 0; justify-content: center; gap: 0.5rem; background: var(--color-body-bg);",
     )
-    |> handle_topic_view_keydown
 
   let _ = audit_data.app_element() |> dromel.append_child(view_container)
 
@@ -896,64 +895,62 @@ pub fn can_navigate_forward(container) -> Bool {
   }
 }
 
-fn handle_topic_view_keydown(container) {
-  dromel.add_event_listener(container, "keydown", fn(event) {
-    case event.ctrl_key(event), event.shift_key(event), event.key(event) {
-      False, False, "h" -> {
-        event.prevent_default(event)
-        case get_active_view_elements() {
-          Error(Nil) -> io.println_error("No active topic view")
-          Ok(elements) -> {
-            case
-              array.get(
-                elements.topic_children_tokens,
-                get_current_child_topic_index(container),
-              )
-              |> result.try(dromel.get_data(_, topic_key))
-              |> result.map(audit_data.Topic)
-            {
-              Error(Nil) -> io.println_error("Unable to read child topic")
-              Ok(topic) -> {
-                navigate_to_new_entry(container, topic)
-              }
+pub fn handle_topic_view_keydown(event) {
+  let container = topic_view_container()
+
+  case event.ctrl_key(event), event.shift_key(event), event.key(event) {
+    False, False, "h" -> {
+      event.prevent_default(event)
+      case get_active_view_elements() {
+        Error(Nil) -> io.println_error("No active topic view")
+        Ok(elements) -> {
+          case
+            array.get(
+              elements.topic_children_tokens,
+              get_current_child_topic_index(container),
+            )
+            |> result.try(dromel.get_data(_, topic_key))
+            |> result.map(audit_data.Topic)
+          {
+            Error(Nil) -> io.println_error("Unable to read child topic")
+            Ok(topic) -> {
+              navigate_to_new_entry(container, topic)
             }
           }
         }
       }
-
-      False, False, "p" -> {
-        event.prevent_default(event)
-        navigate_back(container)
-      }
-
-      True, False, "p" -> {
-        event.prevent_default(event)
-        navigate_forward(container)
-      }
-
-      False, False, "ArrowDown" | False, False, "," -> {
-        event.prevent_default(event)
-        navigate_to_child(container, 1)
-      }
-      False, True, "ArrowDown" | False, True, "<" -> {
-        event.prevent_default(event)
-        navigate_to_child(container, 10)
-      }
-
-      False, False, "ArrowUp" | False, False, "e" -> {
-        event.prevent_default(event)
-        navigate_to_child(container, -1)
-      }
-      False, True, "ArrowUp" | False, True, "E" -> {
-        event.prevent_default(event)
-        navigate_to_child(container, -10)
-      }
-
-      _, _, _ -> Nil
     }
-  })
 
-  container
+    False, False, "p" -> {
+      event.prevent_default(event)
+      navigate_back(container)
+    }
+
+    True, False, "p" -> {
+      event.prevent_default(event)
+      navigate_forward(container)
+    }
+
+    False, False, "ArrowDown" | False, False, "," -> {
+      event.prevent_default(event)
+      navigate_to_child(container, 1)
+    }
+    False, True, "ArrowDown" | False, True, "<" -> {
+      event.prevent_default(event)
+      navigate_to_child(container, 10)
+    }
+
+    False, False, "ArrowUp" | False, False, "e" -> {
+      event.prevent_default(event)
+      navigate_to_child(container, -1)
+    }
+    False, True, "ArrowUp" | False, True, "E" -> {
+      event.prevent_default(event)
+      navigate_to_child(container, -10)
+    }
+
+    _, _, _ -> Nil
+  }
 }
 
 fn navigate_to_child(container, index_diff) {

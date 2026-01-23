@@ -1,4 +1,4 @@
-import { Result$Ok, Result$Error } from "./gleam.mjs";
+import { Result$Ok, Result$Error, List } from "./gleam.mjs";
 
 let audit_name;
 
@@ -147,19 +147,14 @@ export function set_contracts_modal_state(state) {
   contracts_modal_state = state;
 }
 
-// Focus context tracking
-let focus_context = "default"; // "default" | "input"
+let context = null;
 
-export function set_input_context() {
-  focus_context = "input";
+export function get_context() {
+  return context;
 }
 
-export function clear_input_context() {
-  focus_context = "default";
-}
-
-export function is_in_input_context() {
-  return focus_context === "input";
+export function set_context(ctx) {
+  context = ctx;
 }
 
 let topic_metadata_dict = {};
