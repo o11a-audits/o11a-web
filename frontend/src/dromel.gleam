@@ -285,3 +285,23 @@ pub fn get_scroll_top(elem: Element) -> Float
 
 @external(javascript, "./dromel_ffi.mjs", "set_scroll_top")
 pub fn set_scroll_top(elem: Element, value: Float) -> Nil
+
+// ============================================================================
+// DOM Traversal
+// ============================================================================
+
+@external(javascript, "./dromel_ffi.mjs", "parent_element")
+pub fn parent_element(elem: Element) -> Result(Element, Nil)
+
+@external(javascript, "./dromel_ffi.mjs", "class_list")
+pub fn class_list(elem: Element) -> array.Array(String)
+
+pub fn has_class(elem: Element, ref: ElementRef) -> Bool {
+  case ref {
+    Class(class) ->
+      class_list(elem)
+      |> array.to_list
+      |> list.contains(class)
+    _ -> panic as "has_class requires a Class ref"
+  }
+}

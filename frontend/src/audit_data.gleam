@@ -182,6 +182,46 @@ pub fn is_in_scope(scope, in_scope_files in_scope_files) {
   }
 }
 
+/// Get the parent scope one level up, returning None if already at Component level or above
+pub fn parent_topic(scope: Scope) -> option.Option(Topic) {
+  case scope {
+    Global -> None
+    Container(_) -> None
+    Component(component:, ..) -> Some(component)
+    Member(member:, ..) -> Some(member)
+    SemanticBlock(semantic_block:, ..) -> Some(semantic_block)
+  }
+}
+
+/// Given current scope and target scope, get the next topic to navigate down
+/// towards target.
+/// Returns None if already at or past target scope level
+pub fn child_scope_towards(
+  current_scope: Scope,
+  target_scope: Scope,
+) -> option.Option(Topic) {
+  echo current_scope as "current_scope"
+  echo target_scope as "target_scope"
+  case current_scope, target_scope {
+    // From Component (Container scope), try to get the Member
+    Container(..), Member(member:, ..)
+    | Container(..), SemanticBlock(member:, ..)
+    -> Some(member)
+
+    // From Member (Component scope), try to get the SemanticBlock
+    Component(..), SemanticBlock(semantic_block:, ..) -> Some(semantic_block)
+
+    // From first-level SemanticBlock (Member scope), try to get the next SemanticBlock
+    Member(..), SemanticBlock(semantic_block:, ..) -> Some(semantic_block)
+
+    // From SemanticBlock, try to get the next SemanticBlock
+    SemanticBlock(..), SemanticBlock(semantic_block:, ..) ->
+      Some(semantic_block)
+
+    _, _ -> None
+  }
+}
+
 pub type FunctionKind {
   Constructor
   Fallback
@@ -193,7 +233,6 @@ pub type FunctionKind {
 pub type VariableMutability {
   Constant
   Immutable
-  Mutable
 }
 
 pub type NamedTopicKind {
@@ -208,6 +247,11 @@ pub type NamedTopicKind {
   StateVariable(VariableMutability)
   LocalVariable
   Builtin
+}
+
+pub type NamedMutableTopicKind {
+  MutableStateVariable
+  MutableLocalVariable
 }
 
 pub type UnnamedTopicKind {
@@ -235,6 +279,8 @@ pub type UnnamedTopicKind {
   Try
   UncheckedBlock
   While
+  Reference
+  MutableReference
   DocumentationSection
   DocumentationParagraph
   Other
@@ -269,10 +315,19 @@ fn named_topic_kind_decoder() -> decode.Decoder(NamedTopicKind) {
     "StateVariable", Some("Constant") -> decode.success(StateVariable(Constant))
     "StateVariable", Some("Immutable") ->
       decode.success(StateVariable(Immutable))
-    "StateVariable", Some("Mutable") -> decode.success(StateVariable(Mutable))
     "LocalVariable", None -> decode.success(LocalVariable)
     "Builtin", None -> decode.success(Builtin)
-    _, _ -> decode.failure(LocalVariable, "NamedTopicKind")
+    _, _ -> decode.failure(Builtin, "NamedTopicKind")
+  }
+}
+
+fn named_mutable_topic_kind_decoder() -> decode.Decoder(NamedMutableTopicKind) {
+  use kind_str <- decode.field("kind", decode.string)
+
+  case kind_str {
+    "StateVariable" -> decode.success(MutableStateVariable)
+    "LocalVariable" -> decode.success(MutableLocalVariable)
+    _ -> decode.failure(MutableLocalVariable, "NamedMutableTopicKind")
   }
 }
 
@@ -304,6 +359,8 @@ fn unnamed_topic_kind_decoder() -> decode.Decoder(UnnamedTopicKind) {
     "Try" -> decode.success(Try)
     "UncheckedBlock" -> decode.success(UncheckedBlock)
     "While" -> decode.success(While)
+    "Reference" -> decode.success(Reference)
+    "MutableReference" -> decode.success(MutableReference)
     "DocumentationSection" -> decode.success(DocumentationSection)
     "DocumentationParagraph" -> decode.success(DocumentationParagraph)
     "Other" -> decode.success(Other)
@@ -319,6 +376,14 @@ pub type TopicMetadata {
     name: String,
     references: List(Topic),
   )
+  NamedMutableTopic(
+    topic: Topic,
+    scope: Scope,
+    kind: NamedMutableTopicKind,
+    name: String,
+    references: List(Topic),
+    mutations: List(Topic),
+  )
   UnnamedTopic(topic: Topic, scope: Scope, kind: UnnamedTopicKind)
 }
 
@@ -330,11 +395,31 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
     None,
     decode.optional(decode.string),
   )
+  use maybe_mutations <- decode.optional_field(
+    "mutations",
+    None,
+    decode.optional(decode.list(decode.string)),
+  )
 
   let topic = Topic(id: topic_id)
 
-  case maybe_name {
-    Some(name) -> {
+  case maybe_name, maybe_mutations {
+    Some(name), Some(mutation_ids) -> {
+      use kind <- decode.then(named_mutable_topic_kind_decoder())
+      use reference_ids <- decode.field(
+        "references",
+        decode.list(decode.string),
+      )
+      decode.success(NamedMutableTopic(
+        topic:,
+        scope:,
+        kind:,
+        name:,
+        references: list.map(reference_ids, Topic),
+        mutations: list.map(mutation_ids, Topic),
+      ))
+    }
+    Some(name), None -> {
       use kind <- decode.then(named_topic_kind_decoder())
       use reference_ids <- decode.field(
         "references",
@@ -348,7 +433,7 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         references: list.map(reference_ids, Topic),
       ))
     }
-    None -> {
+    None, _ -> {
       use kind <- decode.then(unnamed_topic_kind_decoder())
       decode.success(UnnamedTopic(topic:, scope:, kind:))
     }
@@ -357,7 +442,7 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
 
 pub fn topic_metadata_name(metadata: TopicMetadata) -> String {
   case metadata {
-    NamedTopic(name:, ..) -> name
+    NamedTopic(name:, ..) | NamedMutableTopic(name:, ..) -> name
     UnnamedTopic(topic:, ..) -> topic.id
   }
 }
@@ -383,10 +468,16 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
           "<span class=\"constant\">" <> name <> "</span>"
         StateVariable(Immutable) ->
           "<span class=\"immutable-state-variable\">" <> name <> "</span>"
-        StateVariable(Mutable) ->
-          "<span class=\"state-variable\">" <> name <> "</span>"
-        LocalVariable -> "<span class=\"identifier\">" <> name <> "</span>"
+        LocalVariable ->
+          "<span class=\"local-variable\">" <> name <> "</span>"
         Builtin -> "<span class=\"global\">" <> name <> "</span>"
+      }
+    NamedMutableTopic(name:, kind:, ..) ->
+      case kind {
+        MutableStateVariable ->
+          "<span class=\"state-variable\">" <> name <> "</span>"
+        MutableLocalVariable ->
+          "<span class=\"identifier\">" <> name <> "</span>"
       }
     UnnamedTopic(kind:, ..) ->
       case kind {
@@ -414,6 +505,8 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
         Try -> "<span class=\"keyword\">TryStatement</span>"
         UncheckedBlock -> "<span class=\"keyword\">UncheckedBlock</span>"
         While -> "<span class=\"keyword\">WhileStatement</span>"
+        Reference -> "<span class=\"identifier\">Reference</span>"
+        MutableReference -> "<span class=\"identifier\">MutableReference</span>"
         DocumentationSection -> "<span>DocumentationSection</span>"
         DocumentationParagraph -> "<span>DocumentationParagraph</span>"
         Other -> "<span>Other</span>"

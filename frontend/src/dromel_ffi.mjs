@@ -23,3 +23,15 @@ export function set_scroll_top(element, value) {
 export function get_inner_html(element) {
   return element.innerHTML;
 }
+
+export function parent_element(element) {
+  let parent = element.parentElement;
+  if (parent) {
+    return Result$Ok(parent);
+  }
+  return Result$Error();
+}
+
+export function class_list(element) {
+  return Array.from(element.classList);
+}

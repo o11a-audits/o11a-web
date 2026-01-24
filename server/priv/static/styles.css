@@ -120,6 +120,7 @@ code,
 }
 
 /* Identifiers (variable names) */
+.local-variable,
 .identifier {
   color: var(--color-identifier);
 }
@@ -141,7 +142,7 @@ code,
   font-style: italic;
 }
 
-.state-variable {
+.mutable-state-variable {
   color: var(--color-state-variable);
   font-style: italic;
 }
@@ -217,19 +218,6 @@ code,
 
 .indent-level-4 {
   border-left-color: var(--color-code-indent-border);
-}
-
-/* Selection styling */
-pre::selection,
-code::selection,
-.keyword::selection,
-.operator::selection,
-.type::selection,
-.function::selection,
-.identifier::selection,
-.string::selection,
-.number::selection {
-  background-color: var(--color-code-selection-bg);
 }
 
 .hidden {
