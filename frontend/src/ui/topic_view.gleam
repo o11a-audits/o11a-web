@@ -198,9 +198,37 @@ fn set_topic_view(entry_id: String, view: TopicView) -> Nil
 
 const active_topic_view_key = dromel.DataKey("active_topic_view")
 
+const active_topic_style_id = "active-topic-highlight-style"
+
 fn set_active_topic_view(container: element.Element, view: TopicView) -> Nil {
   let _ = dromel.set_data(container, active_topic_view_key, view.entry_id)
+  set_active_topic_highlight_style(view.topic_id)
   Nil
+}
+
+/// Sets a dynamic CSS rule on the app element to highlight elements with data-topic matching the active topic
+fn set_active_topic_highlight_style(topic_id: String) -> Nil {
+  let style_content =
+    "span[data-topic=\"" <> topic_id <> "\"] { text-decoration: underline; }"
+
+  let style_id = dromel.Id(active_topic_style_id)
+
+  // Try to find existing style element
+  case dromel.query_document(style_id) {
+    Ok(style_element) -> {
+      let _ = dromel.set_inner_text(style_element, style_content)
+      Nil
+    }
+    Error(Nil) -> {
+      // Create new style element and append to app element
+      let style_element =
+        dromel.new("style")
+        |> dromel.set_id(style_id)
+        |> dromel.set_inner_text(style_content)
+      let _ = audit_data.app_element() |> dromel.append_child(style_element)
+      Nil
+    }
+  }
 }
 
 fn get_active_topic_view(container: element.Element) -> Result(TopicView, Nil) {
@@ -270,6 +298,8 @@ fn get_active_panel(container: element.Element) -> ActivePanel {
 // View Mounting and Removal
 // ============================================================================
 
+const container_style = "position: relative; padding-top: 0.5rem; width: calc(40ch + 1rem);"
+
 const panel_style = "border-radius: 8px; border: 1px solid var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg); max-height: 100%;"
 
 const scope_style = "display: inline-flex; align-items: center; gap: 0.25rem; margin-left: 0.5rem; margin-bottom: 0.5rem; direction: rtl; overflow: hidden; max-width: 40ch;"
@@ -281,7 +311,6 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
   let previous_topic_panel =
     dromel.new_div()
     |> dromel.set_class(elements.source_container_class)
-    |> dromel.set_style(panel_style)
 
   let previous_topic_scope =
     dromel.new_div()
@@ -294,7 +323,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
 
   let previous_topic_container =
     dromel.new_div()
-    |> dromel.set_style("position: relative; padding-top: 0.5rem;")
+    |> dromel.set_style(container_style)
     |> dromel.append_child(previous_topic_scope)
     |> dromel.append_child(previous_topic_panel)
     |> dromel.append_child(previous_topic_footer)
@@ -304,9 +333,6 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
     dromel.new_div()
     |> dromel.set_class(elements.source_container_class)
     |> dromel.set_style(panel_style)
-    |> dromel.set_inner_html(
-      "<div style='color: var(--color-body-text);'>Loading topic source...</div>",
-    )
 
   let topic_scope =
     dromel.new_div()
@@ -319,7 +345,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
 
   let topic_container =
     dromel.new_div()
-    |> dromel.set_style("position: relative; padding-top: 0.5rem;")
+    |> dromel.set_style(container_style)
     |> dromel.append_child(topic_scope)
     |> dromel.append_child(topic_panel)
     |> dromel.append_child(topic_footer)
@@ -339,7 +365,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
 
   let references_container =
     dromel.new_div()
-    |> dromel.set_style("position: relative; padding-top: 0.5rem;")
+    |> dromel.set_style(container_style)
     |> dromel.append_child(references_footer)
     |> dromel.append_child(references_panel)
 
@@ -402,63 +428,62 @@ pub type FocusTarget {
 
 /// Callback for loading source text when restoring a view (restore scroll position, focus specific child)
 fn on_source_text_loaded_restore(
+  result,
   container: element.Element,
   elements: ActiveViewElements,
   topic: audit_data.Topic,
   focus_target focus_target: FocusTarget,
-) -> fn(Result(String, snag.Snag)) -> Nil {
-  fn(result) {
-    case result {
-      Ok(source_text) -> {
-        let _ = elements.topic_panel |> dromel.set_inner_html(source_text)
+) -> Nil {
+  case result {
+    Ok(source_text) -> {
+      let _ = elements.topic_panel |> dromel.set_inner_html(source_text)
 
-        let children =
-          dromel.query_element_all(
-            elements.topic_panel,
-            elements.source_topic_tokens,
-          )
-
-        set_active_view_elements(
-          ActiveViewElements(..elements, topic_children_tokens: children),
+      let children =
+        dromel.query_element_all(
+          elements.topic_panel,
+          elements.source_topic_tokens,
         )
 
-        // Focus and set scroll based on the target type
-        case focus_target {
-          FocusByIndex(index:, scroll_position:) -> {
-            dromel.set_scroll_top(elements.topic_panel, scroll_position)
-            let _ = array.get(children, index) |> result.map(dromel.focus)
-            set_current_child_topic_index(container, index)
-          }
-          FocusById(id) -> {
-            case find_child_by_id(children, id) {
-              Ok(#(child, index)) -> {
-                let _ = dromel.focus(child)
-                set_current_child_topic_index(container, index)
-              }
-              Error(Nil) -> Nil
+      set_active_view_elements(
+        ActiveViewElements(..elements, topic_children_tokens: children),
+      )
+
+      // Focus and set scroll based on the target type
+      case focus_target {
+        FocusByIndex(index:, scroll_position:) -> {
+          dromel.set_scroll_top(elements.topic_panel, scroll_position)
+          let _ = array.get(children, index) |> result.map(dromel.focus)
+          set_current_child_topic_index(container, index)
+        }
+        FocusById(id) -> {
+          case find_child_by_id(children, id) {
+            Ok(#(child, index)) -> {
+              let _ = dromel.focus(child)
+              set_current_child_topic_index(container, index)
             }
+            Error(Nil) -> Nil
           }
         }
-
-        // Update the scope breadcrumb
-        populate_topic_scope(elements.topic_scope, elements.topic_panel, topic)
-
-        Nil
       }
 
-      Error(error) -> {
-        let _ =
-          elements.topic_panel
-          |> dromel.set_inner_html(
-            "<div style='color: var(--color-body-text); padding: 1rem;'>"
-            <> error
-            |> snag.layer("Unable to fetch source")
-            |> snag.pretty_print
-            <> "</div>",
-          )
+      // Update the scope breadcrumb
+      populate_topic_scope(elements.topic_scope, elements.topic_panel, topic)
 
-        Nil
-      }
+      Nil
+    }
+
+    Error(error) -> {
+      let _ =
+        elements.topic_panel
+        |> dromel.set_inner_html(
+          "<div style='color: var(--color-body-text); padding: 1rem;'>"
+          <> error
+          |> snag.layer("Unable to fetch source")
+          |> snag.pretty_print
+          <> "</div>",
+        )
+
+      Nil
     }
   }
 }
@@ -493,22 +518,14 @@ fn on_topic_metadata_loaded(
   fn(metadata) {
     case metadata {
       Ok(metadata) -> {
-        case metadata {
-          audit_data.NamedTopic(references: [_, ..] as references, ..)
-          | audit_data.NamedMutableTopic(references: [_, ..] as references, ..) -> {
-            populate_references_panel(elements.references_panel, references)
-          }
-          _ -> {
-            let _ =
-              elements.references_panel
-              |> dromel.set_inner_html(
-                "<div style='color: var(--color-body-text); font-size: 0.9rem;'>No references</div>",
-              )
-            Nil
-          }
+        let references = case metadata {
+          audit_data.NamedTopic(references:, ..)
+          | audit_data.NamedMutableTopic(references:, ..) -> references
+          _ -> []
         }
+        populate_references_panel(elements.references_panel, references)
       }
-      Error(_) -> {
+      Error(_snag) -> {
         let _ =
           elements.references_panel
           |> dromel.set_inner_html(
@@ -531,7 +548,9 @@ fn on_previous_source_text_loaded(
     case result {
       Ok(source_text) -> {
         let _ =
-          elements.previous_topic_panel |> dromel.set_inner_html(source_text)
+          elements.previous_topic_panel
+          |> dromel.set_style(panel_style)
+          |> dromel.set_inner_html(source_text)
         dromel.set_scroll_top(elements.previous_topic_panel, scroll_position)
 
         // Highlight the previous topic index
@@ -601,9 +620,8 @@ fn load_previous_topic_panel(
 fn set_no_previous_topic(elements: ActiveViewElements) -> Nil {
   let _ =
     elements.previous_topic_panel
-    |> dromel.set_inner_html(
-      "<div style='color: var(--color-body-text); font-size: 0.9rem;'>No previous topic</div>",
-    )
+    |> dromel.set_inner_html("")
+    |> dromel.set_style("")
   let _ = elements.previous_topic_scope |> dromel.set_inner_html("")
   Nil
 }
@@ -734,7 +752,7 @@ pub fn navigate_to_new_entry(
 }
 
 /// Navigate to a new entry with a specific focus target
-pub fn navigate_to_new_entry_with_focus(
+fn navigate_to_new_entry_with_focus(
   container: element.Element,
   topic: audit_data.Topic,
   focus_target: FocusTarget,
@@ -771,24 +789,6 @@ pub fn navigate_to_new_entry_with_focus(
         Error(Nil) -> history_graph.create_root(topic)
       }
 
-      // Create new view DOM elements
-      let elements = mount_topic_view(container)
-
-      // Initialize view state (scroll position starts at 0 for new views)
-      let view =
-        TopicView(
-          entry_id: new_entry.id,
-          topic_id: new_entry.topic_id,
-          scroll_position: 0.0,
-        )
-      set_topic_view(new_entry.id, view)
-
-      // Set as active view
-      set_active_topic_view(container, view)
-      set_current_child_topic_index(container, 0)
-      set_current_references_index(container, 0)
-      set_active_panel(container, TopicPanel)
-
       // Update the URL to reflect the active topic
       update_url_for_topic(new_entry.topic_id)
 
@@ -799,17 +799,50 @@ pub fn navigate_to_new_entry_with_focus(
         populate_topic_name,
       )
 
-      // Load previous topic panel content
-      load_previous_topic_panel(new_entry.id, elements)
-
-      // Load source text
+      // Load source text and replace
+      // DOM elements. We wait to replace DOM elements until after
+      // we have the source text so that there is no flicker when
+      // navigating to a new topic due to unloaded DOM elements
+      // but no new context to replace it with yet.
       audit_data.with_source_text(
         audit_data.Topic(id: new_entry.topic_id),
-        on_source_text_loaded_restore(container, elements, topic, focus_target:),
-      )
+        fn(result) {
+          // Create new view DOM elements
+          let elements = mount_topic_view(container)
 
-      // Load topic metadata and populate references panel
-      audit_data.with_topic_metadata(topic, on_topic_metadata_loaded(elements))
+          // Initialize view state (scroll position starts at 0 for new views)
+          let view =
+            TopicView(
+              entry_id: new_entry.id,
+              topic_id: new_entry.topic_id,
+              scroll_position: 0.0,
+            )
+          set_topic_view(new_entry.id, view)
+
+          // Set as active view
+          set_active_topic_view(container, view)
+          set_current_child_topic_index(container, 0)
+          set_current_references_index(container, 0)
+          set_active_panel(container, TopicPanel)
+
+          // Load previous topic panel content
+          load_previous_topic_panel(new_entry.id, elements)
+
+          on_source_text_loaded_restore(
+            result,
+            container,
+            elements,
+            topic,
+            focus_target:,
+          )
+
+          // Load topic metadata and populate references panel
+          audit_data.with_topic_metadata(
+            topic,
+            on_topic_metadata_loaded(elements),
+          )
+        },
+      )
     }
   }
 }
@@ -847,17 +880,6 @@ pub fn navigate_back(container) -> Nil {
                 ])
               history_graph.set_history_entry(updated_parent.id, updated_parent)
 
-              // Remove current view's DOM elements (saves scroll position)
-              remove_active_view(container)
-
-              // Re-create DOM elements for the parent view
-              let elements = mount_topic_view(container)
-
-              set_active_topic_view(container, parent_view)
-              set_current_child_topic_index(container, child_topic_index)
-              set_current_references_index(container, 0)
-              set_active_panel(container, TopicPanel)
-
               // Update the URL to reflect the active topic
               update_url_for_topic(parent_entry.topic_id)
 
@@ -867,14 +889,29 @@ pub fn navigate_back(container) -> Nil {
                 populate_topic_name,
               )
 
-              // Load previous topic panel content
-              load_previous_topic_panel(parent_entry.id, elements)
-
-              // Load source text and restore scroll position
+              // Load source text and restore scroll position, and replace
+              // DOM elements. We wait to replace DOM elements until after
+              // we have the source text so that there is no flicker when
+              // navigating to a new topic due to unloaded DOM elements
+              // but no new context to replace it with yet.
               let parent_topic = audit_data.Topic(id: parent_entry.topic_id)
-              audit_data.with_source_text(
-                parent_topic,
+              audit_data.with_source_text(parent_topic, fn(result) {
+                // Remove current view's DOM elements (saves scroll position)
+                remove_active_view(container)
+
+                // Re-create DOM elements for the parent view
+                let elements = mount_topic_view(container)
+
+                set_active_topic_view(container, parent_view)
+                set_current_child_topic_index(container, child_topic_index)
+                set_current_references_index(container, 0)
+                set_active_panel(container, TopicPanel)
+
+                // Load previous topic panel content
+                load_previous_topic_panel(parent_entry.id, elements)
+
                 on_source_text_loaded_restore(
+                  result,
                   container,
                   elements,
                   parent_topic,
@@ -882,14 +919,14 @@ pub fn navigate_back(container) -> Nil {
                     child_topic_index,
                     parent_view.scroll_position,
                   ),
-                ),
-              )
+                )
 
-              // Load topic metadata and populate references panel
-              audit_data.with_topic_metadata(
-                parent_topic,
-                on_topic_metadata_loaded(elements),
-              )
+                // Load topic metadata and populate references panel
+                audit_data.with_topic_metadata(
+                  parent_topic,
+                  on_topic_metadata_loaded(elements),
+                )
+              })
 
               Nil
             }
@@ -928,17 +965,6 @@ pub fn navigate_forward(container) -> Nil {
               |> io.println_error
 
             Ok(child_view) -> {
-              // Remove current view's DOM elements (saves scroll position)
-              remove_active_view(container)
-
-              // Re-create DOM elements for the child view
-              let elements = mount_topic_view(container)
-
-              set_active_topic_view(container, child_view)
-              set_current_child_topic_index(container, child_topic_index)
-              set_current_references_index(container, 0)
-              set_active_panel(container, TopicPanel)
-
               // Update the URL to reflect the active topic
               update_url_for_topic(child_entry.topic_id)
 
@@ -948,14 +974,26 @@ pub fn navigate_forward(container) -> Nil {
                 populate_topic_name,
               )
 
-              // Load previous topic panel content
-              load_previous_topic_panel(child_entry.id, elements)
-
-              // Load source text and restore scroll position
+              // Load source text and restore scroll position, and replace
+              // DOM elements. We wait to replace DOM elements until after
+              // we have the source text so that there is no flicker when
+              // navigating to a new topic due to unloaded DOM elements
+              // but no new context to replace it with yet.
               let child_topic = audit_data.Topic(id: child_entry.topic_id)
-              audit_data.with_source_text(
-                child_topic,
+              audit_data.with_source_text(child_topic, fn(result) {
+                // Remove current view's DOM elements (saves scroll position)
+                remove_active_view(container)
+
+                // Re-create DOM elements for the child view
+                let elements = mount_topic_view(container)
+
+                set_active_topic_view(container, child_view)
+                set_current_child_topic_index(container, child_topic_index)
+                set_current_references_index(container, 0)
+                set_active_panel(container, TopicPanel)
+
                 on_source_text_loaded_restore(
+                  result,
                   container,
                   elements,
                   child_topic,
@@ -963,14 +1001,17 @@ pub fn navigate_forward(container) -> Nil {
                     child_topic_index,
                     child_view.scroll_position,
                   ),
-                ),
-              )
+                )
 
-              // Load topic metadata and populate references panel
-              audit_data.with_topic_metadata(
-                child_topic,
-                on_topic_metadata_loaded(elements),
-              )
+                // Load previous topic panel content
+                load_previous_topic_panel(child_entry.id, elements)
+
+                // Load topic metadata and populate references panel
+                audit_data.with_topic_metadata(
+                  child_topic,
+                  on_topic_metadata_loaded(elements),
+                )
+              })
 
               Nil
             }
@@ -1593,77 +1634,59 @@ fn populate_topic_name(
   )
 }
 
-const reference_class_container = dromel.Class("topic-reference-container")
-
 const reference_title_class = dromel.Class("topic-reference-title")
-
-const reference_source_class = dromel.Class("topic-reference-source")
 
 fn populate_references_panel(
   panel: element.Element,
   references: List(audit_data.Topic),
 ) {
-  case references {
-    [] -> {
-      let _ =
-        panel
-        |> dromel.set_inner_html(
-          "<div style='color: var(--color-body-text); font-size: 0.9rem;'>No references</div>",
-        )
-      Nil
-    }
-    _ -> {
-      list.each(references, fn(ref_topic) {
-        let reference_scope =
-          dromel.new_div()
-          |> dromel.set_class(reference_title_class)
-          |> dromel.set_style(scope_style)
+  list.each(references, fn(ref_topic) {
+    let reference_scope =
+      dromel.new_div()
+      |> dromel.set_class(reference_title_class)
+      |> dromel.set_style(scope_style)
 
-        let reference_source =
-          dromel.new_div()
-          |> dromel.set_class(reference_source_class)
-          |> dromel.add_class(elements.source_container_class)
-          |> dromel.set_data(topic_key, ref_topic.id)
-          |> dromel.set_style(panel_style)
-          |> dromel.add_style("padding-left: 0.5rem;")
+    let reference_source =
+      dromel.new_div()
+      |> dromel.add_class(elements.source_container_class)
+      |> dromel.set_data(topic_key, ref_topic.id)
+      |> dromel.set_style(panel_style)
+      |> dromel.add_style("padding-left: 0.5rem;")
 
-        let reference_container =
-          dromel.new_div()
-          |> dromel.set_class(reference_class_container)
-          |> dromel.append_child(reference_scope)
-          |> dromel.append_child(reference_source)
+    let reference_container =
+      dromel.new_div()
+      |> dromel.append_child(reference_scope)
+      |> dromel.append_child(reference_source)
 
-        let _ = panel |> dromel.append_child(reference_container)
+    let _ = panel |> dromel.append_child(reference_container)
 
-        // Populate the scope breadcrumb
-        populate_topic_scope(reference_scope, reference_source, ref_topic)
+    // Populate the scope breadcrumb
+    populate_topic_scope(reference_scope, reference_source, ref_topic)
 
-        audit_data.with_source_text(ref_topic, fn(result) {
-          case result {
-            Ok(source_text) -> {
-              let _ = reference_source |> dromel.set_inner_html(source_text)
+    audit_data.with_source_text(ref_topic, fn(result) {
+      case result {
+        Ok(source_text) -> {
+          let _ = reference_source |> dromel.set_inner_html(source_text)
 
-              Nil
-            }
+          Nil
+        }
 
-            Error(error) -> {
-              let _ =
-                reference_source
-                |> dromel.set_inner_html(
-                  "<div style='color: var(--color-body-text); padding: 1rem;'>"
-                  <> error
-                  |> snag.layer("Unable to fetch source")
-                  |> snag.pretty_print
-                  <> "</div>",
-                )
+        Error(error) -> {
+          let _ =
+            reference_source
+            |> dromel.set_inner_html(
+              "<div style='color: var(--color-body-text); padding: 1rem;'>"
+              <> error
+              |> snag.layer("Unable to fetch source")
+              |> snag.pretty_print
+              <> "</div>",
+            )
 
-              Nil
-            }
-          }
-        })
-      })
-    }
-  }
+          Nil
+        }
+      }
+    })
+  })
 }
 
 fn gather_references_topic_tokens() -> Nil {
