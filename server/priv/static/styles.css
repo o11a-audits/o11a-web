@@ -121,6 +121,7 @@ code,
 
 /* Identifiers (variable names) */
 .local-variable,
+.mutable-local-variable,
 .identifier {
   color: var(--color-identifier);
 }

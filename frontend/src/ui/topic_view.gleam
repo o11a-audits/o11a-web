@@ -494,7 +494,8 @@ fn on_topic_metadata_loaded(
     case metadata {
       Ok(metadata) -> {
         case metadata {
-          audit_data.NamedTopic(references: [_, ..] as references, ..) -> {
+          audit_data.NamedTopic(references: [_, ..] as references, ..)
+          | audit_data.NamedMutableTopic(references: [_, ..] as references, ..) -> {
             populate_references_panel(elements.references_panel, references)
           }
           _ -> {
@@ -1160,12 +1161,7 @@ fn navigate_scope_up_topic(container) {
               case result {
                 Error(_) -> io.println_error("Unable to get topic metadata")
                 Ok(metadata) -> {
-                  let scope = case metadata {
-                    audit_data.NamedTopic(scope:, ..)
-                    | audit_data.NamedMutableTopic(scope:, ..)
-                    | audit_data.UnnamedTopic(scope:, ..) -> scope
-                  }
-                  case audit_data.parent_topic(scope) {
+                  case audit_data.parent_topic(metadata.scope) {
                     None -> io.println("Already at top scope level")
                     Some(parent_topic) -> {
                       navigate_to_new_entry_with_focus(
@@ -1288,12 +1284,7 @@ fn navigate_scope_up_reference(container) {
                             "Unable to get reference topic metadata",
                           )
                         Ok(metadata) -> {
-                          let scope = case metadata {
-                            audit_data.NamedTopic(scope:, ..)
-                            | audit_data.NamedMutableTopic(scope:, ..)
-                            | audit_data.UnnamedTopic(scope:, ..) -> scope
-                          }
-                          case audit_data.parent_topic(scope) {
+                          case audit_data.parent_topic(metadata.scope) {
                             None -> io.println("Already at top scope level")
                             Some(parent_topic) -> {
                               // Update only this source container with the parent topic
@@ -1521,7 +1512,6 @@ fn update_source_container(
 }
 
 fn navigate_to_child(container, index_diff) {
-  io.println("Navigating to child " <> int.to_string(index_diff))
   case get_active_view_elements() {
     Ok(elements) -> {
       let new_index = case
@@ -1552,7 +1542,6 @@ fn navigate_to_child(container, index_diff) {
 }
 
 fn navigate_to_reference(container, index_diff) {
-  io.println("Navigating to reference " <> int.to_string(index_diff))
   case get_active_view_elements() {
     Ok(elements) -> {
       let current_index = get_current_references_index(container)
