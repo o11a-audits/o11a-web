@@ -281,6 +281,7 @@ pub type UnnamedTopicKind {
   While
   Reference
   MutableReference
+  Signature
   DocumentationSection
   DocumentationParagraph
   Other
@@ -361,6 +362,7 @@ fn unnamed_topic_kind_decoder() -> decode.Decoder(UnnamedTopicKind) {
     "While" -> decode.success(While)
     "Reference" -> decode.success(Reference)
     "MutableReference" -> decode.success(MutableReference)
+    "Signature" -> decode.success(Signature)
     "DocumentationSection" -> decode.success(DocumentationSection)
     "DocumentationParagraph" -> decode.success(DocumentationParagraph)
     "Other" -> decode.success(Other)
@@ -506,6 +508,7 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
         While -> "<span class=\"keyword\">WhileStatement</span>"
         Reference -> "<span class=\"identifier\">Reference</span>"
         MutableReference -> "<span class=\"identifier\">MutableReference</span>"
+        Signature -> "<span class=\"identifier\">Signature</span>"
         DocumentationSection -> "<span>DocumentationSection</span>"
         DocumentationParagraph -> "<span>DocumentationParagraph</span>"
         Other -> "<span>Other</span>"
