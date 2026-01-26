@@ -1,13 +1,10 @@
 import audit_data
-import dromel
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import plinth/browser/element
 import snag
 import tempo/datetime
 import tempo/instant
-import ui/icons
 
 // =============================================================================
 // Types
@@ -262,53 +259,6 @@ fn delete_branch(entry_id: String) -> Nil {
       Nil
     }
   }
-}
-
-/// Mount a breadcrumb display for the entry's parent chain
-/// Creates breadcrumb elements separated by chevron_right icons
-/// Fetches topic metadata asynchronously to display topic names
-pub fn mount_history_breadcrumb(
-  container: element.Element,
-  entry: HistoryEntry,
-  populate_entry_name: fn(HistoryEntry, element.Element) -> Nil,
-) -> Nil {
-  // Clear the container first
-  let _ = dromel.set_inner_html(container, "")
-
-  // Get the parent chain (from root to current entry) and reverse it
-  // Reverse because container has direction: rtl, so last items appear first (rightmost)
-  let parent_chain = get_parent_chain(entry) |> list.reverse
-
-  // Create breadcrumb elements for each entry in the chain
-  list.index_map(parent_chain, fn(chain_entry, index) {
-    // Add chevron delimiter before each item except the first
-    // (which is actually the last item due to reversal)
-    case index > 0 {
-      True -> {
-        let _ =
-          dromel.new_span()
-          |> dromel.set_inner_html(icons.chevron_right_breadcrumb)
-          |> dromel.set_style(
-            "display: inline-flex; align-items: center; opacity: 0.6; width: 0.75em; height: 0.75em; line-height: 1; flex-shrink: 0;",
-          )
-          |> dromel.append_child(to: container)
-        Nil
-      }
-      False -> Nil
-    }
-
-    // Create the text span for the topic name
-    let text_span =
-      dromel.new_span()
-      |> dromel.set_inner_text("...")
-      |> dromel.set_style("color: var(--color-body-text); white-space: nowrap;")
-
-    let _ = dromel.append_child(container, text_span)
-
-    populate_entry_name(chain_entry, text_span)
-  })
-
-  Nil
 }
 
 // =============================================================================

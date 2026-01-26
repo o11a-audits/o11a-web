@@ -712,39 +712,25 @@ fn populate_topic_scope(
   }
 }
 
-/// Mount a breadcrumb display for a topic's scope
+/// A part of a breadcrumb - either a file name string or a topic
+type BreadcrumbPart {
+  // For file names and other prefixes like "global"
+  TextPart(String)
+  TopicPart(audit_data.Topic)
+}
+
+/// Render breadcrumb parts into a container element
 /// Creates breadcrumb elements separated by chevron_right icons
-/// Similar pattern to mount_history_breadcrumb in history_graph.gleam
-fn mount_scope_breadcrumb(
+/// Parts should be in display order (will be reversed for RTL container)
+fn mount_breadcrumb_parts(
   container: element.Element,
-  metadata: audit_data.TopicMetadata,
+  parts: List(BreadcrumbPart),
 ) -> Nil {
-  // Clear the container first
-  let _ = dromel.set_inner_html(container, "")
-
-  // Build list of scope items based on scope type
-  // Only show component and optionally member (never the topic name)
   // Reverse because container has direction: rtl, so last items appear first (rightmost)
-  // Special case: if the topic is a contract, show its name instead of the file name
-  let scope_items =
-    case metadata.scope {
-      audit_data.Global | audit_data.Container(..) -> [
-        metadata.topic,
-      ]
-      audit_data.Component(component:, ..) -> [component]
-      audit_data.Member(component:, member:, ..) -> [
-        component,
-        member,
-      ]
-      audit_data.SemanticBlock(component:, member:, ..) -> [
-        component,
-        member,
-      ]
-    }
-    |> list.reverse
+  let reversed_parts = list.reverse(parts)
 
-  // Create breadcrumb elements for each item in the scope
-  list.index_map(scope_items, fn(item, index) {
+  // Create breadcrumb elements for each part
+  list.index_map(reversed_parts, fn(part, index) {
     // Add chevron delimiter before each item except the first
     case index > 0 {
       True -> {
@@ -758,30 +744,107 @@ fn mount_scope_breadcrumb(
       False -> Nil
     }
 
-    // Create the text span
-    let text_span =
-      dromel.new_span()
-      |> dromel.set_inner_text("...")
-      |> dromel.set_style(scope_item_style)
-
-    let _ = dromel.append_child(container, text_span)
-
-    audit_data.with_topic_metadata(item, fn(result) {
-      case result {
-        Ok(metadata) -> {
-          let name = audit_data.topic_metadata_highlighted_name(metadata)
-          let _ = dromel.set_inner_html(text_span, name)
-          Nil
-        }
-        Error(_) -> {
-          let _ = dromel.set_inner_text(text_span, "?")
-          Nil
-        }
+    case part {
+      TextPart(name) -> {
+        let _ =
+          dromel.new_span()
+          |> dromel.set_inner_text(name)
+          |> dromel.set_style(scope_item_style)
+          |> dromel.append_child(to: container)
+        Nil
       }
-    })
+      TopicPart(topic) -> {
+        let text_span =
+          dromel.new_span()
+          |> dromel.set_inner_text("...")
+          |> dromel.set_style(scope_item_style)
+        let _ = dromel.append_child(container, text_span)
+
+        audit_data.with_topic_metadata(topic, fn(result) {
+          case result {
+            Ok(topic_metadata) -> {
+              let name =
+                audit_data.topic_metadata_highlighted_name(topic_metadata)
+              let _ = dromel.set_inner_html(text_span, name)
+              Nil
+            }
+            Error(_) -> {
+              let _ = dromel.set_inner_text(text_span, "?")
+              Nil
+            }
+          }
+        })
+      }
+    }
   })
 
   Nil
+}
+
+/// Mount a breadcrumb display for a topic's scope
+/// Shows component > member (excludes file name and topic name)
+fn mount_scope_breadcrumb(
+  container: element.Element,
+  metadata: audit_data.TopicMetadata,
+) -> Nil {
+  let _ = dromel.set_inner_html(container, "")
+  let parts = case metadata.scope {
+    audit_data.Global -> [TextPart("global"), TopicPart(metadata.topic)]
+    audit_data.Container(..) -> [TopicPart(metadata.topic)]
+    audit_data.Component(component:, ..) -> [
+      TopicPart(component),
+      TopicPart(metadata.topic),
+    ]
+    audit_data.Member(component:, member:, ..) -> [
+      TopicPart(component),
+      TopicPart(member),
+    ]
+    audit_data.SemanticBlock(component:, member:, ..) -> [
+      TopicPart(component),
+      TopicPart(member),
+    ]
+  }
+  mount_breadcrumb_parts(container, parts)
+}
+
+/// Mount a fully qualified name display for the current topic
+/// Shows file name > scope topics > subject name with chevrons between them
+fn mount_fully_qualified_name(
+  container: element.Element,
+  topic_id: String,
+) -> Nil {
+  let _ = dromel.set_inner_html(container, "")
+
+  audit_data.with_topic_metadata(audit_data.Topic(id: topic_id), fn(result) {
+    case result {
+      Ok(metadata) -> {
+        let parts = case metadata.scope {
+          audit_data.Global -> [TextPart("global"), TopicPart(metadata.topic)]
+          audit_data.Container(container:) -> [
+            TextPart(container),
+            TopicPart(metadata.topic),
+          ]
+          audit_data.Component(container:, component:) -> [
+            TextPart(container),
+            TopicPart(component),
+            TopicPart(metadata.topic),
+          ]
+          audit_data.Member(container:, component:, member:)
+          | audit_data.SemanticBlock(container:, component:, member:, ..) -> [
+            TextPart(container),
+            TopicPart(component),
+            TopicPart(member),
+            TopicPart(metadata.topic),
+          ]
+        }
+        mount_breadcrumb_parts(container, parts)
+      }
+      Error(_) -> {
+        let _ = dromel.set_inner_html(container, "Unable to Fetch")
+        Nil
+      }
+    }
+  })
 }
 
 // ============================================================================
@@ -836,12 +899,8 @@ fn navigate_to_new_entry_with_focus(
       // Update the URL to reflect the active topic
       update_url_for_topic(new_entry.topic_id)
 
-      // Update the breadcrumb
-      history_graph.mount_history_breadcrumb(
-        get_history_container(),
-        new_entry,
-        populate_topic_name,
-      )
+      // Update the fully qualified name display
+      mount_fully_qualified_name(get_history_container(), new_entry.topic_id)
 
       // Load source text and replace
       // DOM elements. We wait to replace DOM elements until after
@@ -926,10 +985,10 @@ pub fn navigate_back(container) -> Nil {
               // Update the URL to reflect the active topic
               update_url_for_topic(parent_entry.topic_id)
 
-              history_graph.mount_history_breadcrumb(
+              // Update the fully qualified name display
+              mount_fully_qualified_name(
                 get_history_container(),
-                parent_entry,
-                populate_topic_name,
+                parent_entry.topic_id,
               )
 
               // Load source text and restore scroll position. We wait to reset
@@ -1013,10 +1072,10 @@ pub fn navigate_forward(container) -> Nil {
               // Update the URL to reflect the active topic
               update_url_for_topic(child_entry.topic_id)
 
-              history_graph.mount_history_breadcrumb(
+              // Update the fully qualified name display
+              mount_fully_qualified_name(
                 get_history_container(),
-                child_entry,
-                populate_topic_name,
+                child_entry.topic_id,
               )
 
               // Load source text and restore scroll position. We wait to reset
@@ -1653,29 +1712,6 @@ fn navigate_to_reference(container, index_diff) {
       io.println_error("no active view")
     }
   }
-}
-
-fn populate_topic_name(
-  chain_entry: history_graph.HistoryEntry,
-  item: dromel.Element,
-) {
-  // Fetch topic metadata and update the text
-  audit_data.with_topic_metadata(
-    audit_data.Topic(id: chain_entry.topic_id),
-    fn(result) {
-      case result {
-        Ok(metadata) -> {
-          let name = audit_data.topic_metadata_highlighted_name(metadata)
-          let _ = dromel.set_inner_html(item, name)
-          Nil
-        }
-        Error(_) -> {
-          let _ = dromel.set_inner_text(item, "Unknown")
-          Nil
-        }
-      }
-    },
-  )
 }
 
 const reference_title_class = dromel.Class("topic-reference-title")
