@@ -223,10 +223,6 @@ export function set_active_view_elements(elements) {
   active_view_elements = elements;
 }
 
-export function clear_active_view_elements() {
-  active_view_elements = null;
-}
-
 // =============================================================================
 // Topic View
 // =============================================================================

@@ -468,8 +468,7 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
           "<span class=\"constant\">" <> name <> "</span>"
         StateVariable(Immutable) ->
           "<span class=\"immutable-state-variable\">" <> name <> "</span>"
-        LocalVariable ->
-          "<span class=\"local-variable\">" <> name <> "</span>"
+        LocalVariable -> "<span class=\"local-variable\">" <> name <> "</span>"
         Builtin -> "<span class=\"global\">" <> name <> "</span>"
       }
     NamedMutableTopic(name:, kind:, ..) ->
@@ -709,6 +708,61 @@ pub fn with_topic_metadata(topic: Topic, callback) {
         }
         callback(metadata)
 
+        promise.resolve(Nil)
+      })
+
+      Nil
+    }
+  }
+}
+
+// Fetches both metadata and source text for a topic
+pub fn with_topic_data(topic: Topic, callback) {
+  case read_topic_metadata(topic.id), read_source_text(topic.id) {
+    Ok(metadata), Ok(source_text) -> callback(Ok(metadata), Ok(source_text))
+    _, _ -> {
+      let metadata_promise = case read_topic_metadata_promise(topic.id) {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_topic_metadata(topic)
+          set_topic_metadata_promise(topic.id, promise)
+          promise
+        }
+      }
+
+      let source_text_promise = case read_source_text_promise(topic.id) {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_source_text(topic)
+          set_source_text_promise(topic.id, promise)
+          promise
+        }
+      }
+
+      promise.await(metadata_promise, fn(metadata) {
+        case metadata {
+          Ok(metadata) -> set_topic_metadata(topic.id, metadata)
+          Error(error) ->
+            snag.layer(error, "Unable to fetch metadata for topic " <> topic.id)
+            |> snag.line_print
+            |> io.println_error
+        }
+
+        promise.await(source_text_promise, fn(source_text) {
+          case source_text {
+            Ok(source_text) -> set_source_text(topic.id, source_text)
+            Error(error) ->
+              snag.layer(
+                error,
+                "Unable to fetch source text for topic " <> topic.id,
+              )
+              |> snag.line_print
+              |> io.println_error
+          }
+
+          callback(metadata, source_text)
+          promise.resolve(Nil)
+        })
         promise.resolve(Nil)
       })
 
