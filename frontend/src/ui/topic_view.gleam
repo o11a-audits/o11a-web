@@ -469,14 +469,20 @@ fn restore_source_text(
       case focus_target {
         FocusByIndex(index:, scroll_position:) -> {
           dromel.set_scroll_top(elements.topic_panel, scroll_position)
-          let _ = array.get(children, index) |> result.map(dromel.focus)
+          let _ =
+            array.get(children, index)
+            |> result.map(focus_topic_token_and_prefetch)
           set_current_child_topic_index(container, index)
+          // When setting up the main child topic index, reset references index
+          set_current_references_index(container, 0)
         }
         FocusById(id) -> {
           case find_child_by_id(children, id) {
             Ok(#(child, index)) -> {
-              let _ = dromel.focus(child)
+              let _ = focus_topic_token_and_prefetch(child)
               set_current_child_topic_index(container, index)
+              // When setting up the main child topic index, reset references index
+              set_current_references_index(container, 0)
             }
             Error(Nil) -> Nil
           }
@@ -862,8 +868,6 @@ fn navigate_to_new_entry_with_focus(
 
           // Set as active view
           set_active_topic_view(container, view)
-          set_current_child_topic_index(container, 0)
-          set_current_references_index(container, 0)
           set_active_panel(container, TopicPanel)
 
           // Load previous topic panel content
@@ -942,8 +946,6 @@ pub fn navigate_back(container) -> Nil {
                   }
 
                   set_active_topic_view(container, parent_view)
-                  set_current_child_topic_index(container, child_topic_index)
-                  set_current_references_index(container, 0)
                   set_active_panel(container, TopicPanel)
 
                   // Load previous topic panel content
@@ -1029,8 +1031,6 @@ pub fn navigate_forward(container) -> Nil {
                 }
 
                 set_active_topic_view(container, child_view)
-                set_current_child_topic_index(container, child_topic_index)
-                set_current_references_index(container, 0)
                 set_active_panel(container, TopicPanel)
 
                 // Update the scope breadcrumb
@@ -1495,7 +1495,7 @@ fn find_and_focus_element_by_id(
     Ok(el) -> {
       case dromel.get_attribute(el, "id") {
         Ok(id) if id == target_id -> {
-          dromel.focus(el)
+          focus_topic_token_and_prefetch(el)
           case panel {
             TopicPanel -> set_current_child_topic_index(container, index)
             ReferencesPanel -> set_current_references_index(container, index)
@@ -1612,7 +1612,7 @@ fn navigate_to_child(container, index_diff) {
 
       case elements.topic_children_tokens |> array.get(new_index) {
         Ok(el) -> {
-          dromel.focus(el)
+          focus_topic_token_and_prefetch(el)
           set_current_child_topic_index(container, new_index)
         }
         Error(Nil) -> {
@@ -1641,7 +1641,7 @@ fn navigate_to_reference(container, index_diff) {
 
       case elements.references_topic_tokens |> array.get(new_index) {
         Ok(el) -> {
-          dromel.focus(el)
+          focus_topic_token_and_prefetch(el)
           set_current_references_index(container, new_index)
         }
         Error(Nil) -> {
@@ -1694,5 +1694,15 @@ fn gather_references_topic_tokens() -> Nil {
       Nil
     }
     Error(Nil) -> Nil
+  }
+}
+
+fn focus_topic_token_and_prefetch(element) {
+  let _ = dromel.focus(element)
+
+  case dromel.get_data(element, elements.token_topic_id_key) {
+    Ok(topic_id) ->
+      audit_data.with_topic_data(audit_data.Topic(topic_id), fn(_, _) { Nil })
+    Error(Nil) -> io.println_error("No topic ID found for prefetch")
   }
 }
