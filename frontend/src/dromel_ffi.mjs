@@ -35,3 +35,11 @@ export function parent_element(element) {
 export function class_list(element) {
   return Array.from(element.classList);
 }
+
+export function client_width(element) {
+  return element.clientWidth;
+}
+
+export function scroll_width(element) {
+  return element.scrollWidth;
+}

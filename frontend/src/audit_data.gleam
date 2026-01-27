@@ -493,33 +493,86 @@ pub fn topic_metadata_name(metadata: TopicMetadata) -> String {
 }
 
 pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
-  case metadata {
-    NamedTopic(name:, kind:, ..) ->
+  let kw = fn(text) { "<span class=\"keyword\">" <> text <> "</span>" }
+  let visibility_kw = fn(visibility) {
+    case visibility {
+      Public -> kw("pub") <> " "
+      Private -> kw("priv") <> " "
+      Internal -> kw("int") <> " "
+      External -> kw("ext") <> " "
+    }
+  }
+
+  let highlighted_name = case metadata {
+    NamedTopic(name:, kind:, visibility:, ..) ->
       case kind {
-        TopicContract(..) -> "<span class=\"contract\">" <> name <> "</span>"
+        TopicContract(contract_kind) ->
+          kw(contract_kind_to_keyword(contract_kind))
+          <> " <span class=\"contract\">"
+          <> name
+          <> "</span>"
         TopicFunction(Function) | TopicFunction(FreeFunction) ->
-          "<span class=\"function\">" <> name <> "</span>"
-        TopicFunction(Receive) -> "<span class=\"keyword\">receive</span>"
-        TopicFunction(Fallback) -> "<span class=\"keyword\">fallback</span>"
-        TopicFunction(Constructor) ->
-          "<span class=\"keyword\">constructor</span>"
-        Modifier -> "<span class=\"modifier\">" <> name <> "</span>"
-        Event -> "<span class=\"event\">" <> name <> "</span>"
-        TopicError -> "<span class=\"error\">" <> name <> "</span>"
-        Struct -> "<span class=\"struct\">" <> name <> "</span>"
-        Enum -> "<span class=\"enum\">" <> name <> "</span>"
+          visibility_kw(visibility)
+          <> kw("fn")
+          <> " <span class=\"function\">"
+          <> name
+          <> "</span>"
+        TopicFunction(Receive) -> visibility_kw(visibility) <> kw("receive")
+        TopicFunction(Fallback) -> visibility_kw(visibility) <> kw("fallback")
+        TopicFunction(Constructor) -> kw("constructor")
+        Modifier ->
+          visibility_kw(visibility)
+          <> kw("modifier")
+          <> " <span class=\"modifier\">"
+          <> name
+          <> "</span>"
+        Event ->
+          visibility_kw(visibility)
+          <> kw("event")
+          <> " <span class=\"event\">"
+          <> name
+          <> "</span>"
+        TopicError ->
+          visibility_kw(visibility)
+          <> kw("error")
+          <> " <span class=\"error\">"
+          <> name
+          <> "</span>"
+        Struct ->
+          visibility_kw(visibility)
+          <> kw("struct")
+          <> " <span class=\"struct\">"
+          <> name
+          <> "</span>"
+        Enum ->
+          visibility_kw(visibility)
+          <> kw("enum")
+          <> " <span class=\"enum\">"
+          <> name
+          <> "</span>"
         EnumMember -> "<span class=\"enum-value\">" <> name <> "</span>"
         StateVariable(Constant) ->
-          "<span class=\"constant\">" <> name <> "</span>"
+          visibility_kw(visibility)
+          <> kw("const")
+          <> " <span class=\"constant\">"
+          <> name
+          <> "</span>"
         StateVariable(Immutable) ->
-          "<span class=\"immutable-state-variable\">" <> name <> "</span>"
+          visibility_kw(visibility)
+          <> kw("immutable")
+          <> " <span class=\"immutable-state-variable\">"
+          <> name
+          <> "</span>"
         LocalVariable -> "<span class=\"local-variable\">" <> name <> "</span>"
         Builtin -> "<span class=\"global\">" <> name <> "</span>"
       }
-    NamedMutableTopic(name:, kind:, ..) ->
+    NamedMutableTopic(name:, kind:, visibility:, ..) ->
       case kind {
         MutableStateVariable ->
-          "<span class=\"mutable-state-variable\">" <> name <> "</span>"
+          visibility_kw(visibility)
+          <> "<span class=\"mutable-state-variable\">"
+          <> name
+          <> "</span>"
         MutableLocalVariable ->
           "<span class=\"mutable-local-variable\">" <> name <> "</span>"
       }
@@ -557,6 +610,8 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
         Other -> "<span>Other</span>"
       }
   }
+
+  "<code>" <> highlighted_name <> "</code>"
 }
 
 pub type ContractKind {
@@ -572,6 +627,15 @@ pub fn contract_kind_to_string(kind: ContractKind) -> String {
     Interface -> "Interface"
     Library -> "Library"
     Abstract -> "Abstract"
+  }
+}
+
+pub fn contract_kind_to_keyword(kind: ContractKind) -> String {
+  case kind {
+    Contract -> "contract"
+    Interface -> "interface"
+    Library -> "library"
+    Abstract -> "abstract"
   }
 }
 

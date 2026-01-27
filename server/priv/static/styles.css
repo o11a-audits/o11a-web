@@ -71,8 +71,6 @@ body {
 
 /* Base code block styling */
 pre {
-  background-color: var(--color-code-bg);
-  color: var(--color-code-text);
   font-family: "Fira Code", "Consolas", "Monaco", "Courier New", monospace;
   font-size: 0.9rem;
   line-height: 1.6;
@@ -86,8 +84,6 @@ pre {
 
 code,
 .shortcut {
-  background-color: var(--color-code-bg);
-  color: var(--color-code-text);
   font-family: "Fira Code", "Consolas", "Monaco", "Courier New", monospace;
 }
 
@@ -232,4 +228,12 @@ code,
 }
 span[data-topic]:focus {
   text-decoration: underline;
+}
+
+.scope-standard {
+  margin-left: 0.5rem;
+  max-width: 40ch;
+}
+.scope-expanded {
+  max-width: calc(40ch + 0.5rem);
 }

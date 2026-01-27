@@ -299,7 +299,15 @@ const container_style = "position: relative; padding-top: 0.5rem; width: calc(40
 
 const panel_style = "border-radius: 8px; border: 1px solid var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg); max-height: 100%;"
 
-const scope_style = "display: inline-flex; align-items: center; gap: 0.25rem; margin-left: 0.5rem; margin-bottom: 0.5rem; direction: rtl; overflow: hidden; max-width: 40ch;"
+const scope_style = "position: relative; display: inline-flex; align-items: center; gap: 0.25rem; margin-bottom: 0.5rem; padding-right: 0.5rem; direction: rtl; overflow: hidden;"
+
+const scope_standard_class = dromel.Class("scope-standard")
+
+const scope_expanded_class = dromel.Class("scope-expanded")
+
+const scope_overflow_gradient_style_hidden = "display: none;"
+
+const scope_overflow_gradient_style_visible = "position: absolute; left: 0; top: 0; bottom: 0; width: 1.5rem; background: linear-gradient(to right, var(--color-body-bg), transparent); pointer-events: none;"
 
 const footer_style = "position: absolute; bottom: -1rem; right: 0.5rem;"
 
@@ -312,6 +320,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
   let previous_topic_scope =
     dromel.new_div()
     |> dromel.set_style(scope_style)
+    |> dromel.add_class(scope_standard_class)
 
   let previous_topic_footer =
     dromel.new_div()
@@ -334,6 +343,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
   let topic_scope =
     dromel.new_div()
     |> dromel.set_style(scope_style)
+    |> dromel.add_class(scope_standard_class)
 
   let topic_footer =
     dromel.new_div()
@@ -546,6 +556,7 @@ fn populate_references_panel(metadata, elements: ActiveViewElements) -> Nil {
             dromel.new_div()
             |> dromel.set_class(reference_title_class)
             |> dromel.set_style(scope_style)
+            |> dromel.add_class(scope_standard_class)
 
           let reference_source =
             dromel.new_div()
@@ -726,6 +737,12 @@ fn mount_breadcrumb_parts(
   container: element.Element,
   parts: List(BreadcrumbPart),
 ) -> Nil {
+  // Create gradient overlay element (hidden by default, shown when overflowing)
+  let gradient =
+    dromel.new_div()
+    |> dromel.set_style(scope_overflow_gradient_style_hidden)
+    |> dromel.append_as_child(to: container)
+
   // Reverse because container has direction: rtl, so last items appear first (rightmost)
   let reversed_parts = list.reverse(parts)
 
@@ -738,7 +755,7 @@ fn mount_breadcrumb_parts(
           dromel.new_span()
           |> dromel.set_inner_html(icons.chevron_right_breadcrumb)
           |> dromel.set_style(scope_chevron_style)
-          |> dromel.append_child(to: container)
+          |> dromel.append_as_child(to: container)
         Nil
       }
       False -> Nil
@@ -747,10 +764,10 @@ fn mount_breadcrumb_parts(
     case part {
       TextPart(name) -> {
         let _ =
-          dromel.new_span()
+          dromel.new("code")
           |> dromel.set_inner_text(name)
           |> dromel.set_style(scope_item_style)
-          |> dromel.append_child(to: container)
+          |> dromel.append_as_child(to: container)
         Nil
       }
       TopicPart(topic) -> {
@@ -766,10 +783,26 @@ fn mount_breadcrumb_parts(
               let name =
                 audit_data.topic_metadata_highlighted_name(topic_metadata)
               let _ = dromel.set_inner_html(text_span, name)
+              // Check for overflow after content is loaded and show gradient if needed
+              case
+                dromel.scroll_width(container) > dromel.client_width(container)
+              {
+                True -> {
+                  container
+                  |> dromel.remove_class(scope_standard_class)
+                  |> dromel.add_class(scope_expanded_class)
+                  dromel.set_style(
+                    gradient,
+                    scope_overflow_gradient_style_visible,
+                  )
+                  Nil
+                }
+                False -> Nil
+              }
               Nil
             }
             Error(_) -> {
-              let _ = dromel.set_inner_text(text_span, "?")
+              dromel.set_inner_text(text_span, "?")
               Nil
             }
           }
