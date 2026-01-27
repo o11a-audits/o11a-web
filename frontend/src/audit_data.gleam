@@ -235,6 +235,13 @@ pub type VariableMutability {
   Immutable
 }
 
+pub type NamedTopicVisibility {
+  Public
+  Private
+  Internal
+  External
+}
+
 pub type NamedTopicKind {
   TopicContract(ContractKind)
   TopicFunction(FunctionKind)
@@ -332,6 +339,18 @@ fn named_mutable_topic_kind_decoder() -> decode.Decoder(NamedMutableTopicKind) {
   }
 }
 
+fn named_topic_visibility_decoder() -> decode.Decoder(NamedTopicVisibility) {
+  use visibility_str <- decode.field("visibility", decode.string)
+
+  case visibility_str {
+    "Public" -> decode.success(Public)
+    "Private" -> decode.success(Private)
+    "Internal" -> decode.success(Internal)
+    "External" -> decode.success(External)
+    _ -> decode.failure(Public, "NamedTopicVisibility")
+  }
+}
+
 fn unnamed_topic_kind_decoder() -> decode.Decoder(UnnamedTopicKind) {
   use kind_str <- decode.field("kind", decode.string)
 
@@ -376,6 +395,7 @@ pub type TopicMetadata {
     scope: Scope,
     kind: NamedTopicKind,
     name: String,
+    visibility: NamedTopicVisibility,
     references: List(Topic),
     ancestors: List(Topic),
     descendants: List(Topic),
@@ -385,6 +405,7 @@ pub type TopicMetadata {
     scope: Scope,
     kind: NamedMutableTopicKind,
     name: String,
+    visibility: NamedTopicVisibility,
     references: List(Topic),
     mutations: List(Topic),
     ancestors: List(Topic),
@@ -412,6 +433,7 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
   case maybe_name, maybe_mutations {
     Some(name), Some(mutation_ids) -> {
       use kind <- decode.then(named_mutable_topic_kind_decoder())
+      use visibility <- decode.then(named_topic_visibility_decoder())
       use reference_ids <- decode.field(
         "references",
         decode.list(decode.string),
@@ -426,6 +448,7 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         scope:,
         kind:,
         name:,
+        visibility:,
         references: list.map(reference_ids, Topic),
         mutations: list.map(mutation_ids, Topic),
         ancestors: list.map(ancestor_ids, Topic),
@@ -434,6 +457,7 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
     }
     Some(name), None -> {
       use kind <- decode.then(named_topic_kind_decoder())
+      use visibility <- decode.then(named_topic_visibility_decoder())
       use reference_ids <- decode.field(
         "references",
         decode.list(decode.string),
@@ -448,6 +472,7 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         scope:,
         kind:,
         name:,
+        visibility:,
         references: list.map(reference_ids, Topic),
         ancestors: list.map(ancestor_ids, Topic),
         descendants: list.map(descendant_ids, Topic),
