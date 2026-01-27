@@ -377,6 +377,8 @@ pub type TopicMetadata {
     kind: NamedTopicKind,
     name: String,
     references: List(Topic),
+    ancestors: List(Topic),
+    descendants: List(Topic),
   )
   NamedMutableTopic(
     topic: Topic,
@@ -385,6 +387,8 @@ pub type TopicMetadata {
     name: String,
     references: List(Topic),
     mutations: List(Topic),
+    ancestors: List(Topic),
+    descendants: List(Topic),
   )
   UnnamedTopic(topic: Topic, scope: Scope, kind: UnnamedTopicKind)
 }
@@ -412,6 +416,11 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         "references",
         decode.list(decode.string),
       )
+      use ancestor_ids <- decode.field("ancestors", decode.list(decode.string))
+      use descendant_ids <- decode.field(
+        "descendants",
+        decode.list(decode.string),
+      )
       decode.success(NamedMutableTopic(
         topic:,
         scope:,
@@ -419,6 +428,8 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         name:,
         references: list.map(reference_ids, Topic),
         mutations: list.map(mutation_ids, Topic),
+        ancestors: list.map(ancestor_ids, Topic),
+        descendants: list.map(descendant_ids, Topic),
       ))
     }
     Some(name), None -> {
@@ -427,12 +438,19 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         "references",
         decode.list(decode.string),
       )
+      use ancestor_ids <- decode.field("ancestors", decode.list(decode.string))
+      use descendant_ids <- decode.field(
+        "descendants",
+        decode.list(decode.string),
+      )
       decode.success(NamedTopic(
         topic:,
         scope:,
         kind:,
         name:,
         references: list.map(reference_ids, Topic),
+        ancestors: list.map(ancestor_ids, Topic),
+        descendants: list.map(descendant_ids, Topic),
       ))
     }
     None, _ -> {
@@ -476,9 +494,9 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
     NamedMutableTopic(name:, kind:, ..) ->
       case kind {
         MutableStateVariable ->
-          "<span class=\"state-variable\">" <> name <> "</span>"
+          "<span class=\"mutable-state-variable\">" <> name <> "</span>"
         MutableLocalVariable ->
-          "<span class=\"identifier\">" <> name <> "</span>"
+          "<span class=\"mutable-local-variable\">" <> name <> "</span>"
       }
     UnnamedTopic(kind:, ..) ->
       case kind {
