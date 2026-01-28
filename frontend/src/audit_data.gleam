@@ -261,6 +261,10 @@ pub type NamedMutableTopicKind {
   MutableLocalVariable
 }
 
+pub type ReferenceGroup {
+  ReferenceGroup(group_scope: Scope, references: List(Topic))
+}
+
 pub type UnnamedTopicKind {
   VariableMutation
   Arithmetic
@@ -351,6 +355,15 @@ fn named_topic_visibility_decoder() -> decode.Decoder(NamedTopicVisibility) {
   }
 }
 
+fn reference_group_decoder() -> decode.Decoder(ReferenceGroup) {
+  use group_scope <- decode.field("group_scope", scope_decoder())
+  use reference_ids <- decode.field("references", decode.list(decode.string))
+  decode.success(ReferenceGroup(
+    group_scope:,
+    references: list.map(reference_ids, Topic),
+  ))
+}
+
 fn unnamed_topic_kind_decoder() -> decode.Decoder(UnnamedTopicKind) {
   use kind_str <- decode.field("kind", decode.string)
 
@@ -396,7 +409,7 @@ pub type TopicMetadata {
     kind: NamedTopicKind,
     name: String,
     visibility: NamedTopicVisibility,
-    references: List(Topic),
+    references: List(ReferenceGroup),
     ancestors: List(Topic),
     descendants: List(Topic),
   )
@@ -406,7 +419,7 @@ pub type TopicMetadata {
     kind: NamedMutableTopicKind,
     name: String,
     visibility: NamedTopicVisibility,
-    references: List(Topic),
+    references: List(ReferenceGroup),
     mutations: List(Topic),
     ancestors: List(Topic),
     descendants: List(Topic),
@@ -434,9 +447,9 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
     Some(name), Some(mutation_ids) -> {
       use kind <- decode.then(named_mutable_topic_kind_decoder())
       use visibility <- decode.then(named_topic_visibility_decoder())
-      use reference_ids <- decode.field(
+      use references <- decode.field(
         "references",
-        decode.list(decode.string),
+        decode.list(reference_group_decoder()),
       )
       use ancestor_ids <- decode.field("ancestors", decode.list(decode.string))
       use descendant_ids <- decode.field(
@@ -449,7 +462,7 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         kind:,
         name:,
         visibility:,
-        references: list.map(reference_ids, Topic),
+        references:,
         mutations: list.map(mutation_ids, Topic),
         ancestors: list.map(ancestor_ids, Topic),
         descendants: list.map(descendant_ids, Topic),
@@ -458,9 +471,9 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
     Some(name), None -> {
       use kind <- decode.then(named_topic_kind_decoder())
       use visibility <- decode.then(named_topic_visibility_decoder())
-      use reference_ids <- decode.field(
+      use references <- decode.field(
         "references",
-        decode.list(decode.string),
+        decode.list(reference_group_decoder()),
       )
       use ancestor_ids <- decode.field("ancestors", decode.list(decode.string))
       use descendant_ids <- decode.field(
@@ -473,7 +486,7 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         kind:,
         name:,
         visibility:,
-        references: list.map(reference_ids, Topic),
+        references:,
         ancestors: list.map(ancestor_ids, Topic),
         descendants: list.map(descendant_ids, Topic),
       ))
@@ -521,11 +534,7 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
         TopicFunction(Fallback) -> visibility_kw(visibility) <> kw("fallback")
         TopicFunction(Constructor) -> kw("constructor")
         Modifier ->
-          visibility_kw(visibility)
-          <> kw("modifier")
-          <> " <span class=\"modifier\">"
-          <> name
-          <> "</span>"
+          kw("mod") <> " <span class=\"modifier\">" <> name <> "</span>"
         Event ->
           visibility_kw(visibility)
           <> kw("event")

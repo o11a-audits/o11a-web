@@ -550,53 +550,57 @@ fn populate_references_panel(metadata, elements: ActiveViewElements) -> Nil {
         | audit_data.NamedMutableTopic(references:, ..) -> references
         _ -> []
       }
-      list.each(references, fn(ref_topic) {
-        audit_data.with_topic_data(ref_topic, fn(metadata, source_text) {
-          let reference_scope =
+      list.each(references, fn(ref_group) {
+        list.each(ref_group.references, fn(ref_topic) {
+          // Create placeholder container before async to preserve order
+          let placeholder =
             dromel.new_div()
-            |> dromel.set_class(reference_title_class)
-            |> dromel.set_style(scope_style)
-            |> dromel.add_class(scope_standard_class)
+            |> dromel.append_as_child(to: elements.references_panel)
 
-          let reference_source =
-            dromel.new_div()
-            |> dromel.add_class(elements.source_container_class)
-            |> dromel.set_data(topic_key, ref_topic.id)
-            |> dromel.set_style(panel_style)
-            |> dromel.add_style("padding-left: 0.5rem;")
+          audit_data.with_topic_data(ref_topic, fn(metadata, source_text) {
+            let reference_scope =
+              dromel.new_div()
+              |> dromel.set_class(reference_title_class)
+              |> dromel.set_style(scope_style)
+              |> dromel.add_class(scope_standard_class)
 
-          let reference_container =
-            dromel.new_div()
-            |> dromel.append_child(reference_scope)
-            |> dromel.append_child(reference_source)
+            let reference_source =
+              dromel.new_div()
+              |> dromel.add_class(elements.source_container_class)
+              |> dromel.set_data(topic_key, ref_topic.id)
+              |> dromel.set_style(panel_style)
+              |> dromel.add_style("padding-left: 0.5rem;")
 
-          let _ =
-            elements.references_panel
-            |> dromel.append_child(reference_container)
+            // Mount into placeholder to preserve order
+            let _ =
+              placeholder
+              |> dromel.append_child(reference_scope)
+              |> dromel.append_child(reference_source)
 
-          // Populate the scope breadcrumb
-          populate_topic_scope(metadata, reference_scope, reference_source)
+            // Populate the scope breadcrumb
+            populate_topic_scope(metadata, reference_scope, reference_source)
 
-          // Populate the source text
-          case source_text {
-            Ok(source_text) -> {
-              let _ = reference_source |> dromel.set_inner_html(source_text)
-              Nil
+            // Populate the source text
+            case source_text {
+              Ok(source_text) -> {
+                let _ = reference_source |> dromel.set_inner_html(source_text)
+                Nil
+              }
+              Error(error) -> {
+                let _ =
+                  reference_source
+                  |> dromel.set_inner_html(
+                    "<div style='color: var(--color-body-text); padding: 1rem;'>"
+                    <> error
+                    |> snag.layer("Unable to fetch source")
+                    |> snag.pretty_print
+                    <> "</div>",
+                  )
+
+                Nil
+              }
             }
-            Error(error) -> {
-              let _ =
-                reference_source
-                |> dromel.set_inner_html(
-                  "<div style='color: var(--color-body-text); padding: 1rem;'>"
-                  <> error
-                  |> snag.layer("Unable to fetch source")
-                  |> snag.pretty_print
-                  <> "</div>",
-                )
-
-              Nil
-            }
-          }
+          })
         })
       })
     }
