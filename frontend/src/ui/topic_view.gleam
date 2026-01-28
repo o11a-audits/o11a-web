@@ -121,6 +121,8 @@ type ActiveViewElements {
     previous_topic_container: element.Element,
     topic_scope: element.Element,
     topic_panel: element.Element,
+    topic_title: element.Element,
+    topic_source: element.Element,
     topic_container: element.Element,
     references_panel: element.Element,
     references_container: element.Element,
@@ -352,10 +354,18 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
     |> dromel.append_child(previous_topic_footer)
 
   // Create the source view element
+  let topic_title =
+    dromel.new_div()
+    |> dromel.set_style(combined_panel_member_title_style)
+
+  let topic_source = dromel.new_div()
+
   let topic_panel =
     dromel.new_div()
     |> dromel.set_class(elements.source_container_class)
     |> dromel.set_style(panel_style)
+    |> dromel.append_child(topic_title)
+    |> dromel.append_child(topic_source)
 
   let topic_scope =
     dromel.new_div()
@@ -404,6 +414,8 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
       previous_topic_container:,
       topic_scope:,
       topic_panel:,
+      topic_title:,
+      topic_source:,
       topic_container:,
       references_panel:,
       references_container:,
@@ -435,10 +447,15 @@ fn reset_active_view(
       let _ = elements.previous_topic_panel |> dromel.set_style("")
       dromel.set_scroll_top(elements.previous_topic_panel, 0.0)
 
-      let _ = dromel.set_inner_html(elements.topic_panel, "")
+      let _ = dromel.set_inner_html(elements.topic_title, "")
+      let _ = dromel.set_inner_html(elements.topic_source, "")
       let _ = dromel.set_inner_html(elements.topic_scope, "")
       // Reset the topic panel style to default (removes out-of-scope border color)
       let _ = dromel.set_style(elements.topic_panel, panel_style)
+      // Remove data attributes from previous view
+      let _ = dromel.remove_data(elements.topic_panel, topic_key)
+      let _ = dromel.remove_data(elements.topic_panel, member_key)
+      let _ = dromel.remove_data(elements.topic_panel, contract_key)
       dromel.set_scroll_top(elements.topic_panel, 0.0)
 
       let _ = dromel.set_inner_html(elements.references_panel, "")
@@ -480,11 +497,11 @@ fn restore_source_text(
 ) -> Nil {
   case result {
     Ok(source_text) -> {
-      let _ = elements.topic_panel |> dromel.set_inner_html(source_text)
+      let _ = elements.topic_source |> dromel.set_inner_html(source_text)
 
       let children =
         dromel.query_element_all(
-          elements.topic_panel,
+          elements.topic_source,
           elements.source_topic_tokens,
         )
 
@@ -521,7 +538,7 @@ fn restore_source_text(
 
     Error(error) -> {
       let _ =
-        elements.topic_panel
+        elements.topic_source
         |> dromel.set_inner_html(
           "<div style='color: var(--color-body-text); padding: 1rem;'>"
           <> error
@@ -531,6 +548,111 @@ fn restore_source_text(
         )
 
       Nil
+    }
+  }
+}
+
+/// Hide the topic title element
+fn hide_topic_title(elements: ActiveViewElements) -> Nil {
+  let _ = dromel.set_style(elements.topic_title, "display: none;")
+  let _ = dromel.set_inner_html(elements.topic_title, "")
+  Nil
+}
+
+/// Set up topic panel data attributes and member title based on scope
+fn setup_topic_panel_for_scope(
+  metadata: Result(audit_data.TopicMetadata, snag.Snag),
+  elements: ActiveViewElements,
+) -> Nil {
+  case metadata {
+    Error(_) -> Nil
+    Ok(metadata) -> {
+      let scope = case metadata {
+        audit_data.NamedTopic(scope:, ..) -> scope
+        audit_data.NamedMutableTopic(scope:, ..) -> scope
+        audit_data.UnnamedTopic(scope:, ..) -> scope
+      }
+
+      // Set data-topic to the current topic
+      let topic = case metadata {
+        audit_data.NamedTopic(topic:, ..) -> topic
+        audit_data.NamedMutableTopic(topic:, ..) -> topic
+        audit_data.UnnamedTopic(topic:, ..) -> topic
+      }
+      let _ = dromel.set_data(elements.topic_panel, topic_key, topic.id)
+
+      // Set data attributes based on scope level
+      case scope {
+        audit_data.Member(component:, member:, ..) -> {
+          // Member scope - set both contract and member
+          let _ =
+            dromel.set_data(elements.topic_panel, contract_key, component.id)
+          let _ = dromel.set_data(elements.topic_panel, member_key, member.id)
+
+          // Show member title
+          let _ =
+            dromel.set_style(
+              elements.topic_title,
+              combined_panel_member_title_style,
+            )
+          let _ = dromel.set_inner_html(elements.topic_title, "...")
+          audit_data.with_topic_metadata(member, fn(member_metadata) {
+            case member_metadata {
+              Ok(member_metadata) -> {
+                let _ =
+                  dromel.set_inner_html(
+                    elements.topic_title,
+                    audit_data.topic_metadata_highlighted_name(member_metadata),
+                  )
+                Nil
+              }
+              Error(_) -> Nil
+            }
+          })
+          Nil
+        }
+        audit_data.SemanticBlock(component:, member:, ..) -> {
+          // SemanticBlock scope - set both contract and member
+          let _ =
+            dromel.set_data(elements.topic_panel, contract_key, component.id)
+          let _ = dromel.set_data(elements.topic_panel, member_key, member.id)
+
+          // Show member title
+          let _ =
+            dromel.set_style(
+              elements.topic_title,
+              combined_panel_member_title_style,
+            )
+          let _ = dromel.set_inner_html(elements.topic_title, "...")
+          audit_data.with_topic_metadata(member, fn(member_metadata) {
+            case member_metadata {
+              Ok(member_metadata) -> {
+                let _ =
+                  dromel.set_inner_html(
+                    elements.topic_title,
+                    audit_data.topic_metadata_highlighted_name(member_metadata),
+                  )
+                Nil
+              }
+              Error(_) -> Nil
+            }
+          })
+          Nil
+        }
+        audit_data.Component(component:, ..) -> {
+          // Component scope (viewing a member) - set contract only
+          let _ =
+            dromel.set_data(elements.topic_panel, contract_key, component.id)
+          // Hide member title since we're at member level
+          hide_topic_title(elements)
+          Nil
+        }
+        audit_data.Container(..) | audit_data.Global -> {
+          // Contract or global scope - no data attributes needed
+          hide_topic_title(elements)
+          Nil
+        }
+      }
     }
   }
 }
@@ -1152,6 +1274,9 @@ fn navigate_to_new_entry_with_focus(
             elements.topic_panel,
           )
 
+          // Set data attributes and member title based on scope
+          setup_topic_panel_for_scope(metadata, elements)
+
           restore_source_text(source_text, container, elements, focus_target:)
 
           // Load topic metadata and populate references panel
@@ -1229,6 +1354,9 @@ pub fn navigate_back(container) -> Nil {
                     elements.topic_scope,
                     elements.topic_panel,
                   )
+
+                  // Set data attributes and member title based on scope
+                  setup_topic_panel_for_scope(metadata, elements)
 
                   restore_source_text(
                     source_text,
@@ -1311,6 +1439,9 @@ pub fn navigate_forward(container) -> Nil {
                   elements.topic_scope,
                   elements.topic_panel,
                 )
+
+                // Set data attributes and member title based on scope
+                setup_topic_panel_for_scope(metadata, elements)
 
                 restore_source_text(
                   source_text,
@@ -1495,6 +1626,7 @@ fn navigate_into_reference(container) {
 }
 
 /// Navigate up one scope level in the topic panel
+/// Uses member/contract collapse pattern similar to references panel
 fn navigate_scope_up_topic(container) {
   case get_active_topic_view(container), get_active_view_elements() {
     Error(Nil), _ -> io.println_error("No active topic view")
@@ -1511,31 +1643,175 @@ fn navigate_scope_up_topic(container) {
       case focused_element_id {
         Error(Nil) -> io.println_error("Unable to find current element id")
         Ok(focused_element_id) -> {
-          // Get current topic's metadata to find parent scope
-          audit_data.with_topic_metadata(
-            audit_data.Topic(id: view.topic_id),
-            fn(result) {
-              case result {
-                Error(_) -> io.println_error("Unable to get topic metadata")
-                Ok(metadata) -> {
-                  case audit_data.parent_topic(metadata.scope) {
-                    None -> io.println("Already at top scope level")
-                    Some(parent_topic) -> {
-                      navigate_to_new_entry_with_focus(
-                        container,
-                        parent_topic,
-                        FocusById(focused_element_id),
-                      )
-                    }
-                  }
+          // Check for data-member first (collapse to member view)
+          case dromel.get_data(elements.topic_panel, member_key) {
+            Ok(member_id) -> {
+              collapse_topic_to_member(
+                container,
+                elements,
+                member_id,
+                focused_element_id,
+              )
+            }
+            Error(Nil) -> {
+              // Check for data-contract (collapse to contract view)
+              case dromel.get_data(elements.topic_panel, contract_key) {
+                Ok(contract_id) -> {
+                  collapse_topic_to_contract(
+                    container,
+                    elements,
+                    contract_id,
+                    focused_element_id,
+                  )
+                }
+                Error(Nil) -> {
+                  // No member or contract - use existing navigation behavior
+                  audit_data.with_topic_metadata(
+                    audit_data.Topic(id: view.topic_id),
+                    fn(result) {
+                      case result {
+                        Error(_) ->
+                          io.println_error("Unable to get topic metadata")
+                        Ok(metadata) -> {
+                          case audit_data.parent_topic(metadata.scope) {
+                            None -> io.println("Already at top scope level")
+                            Some(parent_topic) -> {
+                              navigate_to_new_entry_with_focus(
+                                container,
+                                parent_topic,
+                                FocusById(focused_element_id),
+                              )
+                            }
+                          }
+                        }
+                      }
+                    },
+                  )
                 }
               }
-            },
-          )
+            }
+          }
         }
       }
     }
   }
+}
+
+/// Collapse topic panel to show member source (keeps member title)
+fn collapse_topic_to_member(
+  container: element.Element,
+  elements: ActiveViewElements,
+  member_id: String,
+  focused_element_id: String,
+) -> Nil {
+  let member_topic = audit_data.Topic(id: member_id)
+
+  // Remove member_key so further scope-up will check contract
+  let _ = dromel.remove_data(elements.topic_panel, member_key)
+
+  // Update topic_key to the member
+  let _ = dromel.set_data(elements.topic_panel, topic_key, member_id)
+
+  // Load member source text (keep member title as-is)
+  audit_data.with_source_text(member_topic, fn(source_text) {
+    case source_text {
+      Ok(text) -> {
+        let _ = dromel.set_inner_html(elements.topic_source, text)
+
+        // Re-gather tokens and restore focus
+        let children =
+          dromel.query_element_all(
+            elements.topic_source,
+            elements.source_topic_tokens,
+          )
+        set_active_view_elements(
+          ActiveViewElements(..elements, topic_children_tokens: children),
+        )
+
+        case find_child_by_id(children, focused_element_id) {
+          Ok(#(child, index)) -> {
+            let _ = focus_topic_token_and_prefetch(child)
+            set_current_child_topic_index(container, index)
+          }
+          Error(Nil) -> Nil
+        }
+
+        Nil
+      }
+      Error(error) -> {
+        let _ =
+          dromel.set_inner_html(
+            elements.topic_source,
+            "<div style='color: var(--color-body-text); padding: 1rem;'>"
+              <> error
+            |> snag.layer("Unable to fetch source")
+            |> snag.pretty_print
+              <> "</div>",
+          )
+        Nil
+      }
+    }
+  })
+}
+
+/// Collapse topic panel to show contract source (clears member title)
+fn collapse_topic_to_contract(
+  container: element.Element,
+  elements: ActiveViewElements,
+  contract_id: String,
+  focused_element_id: String,
+) -> Nil {
+  let contract_topic = audit_data.Topic(id: contract_id)
+
+  // Remove contract_key so further scope-up uses existing behavior
+  let _ = dromel.remove_data(elements.topic_panel, contract_key)
+
+  // Update topic_key to the contract
+  let _ = dromel.set_data(elements.topic_panel, topic_key, contract_id)
+
+  // Hide member title
+  hide_topic_title(elements)
+
+  // Load contract source text
+  audit_data.with_source_text(contract_topic, fn(source_text) {
+    case source_text {
+      Ok(text) -> {
+        let _ = dromel.set_inner_html(elements.topic_source, text)
+
+        // Re-gather tokens and restore focus
+        let children =
+          dromel.query_element_all(
+            elements.topic_source,
+            elements.source_topic_tokens,
+          )
+        set_active_view_elements(
+          ActiveViewElements(..elements, topic_children_tokens: children),
+        )
+
+        case find_child_by_id(children, focused_element_id) {
+          Ok(#(child, index)) -> {
+            let _ = focus_topic_token_and_prefetch(child)
+            set_current_child_topic_index(container, index)
+          }
+          Error(Nil) -> Nil
+        }
+
+        Nil
+      }
+      Error(error) -> {
+        let _ =
+          dromel.set_inner_html(
+            elements.topic_source,
+            "<div style='color: var(--color-body-text); padding: 1rem;'>"
+              <> error
+            |> snag.layer("Unable to fetch source")
+            |> snag.pretty_print
+              <> "</div>",
+          )
+        Nil
+      }
+    }
+  })
 }
 
 /// Navigate down one scope level in the topic panel towards the selected child
