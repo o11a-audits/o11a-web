@@ -9,7 +9,7 @@ export function element_query_selector(element, selector) {
 }
 
 export function element_query_selector_all(element, selector) {
-  return element.querySelectorAll(selector);
+  return Array.from(element.querySelectorAll(selector));
 }
 
 export function get_scroll_top(element) {
@@ -42,4 +42,17 @@ export function client_width(element) {
 
 export function scroll_width(element) {
   return element.scrollWidth;
+}
+
+export function first_child(element) {
+  let child = element.firstElementChild;
+  if (child) {
+    return Result$Ok(child);
+  }
+  return Result$Error();
+}
+
+export function remove_attribute(element, attribute) {
+  element.removeAttribute(attribute);
+  return element;
 }

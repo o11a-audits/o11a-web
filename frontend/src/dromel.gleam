@@ -68,6 +68,13 @@ pub fn get_data(element: Element, key: DataKey) -> Result(String, Nil) {
   element.dataset_get(element, key.key)
 }
 
+pub fn remove_data(elem: Element, key: DataKey) -> Element {
+  remove_attribute(elem, "data-" <> key.key)
+}
+
+@external(javascript, "./dromel_ffi.mjs", "remove_attribute")
+fn remove_attribute(elem: Element, attribute: String) -> Element
+
 // ============================================================================
 // Element Creation
 // ============================================================================
@@ -217,6 +224,9 @@ pub fn remove(elem: Element) -> Element {
   elem
 }
 
+@external(javascript, "./dromel_ffi.mjs", "first_child")
+pub fn first_child(elem: Element) -> Result(Element, Nil)
+
 // ============================================================================
 // Element Properties
 // ============================================================================
@@ -252,7 +262,7 @@ fn query_element_all_ffi(
 
 // ============================================================================
 // Event Handling (Chainable - returns element for chaining)
-// ============================================================================
+// =============================================Y===============================
 
 pub fn add_event_listener(
   elem: Element,

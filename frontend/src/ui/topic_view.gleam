@@ -243,6 +243,10 @@ const active_panel_key = dromel.DataKey("active_panel")
 
 const topic_key = dromel.DataKey("topic")
 
+const member_key = dromel.DataKey("member")
+
+const contract_key = dromel.DataKey("contract")
+
 fn set_current_child_topic_index(container: element.Element, index: Int) -> Nil {
   let _ =
     dromel.set_data(
@@ -560,17 +564,38 @@ fn apply_first_last_style(
   index: Int,
   total: Int,
 ) -> Nil {
+  // Apply first style if this is the first element
   case index {
     0 -> {
       dromel.add_style(reference_source, combined_panel_first_style)
       Nil
     }
-    i if i == total - 1 -> {
+    _ -> Nil
+  }
+  // Apply last style if this is the last element (can be both first and last)
+  case index == total - 1 {
+    True -> {
       dromel.add_style(reference_source, combined_panel_last_style)
       Nil
     }
-    _ -> Nil
+    False -> Nil
   }
+}
+
+/// Reapply first/last styles to all source containers in a reference group
+fn reapply_first_last_styles(group_container: element.Element) -> Nil {
+  let all_containers =
+    dromel.query_element_all(group_container, elements.source_container_class)
+
+  let total = array.size(all_containers)
+
+  all_containers
+  |> array.to_list
+  |> list.index_map(fn(elem, index) {
+    apply_first_last_style(elem, index, total)
+  })
+
+  Nil
 }
 
 /// Helper to populate a reference source element with source text or error
@@ -651,6 +676,7 @@ fn populate_references_panel(metadata, elements: ActiveViewElements) -> Nil {
                   dromel.new_div()
                   |> dromel.add_class(elements.source_container_class)
                   |> dromel.set_data(topic_key, ref_topic.id)
+                  |> dromel.set_data(contract_key, ref_group.contract.id)
                   |> dromel.set_style(combined_panel_style)
                   |> dromel.add_style("padding-left: 0.5rem;")
 
@@ -693,6 +719,8 @@ fn populate_references_panel(metadata, elements: ActiveViewElements) -> Nil {
                       dromel.new_div()
                       |> dromel.add_class(elements.source_container_class)
                       |> dromel.set_data(topic_key, ref_topic.id)
+                      |> dromel.set_data(member_key, member_group.member.id)
+                      |> dromel.set_data(contract_key, ref_group.contract.id)
                       |> dromel.set_style(combined_panel_style)
                       |> dromel.add_style("padding-left: 0.5rem;")
 
@@ -1577,6 +1605,7 @@ fn navigate_scope_down_topic(container) {
 }
 
 /// Navigate up one scope level in the references panel (only affects the current reference preview)
+/// For member-grouped references, collapses all references in the group into a single member view
 fn navigate_scope_up_reference(container) {
   case get_active_view_elements() {
     Error(Nil) -> io.println_error("No active view elements")
@@ -1598,41 +1627,307 @@ fn navigate_scope_up_reference(container) {
           case find_source_container(focused_element) {
             Error(Nil) -> io.println_error("Unable to find source container")
             Ok(source_container) -> {
-              // Get the current topic from the source container's dataset
-              case dromel.get_data(source_container, topic_key) {
-                Error(Nil) ->
-                  io.println_error("Unable to get current reference topic")
-                Ok(current_topic_id) -> {
-                  // Get the current topic's metadata
-                  audit_data.with_topic_metadata(
-                    audit_data.Topic(id: current_topic_id),
-                    fn(result) {
-                      case result {
-                        Error(_) ->
+              // Check if this source container belongs to a member group
+              case dromel.get_data(source_container, member_key) {
+                Ok(member_id) -> {
+                  // This is a member-grouped reference - collapse the group
+                  collapse_member_group(
+                    source_container,
+                    member_id,
+                    focused_element_id,
+                    container,
+                  )
+                }
+                Error(Nil) -> {
+                  // No member group - check for contract group
+                  case dromel.get_data(source_container, contract_key) {
+                    Ok(contract_id) -> {
+                      // This is a contract-grouped reference - collapse to contract
+                      collapse_contract_group(
+                        source_container,
+                        contract_id,
+                        focused_element_id,
+                        container,
+                      )
+                    }
+                    Error(Nil) -> {
+                      // No contract group - use existing behavior
+                      case dromel.get_data(source_container, topic_key) {
+                        Error(Nil) ->
                           io.println_error(
-                            "Unable to get reference topic metadata",
+                            "Unable to get current reference topic",
                           )
-                        Ok(metadata) -> {
-                          case audit_data.parent_topic(metadata.scope) {
-                            None -> io.println("Already at top scope level")
-                            Some(parent_topic) -> {
-                              // Update only this source container with the parent topic
-                              update_source_container(
-                                source_container,
-                                parent_topic,
-                                focused_element_id,
-                                container,
-                              )
-                            }
-                          }
+                        Ok(current_topic_id) -> {
+                          // Get the current topic's metadata
+                          audit_data.with_topic_metadata(
+                            audit_data.Topic(id: current_topic_id),
+                            fn(result) {
+                              case result {
+                                Error(_) ->
+                                  io.println_error(
+                                    "Unable to get reference topic metadata",
+                                  )
+                                Ok(metadata) -> {
+                                  case audit_data.parent_topic(metadata.scope) {
+                                    None ->
+                                      io.println("Already at top scope level")
+                                    Some(parent_topic) -> {
+                                      // Update only this source container with the parent topic
+                                      update_source_container(
+                                        source_container,
+                                        parent_topic,
+                                        focused_element_id,
+                                        container,
+                                      )
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                          )
                         }
                       }
-                    },
-                  )
+                    }
+                  }
                 }
               }
             }
           }
+        }
+      }
+    }
+  }
+}
+
+/// Collapse all source containers in a member group into a single member view
+fn collapse_member_group(
+  source_container: element.Element,
+  member_id: String,
+  focused_element_id: String,
+  container: element.Element,
+) -> Nil {
+  // Find the reference-group parent that contains all the source containers
+  case find_reference_group(source_container) {
+    Error(Nil) -> io.println_error("Unable to find reference group")
+    Ok(group_container) -> {
+      // Query all source containers with this member_id
+      let member_containers =
+        dromel.query_element_all(
+          group_container,
+          dromel.Selector("[data-member=\"" <> member_id <> "\"]"),
+        )
+
+      // Find the first container (the one with the member title)
+      case array.get(member_containers, 0) {
+        Error(Nil) -> io.println_error("No member containers found")
+        Ok(first_container) -> {
+          // Remove all other containers in this member group (and their placeholder parents)
+          member_containers
+          |> array.to_list
+          |> list.index_map(fn(elem, index) {
+            case index > 0 {
+              True -> {
+                // Remove the placeholder parent div, not just the source container
+                case dromel.parent_element(elem) {
+                  Ok(placeholder) -> {
+                    let _ = dromel.remove(placeholder)
+                    Nil
+                  }
+                  Error(Nil) -> {
+                    let _ = dromel.remove(elem)
+                    Nil
+                  }
+                }
+              }
+              False -> Nil
+            }
+          })
+
+          // Update the first container to show the member's source
+          let member_topic = audit_data.Topic(id: member_id)
+
+          // Remove the member_key so further scope-up uses existing behavior
+          let _ = dromel.remove_data(first_container, member_key)
+
+          // Update the topic_key to the member
+          let _ = dromel.set_data(first_container, topic_key, member_id)
+
+          // Reapply first/last styles to all remaining containers in the group
+          reapply_first_last_styles(group_container)
+
+          // Load the member's source text
+          audit_data.with_source_text(member_topic, fn(source_text) {
+            case source_text {
+              Ok(text) -> {
+                // Keep the member title (first child), replace the rest
+                case dromel.first_child(first_container) {
+                  Ok(member_title) -> {
+                    // Clear and rebuild content
+                    let _ = dromel.set_inner_html(first_container, "")
+                    let _ = dromel.append_child(first_container, member_title)
+                    let _ =
+                      dromel.new_div()
+                      |> dromel.set_inner_html(text)
+                      |> dromel.append_as_child(to: first_container)
+                    Nil
+                  }
+                  Error(Nil) -> {
+                    // No member title, just set the content
+                    let _ = dromel.set_inner_html(first_container, text)
+                    Nil
+                  }
+                }
+
+                // Re-gather reference tokens and restore focus
+                gather_references_topic_tokens()
+
+                case get_active_view_elements() {
+                  Error(Nil) -> Nil
+                  Ok(elements) -> {
+                    find_and_focus_element_by_id(
+                      container,
+                      ReferencesPanel,
+                      elements.references_topic_tokens,
+                      focused_element_id,
+                      0,
+                    )
+                  }
+                }
+
+                Nil
+              }
+              Error(error) -> {
+                let _ =
+                  dromel.set_inner_html(
+                    first_container,
+                    "<div style='color: var(--color-body-text); padding: 1rem;'>"
+                      <> error
+                    |> snag.layer("Unable to fetch source")
+                    |> snag.pretty_print
+                      <> "</div>",
+                  )
+                Nil
+              }
+            }
+          })
+        }
+      }
+    }
+  }
+}
+
+/// Find the reference-group ancestor of an element
+fn find_reference_group(elem: element.Element) -> Result(element.Element, Nil) {
+  case dromel.has_class(elem, dromel.Class("reference-group")) {
+    True -> Ok(elem)
+    False ->
+      case dromel.parent_element(elem) {
+        Ok(parent) -> find_reference_group(parent)
+        Error(Nil) -> Error(Nil)
+      }
+  }
+}
+
+/// Collapse all source containers in a contract group into a single contract view
+fn collapse_contract_group(
+  source_container: element.Element,
+  contract_id: String,
+  focused_element_id: String,
+  container: element.Element,
+) -> Nil {
+  // Find the reference-group parent that contains all the source containers
+  case find_reference_group(source_container) {
+    Error(Nil) -> io.println_error("Unable to find reference group")
+    Ok(group_container) -> {
+      // Query all source containers in this group
+      let all_containers =
+        dromel.query_element_all(
+          group_container,
+          elements.source_container_class,
+        )
+
+      // Find the first container
+      case array.get(all_containers, 0) {
+        Error(Nil) -> io.println_error("No source containers found")
+        Ok(first_container) -> {
+          // Remove all containers except the first (and their placeholder parents)
+          all_containers
+          |> array.to_list
+          |> list.index_map(fn(elem, index) {
+            case index > 0 {
+              True -> {
+                case dromel.parent_element(elem) {
+                  Ok(placeholder) -> {
+                    let _ = dromel.remove(placeholder)
+                    Nil
+                  }
+                  Error(Nil) -> {
+                    let _ = dromel.remove(elem)
+                    Nil
+                  }
+                }
+              }
+              False -> Nil
+            }
+          })
+
+          // Update the first container to show the contract's source
+          let contract_topic = audit_data.Topic(id: contract_id)
+
+          // Remove both member_key and contract_key so further scope-up uses existing behavior
+          let _ = dromel.remove_data(first_container, member_key)
+          let _ = dromel.remove_data(first_container, contract_key)
+
+          // Update the topic_key to the contract
+          let _ = dromel.set_data(first_container, topic_key, contract_id)
+
+          // Apply first/last styles since this is now the only container
+          apply_first_last_style(first_container, 0, 1)
+
+          // Clear any member title that might exist
+          let _ = dromel.set_inner_html(first_container, "")
+
+          // Load the contract's source text
+          audit_data.with_source_text(contract_topic, fn(source_text) {
+            case source_text {
+              Ok(text) -> {
+                let _ =
+                  dromel.new_div()
+                  |> dromel.set_inner_html(text)
+                  |> dromel.append_as_child(to: first_container)
+
+                // Re-gather reference tokens and restore focus
+                gather_references_topic_tokens()
+
+                case get_active_view_elements() {
+                  Error(Nil) -> Nil
+                  Ok(elements) -> {
+                    find_and_focus_element_by_id(
+                      container,
+                      ReferencesPanel,
+                      elements.references_topic_tokens,
+                      focused_element_id,
+                      0,
+                    )
+                  }
+                }
+
+                Nil
+              }
+              Error(error) -> {
+                let _ =
+                  dromel.set_inner_html(
+                    first_container,
+                    "<div style='color: var(--color-body-text); padding: 1rem;'>"
+                      <> error
+                    |> snag.layer("Unable to fetch source")
+                    |> snag.pretty_print
+                      <> "</div>",
+                  )
+                Nil
+              }
+            }
+          })
         }
       }
     }
@@ -1781,63 +2076,63 @@ fn update_source_container(
   let _ = dromel.set_data(source_container, topic_key, new_topic.id)
 
   // Find the scope element (sibling of the source container within the parent)
-  case dromel.parent_element(source_container) {
-    Error(Nil) -> io.println_error("Unable to find parent of source container")
-    Ok(parent) -> {
-      case dromel.query_element(parent, reference_title_class) {
-        Error(Nil) -> io.println_error("Unable to find scope element in parent")
-        Ok(scope_element) -> {
-          // Load and display the new source text
-          audit_data.with_topic_data(new_topic, fn(metadata, source_text) {
-            // Update the scope breadcrumb
-            populate_topic_scope(metadata, source_container, scope_element)
+  // This may not exist for references panel items, which is fine
+  let maybe_scope_element = case dromel.parent_element(source_container) {
+    Error(Nil) -> Error(Nil)
+    Ok(parent) -> dromel.query_element(parent, reference_title_class)
+  }
 
-            case source_text {
-              Ok(source_text) -> {
-                let _ = dromel.set_inner_html(source_container, source_text)
+  // Load and display the new source text
+  audit_data.with_topic_data(new_topic, fn(metadata, source_text) {
+    // Update the scope breadcrumb if it exists
+    case maybe_scope_element {
+      Ok(scope_element) ->
+        populate_topic_scope(metadata, source_container, scope_element)
+      Error(Nil) -> Nil
+    }
 
-                // Re-gather reference tokens and restore focus
-                gather_references_topic_tokens()
+    case source_text {
+      Ok(source_text) -> {
+        let _ = dromel.set_inner_html(source_container, source_text)
 
-                // Find and focus the element with the stored id
-                case focused_element_id {
-                  "" -> Nil
-                  id -> {
-                    case get_active_view_elements() {
-                      Error(Nil) -> Nil
-                      Ok(elements) -> {
-                        find_and_focus_element_by_id(
-                          container,
-                          ReferencesPanel,
-                          elements.references_topic_tokens,
-                          id,
-                          0,
-                        )
-                      }
-                    }
-                  }
-                }
+        // Re-gather reference tokens and restore focus
+        gather_references_topic_tokens()
 
-                Nil
-              }
-              Error(error) -> {
-                let _ =
-                  dromel.set_inner_html(
-                    source_container,
-                    "<div style='color: var(--color-body-text); padding: 1rem;'>"
-                      <> error
-                    |> snag.layer("Unable to fetch source")
-                    |> snag.pretty_print
-                      <> "</div>",
-                  )
-                Nil
+        // Find and focus the element with the stored id
+        case focused_element_id {
+          "" -> Nil
+          id -> {
+            case get_active_view_elements() {
+              Error(Nil) -> Nil
+              Ok(elements) -> {
+                find_and_focus_element_by_id(
+                  container,
+                  ReferencesPanel,
+                  elements.references_topic_tokens,
+                  id,
+                  0,
+                )
               }
             }
-          })
+          }
         }
+
+        Nil
+      }
+      Error(error) -> {
+        let _ =
+          dromel.set_inner_html(
+            source_container,
+            "<div style='color: var(--color-body-text); padding: 1rem;'>"
+              <> error
+            |> snag.layer("Unable to fetch source")
+            |> snag.pretty_print
+              <> "</div>",
+          )
+        Nil
       }
     }
-  }
+  })
 }
 
 fn navigate_to_child(container, index_diff) {
