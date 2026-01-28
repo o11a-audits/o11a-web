@@ -302,7 +302,7 @@ const panel_style = "border-radius: 8px; border: 1px solid var(--color-body-bord
 
 const combined_panel_first_style = "border-top: 1px solid var(--color-body-border); border-top-right-radius: 8px; border-top-left-radius: 8px;"
 
-const combined_panel_last_style = "border-bottom-right-radius: 8px; border-bottom-left-radius: 8px;"
+const combined_panel_last_style = "border-bottom-right-radius: 8px; border-bottom-left-radius: 8px; border-bottom: 1px solid var(--color-body-border);"
 
 const combined_panel_style = "border-right: 1px solid var(--color-body-border); border-left: 1px solid var(--color-body-border); border-bottom: 1px dashed var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg); max-height: 100%;"
 
@@ -554,6 +554,55 @@ fn do_find_child_by_id(
   }
 }
 
+/// Helper to apply first/last styling to reference source elements
+fn apply_first_last_style(
+  reference_source: element.Element,
+  index: Int,
+  total: Int,
+) -> Nil {
+  case index {
+    0 -> {
+      dromel.add_style(reference_source, combined_panel_first_style)
+      Nil
+    }
+    i if i == total - 1 -> {
+      dromel.add_style(reference_source, combined_panel_last_style)
+      Nil
+    }
+    _ -> Nil
+  }
+}
+
+/// Helper to populate a reference source element with source text or error
+fn populate_reference_source(
+  reference_source: element.Element,
+  source_text: Result(String, snag.Snag),
+) -> Nil {
+  case source_text {
+    Ok(source_text) -> {
+      let _ =
+        dromel.new_div()
+        |> dromel.set_inner_html(source_text)
+        |> dromel.append_as_child(to: reference_source)
+      Nil
+    }
+    Error(error) -> {
+      let _ =
+        dromel.new_div()
+        |> dromel.set_inner_html(
+          "<div style='color: var(--color-body-text); padding: 1rem;'>"
+          <> error
+          |> snag.layer("Unable to fetch source")
+          |> snag.pretty_print
+          <> "</div>",
+        )
+        |> dromel.append_as_child(to: reference_source)
+
+      Nil
+    }
+  }
+}
+
 /// Callback for loading topic metadata and populating the references panel
 fn populate_references_panel(metadata, elements: ActiveViewElements) -> Nil {
   case metadata {
@@ -580,116 +629,134 @@ fn populate_references_panel(metadata, elements: ActiveViewElements) -> Nil {
 
         mount_breadcrumb_parts(contract_scope, [TopicPart(ref_group.contract)])
 
-        // Collect all references: contract-level + all member-level references
-        let all_references =
-          list.append(
-            list.map(ref_group.contract_references, fn(ref_topic) {
-              #(ref_topic, option.None)
-            }),
-            list.flat_map(ref_group.member_references, fn(member_group) {
-              list.map(member_group.references, fn(ref_topic) {
-                #(ref_topic, option.Some(member_group.member))
+        // Calculate total reference count for first/last styling
+        let total_references =
+          list.length(ref_group.contract_references)
+          + list.fold(ref_group.member_references, 0, fn(acc, member_group) {
+            acc + list.length(member_group.references)
+          })
+
+        // Render contract-level references
+        let index_after_contract =
+          list.index_fold(
+            ref_group.contract_references,
+            0,
+            fn(index, ref_topic, _) {
+              let source_placeholder =
+                dromel.new_div()
+                |> dromel.append_as_child(to: group_container)
+
+              audit_data.with_topic_data(ref_topic, fn(_metadata, source_text) {
+                let reference_source =
+                  dromel.new_div()
+                  |> dromel.add_class(elements.source_container_class)
+                  |> dromel.set_data(topic_key, ref_topic.id)
+                  |> dromel.set_style(combined_panel_style)
+                  |> dromel.add_style("padding-left: 0.5rem;")
+
+                apply_first_last_style(
+                  reference_source,
+                  index,
+                  total_references,
+                )
+                populate_reference_source(reference_source, source_text)
+
+                let _ =
+                  source_placeholder
+                  |> dromel.append_child(reference_source)
+
+                Nil
               })
-            }),
+
+              index + 1
+            },
           )
 
-        let references_length = list.length(all_references)
-
-        list.index_map(all_references, fn(ref_topic, index) {
-          let #(ref_topic, member) = ref_topic
-
-          // Create placeholder container before async to preserve order
-          let source_placeholder =
-            dromel.new_div()
-            |> dromel.append_as_child(to: group_container)
-
-          audit_data.with_topic_data(ref_topic, fn(_metadata, source_text) {
-            let reference_source =
-              dromel.new_div()
-              |> dromel.add_class(elements.source_container_class)
-              |> dromel.set_data(topic_key, ref_topic.id)
-              |> dromel.set_style(combined_panel_style)
-              |> dromel.add_style("padding-left: 0.5rem;")
-
-            case index {
-              0 -> {
-                dromel.add_style(reference_source, combined_panel_first_style)
-                Nil
-              }
-              i if i == references_length - 1 -> {
-                dromel.add_style(reference_source, combined_panel_last_style)
-                Nil
-              }
-              _ -> Nil
-            }
-
-            // Set member title if in a member group
-            case member {
-              Some(member_topic) -> {
-                let member_title =
+        // Render member-level references, grouped by member
+        list.fold(
+          ref_group.member_references,
+          index_after_contract,
+          fn(current_index, member_group) {
+            // Track whether this is the first reference in the member group
+            list.index_fold(
+              member_group.references,
+              current_index,
+              fn(index, ref_topic, member_ref_index) {
+                let source_placeholder =
                   dromel.new_div()
-                  |> dromel.set_style(combined_panel_member_title_style)
-                  |> dromel.set_inner_html("...")
-                  |> dromel.append_as_child(to: reference_source)
+                  |> dromel.append_as_child(to: group_container)
 
-                audit_data.with_topic_metadata(
-                  member_topic,
-                  fn(metadata: Result(audit_data.TopicMetadata, snag.Snag)) -> Nil {
-                    case metadata {
-                      Ok(metadata) -> {
-                        member_title
-                        |> dromel.set_inner_html(
-                          audit_data.topic_metadata_highlighted_name(metadata)
-                          <> " (",
+                audit_data.with_topic_data(
+                  ref_topic,
+                  fn(_metadata, source_text) {
+                    let reference_source =
+                      dromel.new_div()
+                      |> dromel.add_class(elements.source_container_class)
+                      |> dromel.set_data(topic_key, ref_topic.id)
+                      |> dromel.set_style(combined_panel_style)
+                      |> dromel.add_style("padding-left: 0.5rem;")
+
+                    apply_first_last_style(
+                      reference_source,
+                      index,
+                      total_references,
+                    )
+
+                    // Add member title only for the first reference in the member group
+                    case member_ref_index {
+                      0 -> {
+                        let member_title =
+                          dromel.new_div()
+                          |> dromel.set_style(combined_panel_member_title_style)
+                          |> dromel.set_inner_html("...")
+                          |> dromel.append_as_child(to: reference_source)
+
+                        audit_data.with_topic_metadata(
+                          member_group.member,
+                          fn(
+                            metadata: Result(
+                              audit_data.TopicMetadata,
+                              snag.Snag,
+                            ),
+                          ) -> Nil {
+                            case metadata {
+                              Ok(metadata) -> {
+                                member_title
+                                |> dromel.set_inner_html(
+                                  audit_data.topic_metadata_highlighted_name(
+                                    metadata,
+                                  ),
+                                )
+                                Nil
+                              }
+                              Error(snag) -> {
+                                member_title
+                                |> dromel.set_inner_html(snag.line_print(snag))
+                                Nil
+                              }
+                            }
+                          },
                         )
                         Nil
                       }
-                      Error(snag) -> {
-                        member_title
-                        |> dromel.set_inner_html(snag.line_print(snag))
-                        Nil
-                      }
+                      _ -> Nil
                     }
+
+                    populate_reference_source(reference_source, source_text)
+
+                    let _ =
+                      source_placeholder
+                      |> dromel.append_child(reference_source)
+
+                    Nil
                   },
                 )
-                Nil
-              }
-              None -> Nil
-            }
 
-            // Populate the source text
-            case source_text {
-              Ok(source_text) -> {
-                let _ =
-                  dromel.new_div()
-                  |> dromel.set_inner_html(source_text)
-                  |> dromel.append_as_child(to: reference_source)
-                Nil
-              }
-              Error(error) -> {
-                let _ =
-                  dromel.new_div()
-                  |> dromel.set_inner_html(
-                    "<div style='color: var(--color-body-text); padding: 1rem;'>"
-                    <> error
-                    |> snag.layer("Unable to fetch source")
-                    |> snag.pretty_print
-                    <> "</div>",
-                  )
-                  |> dromel.append_as_child(to: reference_source)
-
-                Nil
-              }
-            }
-
-            // Mount into placeholder to preserve order
-            let _ =
-              source_placeholder
-              |> dromel.append_child(reference_source)
-
-            Nil
-          })
-        })
+                index + 1
+              },
+            )
+          },
+        )
       })
     }
     Error(_snag) -> {
