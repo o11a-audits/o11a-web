@@ -200,6 +200,8 @@ pub fn set_inner_text(elem: Element, text: String) -> Element {
 // DOM Manipulation (Chainable - returns parent for chaining)
 // ============================================================================
 
+// Specifically does NOT have a label for the parent element to avoid users
+// change argument order and confusing the semantics of the return value
 pub fn append_child(parent: Element, child child: Element) -> Element {
   element.append_child(parent, child)
   parent

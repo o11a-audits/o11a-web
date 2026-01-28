@@ -295,11 +295,24 @@ fn get_active_panel(container: element.Element) -> ActivePanel {
 // View Mounting and Removal
 // ============================================================================
 
-const container_style = "position: relative; padding-top: 0.5rem; width: calc(40ch + 1rem);"
+// 40ch for the source width, 1rem for the padding widths, 2px for the borders wid
+const container_style = "position: relative; padding-top: 0.5rem; width: calc(40ch + 1rem + 2px);"
 
 const panel_style = "border-radius: 8px; border: 1px solid var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg); max-height: 100%;"
 
+const combined_panel_first_style = "border-top: 1px solid var(--color-body-border); border-top-right-radius: 8px; border-top-left-radius: 8px;"
+
+const combined_panel_last_style = "border-bottom-right-radius: 8px; border-bottom-left-radius: 8px;"
+
+const combined_panel_style = "border-right: 1px solid var(--color-body-border); border-left: 1px solid var(--color-body-border); border-bottom: 1px dashed var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg); max-height: 100%;"
+
+// const combined_panel_member_title_style = "border-bottom: 1px dashed var(--color-body-border); margin-bottom: 0.5rem;"
+
+const combined_panel_member_title_style = "outline: 1px solid var(--color-body-border); border-radius: 4px; margin-bottom: 0.5rem; background: var(--color-body-bg); padding-left: 0.5rem;"
+
 const scope_style = "position: relative; display: inline-flex; align-items: center; gap: 0.25rem; margin-bottom: 0.5rem; padding-right: 0.5rem; direction: rtl; overflow: hidden;"
+
+const reference_group_scope_style = "margin-bottom: 0.5rem; padding-right: 0.5rem;"
 
 const scope_standard_class = dromel.Class("scope-standard")
 
@@ -551,44 +564,111 @@ fn populate_references_panel(metadata, elements: ActiveViewElements) -> Nil {
         _ -> []
       }
       list.each(references, fn(ref_group) {
-        list.each(ref_group.references, fn(ref_topic) {
+        let group_container =
+          dromel.new_div()
+          |> dromel.set_class(dromel.Class("reference-group"))
+
+        let _ = dromel.append_child(elements.references_panel, group_container)
+
+        // Mount the contract breadcrumb once per reference group
+        let contract_scope =
+          dromel.new_div()
+          |> dromel.set_class(reference_title_class)
+          |> dromel.set_style(reference_group_scope_style)
+          |> dromel.add_class(scope_standard_class)
+          |> dromel.append_as_child(to: group_container)
+
+        mount_breadcrumb_parts(contract_scope, [TopicPart(ref_group.contract)])
+
+        // Collect all references: contract-level + all member-level references
+        let all_references =
+          list.append(
+            list.map(ref_group.contract_references, fn(ref_topic) {
+              #(ref_topic, option.None)
+            }),
+            list.flat_map(ref_group.member_references, fn(member_group) {
+              list.map(member_group.references, fn(ref_topic) {
+                #(ref_topic, option.Some(member_group.member))
+              })
+            }),
+          )
+
+        let references_length = list.length(all_references)
+
+        list.index_map(all_references, fn(ref_topic, index) {
+          let #(ref_topic, member) = ref_topic
+
           // Create placeholder container before async to preserve order
-          let placeholder =
+          let source_placeholder =
             dromel.new_div()
-            |> dromel.append_as_child(to: elements.references_panel)
+            |> dromel.append_as_child(to: group_container)
 
-          audit_data.with_topic_data(ref_topic, fn(metadata, source_text) {
-            let reference_scope =
-              dromel.new_div()
-              |> dromel.set_class(reference_title_class)
-              |> dromel.set_style(scope_style)
-              |> dromel.add_class(scope_standard_class)
-
+          audit_data.with_topic_data(ref_topic, fn(_metadata, source_text) {
             let reference_source =
               dromel.new_div()
               |> dromel.add_class(elements.source_container_class)
               |> dromel.set_data(topic_key, ref_topic.id)
-              |> dromel.set_style(panel_style)
+              |> dromel.set_style(combined_panel_style)
               |> dromel.add_style("padding-left: 0.5rem;")
 
-            // Mount into placeholder to preserve order
-            let _ =
-              placeholder
-              |> dromel.append_child(reference_scope)
-              |> dromel.append_child(reference_source)
+            case index {
+              0 -> {
+                dromel.add_style(reference_source, combined_panel_first_style)
+                Nil
+              }
+              i if i == references_length - 1 -> {
+                dromel.add_style(reference_source, combined_panel_last_style)
+                Nil
+              }
+              _ -> Nil
+            }
 
-            // Populate the scope breadcrumb
-            populate_topic_scope(metadata, reference_scope, reference_source)
+            // Set member title if in a member group
+            case member {
+              Some(member_topic) -> {
+                let member_title =
+                  dromel.new_div()
+                  |> dromel.set_style(combined_panel_member_title_style)
+                  |> dromel.set_inner_html("...")
+                  |> dromel.append_as_child(to: reference_source)
+
+                audit_data.with_topic_metadata(
+                  member_topic,
+                  fn(metadata: Result(audit_data.TopicMetadata, snag.Snag)) -> Nil {
+                    case metadata {
+                      Ok(metadata) -> {
+                        member_title
+                        |> dromel.set_inner_html(
+                          audit_data.topic_metadata_highlighted_name(metadata)
+                          <> " (",
+                        )
+                        Nil
+                      }
+                      Error(snag) -> {
+                        member_title
+                        |> dromel.set_inner_html(snag.line_print(snag))
+                        Nil
+                      }
+                    }
+                  },
+                )
+                Nil
+              }
+              None -> Nil
+            }
 
             // Populate the source text
             case source_text {
               Ok(source_text) -> {
-                let _ = reference_source |> dromel.set_inner_html(source_text)
+                let _ =
+                  dromel.new_div()
+                  |> dromel.set_inner_html(source_text)
+                  |> dromel.append_as_child(to: reference_source)
                 Nil
               }
               Error(error) -> {
                 let _ =
-                  reference_source
+                  dromel.new_div()
                   |> dromel.set_inner_html(
                     "<div style='color: var(--color-body-text); padding: 1rem;'>"
                     <> error
@@ -596,10 +676,18 @@ fn populate_references_panel(metadata, elements: ActiveViewElements) -> Nil {
                     |> snag.pretty_print
                     <> "</div>",
                   )
+                  |> dromel.append_as_child(to: reference_source)
 
                 Nil
               }
             }
+
+            // Mount into placeholder to preserve order
+            let _ =
+              source_placeholder
+              |> dromel.append_child(reference_source)
+
+            Nil
           })
         })
       })
@@ -828,17 +916,10 @@ fn mount_scope_breadcrumb(
   let parts = case metadata.scope {
     audit_data.Global -> [TextPart("global"), TopicPart(metadata.topic)]
     audit_data.Container(..) -> [TopicPart(metadata.topic)]
-    audit_data.Component(component:, ..) -> [
+    audit_data.Component(component:, ..)
+    | audit_data.Member(component:, ..)
+    | audit_data.SemanticBlock(component:, ..) -> [
       TopicPart(component),
-      TopicPart(metadata.topic),
-    ]
-    audit_data.Member(component:, member:, ..) -> [
-      TopicPart(component),
-      TopicPart(member),
-    ]
-    audit_data.SemanticBlock(component:, member:, ..) -> [
-      TopicPart(component),
-      TopicPart(member),
     ]
   }
   mount_breadcrumb_parts(container, parts)

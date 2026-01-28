@@ -261,8 +261,16 @@ pub type NamedMutableTopicKind {
   MutableLocalVariable
 }
 
+pub type MemberReferenceGroup {
+  MemberReferenceGroup(member: Topic, references: List(Topic))
+}
+
 pub type ReferenceGroup {
-  ReferenceGroup(group_scope: Scope, references: List(Topic))
+  ReferenceGroup(
+    contract: Topic,
+    contract_references: List(Topic),
+    member_references: List(MemberReferenceGroup),
+  )
 }
 
 pub type UnnamedTopicKind {
@@ -355,12 +363,29 @@ fn named_topic_visibility_decoder() -> decode.Decoder(NamedTopicVisibility) {
   }
 }
 
-fn reference_group_decoder() -> decode.Decoder(ReferenceGroup) {
-  use group_scope <- decode.field("group_scope", scope_decoder())
+fn member_reference_group_decoder() -> decode.Decoder(MemberReferenceGroup) {
+  use member_id <- decode.field("member", decode.string)
   use reference_ids <- decode.field("references", decode.list(decode.string))
-  decode.success(ReferenceGroup(
-    group_scope:,
+  decode.success(MemberReferenceGroup(
+    member: Topic(id: member_id),
     references: list.map(reference_ids, Topic),
+  ))
+}
+
+fn reference_group_decoder() -> decode.Decoder(ReferenceGroup) {
+  use contract_id <- decode.field("contract", decode.string)
+  use contract_reference_ids <- decode.field(
+    "contract_references",
+    decode.list(decode.string),
+  )
+  use member_references <- decode.field(
+    "member_references",
+    decode.list(member_reference_group_decoder()),
+  )
+  decode.success(ReferenceGroup(
+    contract: Topic(id: contract_id),
+    contract_references: list.map(contract_reference_ids, Topic),
+    member_references:,
   ))
 }
 
