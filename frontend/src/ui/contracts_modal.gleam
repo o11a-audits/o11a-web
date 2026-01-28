@@ -1,5 +1,6 @@
 import audit_data
 import context
+import core/log
 import dromel
 import gleam/io
 import gleam/list
@@ -262,15 +263,6 @@ fn render_contract_list(
   }
 }
 
-fn render_preview(preview_pane: element.Element, html: String) -> Nil {
-  let _ = preview_pane |> dromel.set_inner_html(html)
-  Nil
-}
-
-fn render_preview_error(preview_pane: element.Element, error: String) -> Nil {
-  render_preview(preview_pane, "Error loading preview:<br><br>" <> error)
-}
-
 // ============================================================================
 // Preview Loading with Race Condition Protection
 // ============================================================================
@@ -284,7 +276,7 @@ fn load_preview(topic: audit_data.Topic) -> Nil {
       )
 
       // Show loading indicator
-      render_preview(state.right_pane, "Loading preview...")
+      dromel.set_inner_html(state.right_pane, "Loading preview...")
 
       // Fetch source text
       audit_data.with_source_text(topic, fn(result) {
@@ -295,12 +287,17 @@ fn load_preview(topic: audit_data.Topic) -> Nil {
               Some(current_topic_id) if current_topic_id == topic.id -> {
                 // Still current, render it
                 case result {
-                  Ok(text) -> render_preview(current_state.right_pane, text)
-                  Error(err) ->
-                    render_preview_error(
+                  Ok(text) -> {
+                    dromel.set_inner_html(current_state.right_pane, text)
+                    Nil
+                  }
+                  Error(error) -> {
+                    dromel.set_inner_html(
                       current_state.right_pane,
-                      snag.line_print(err),
+                      log.render_source_error(error),
                     )
+                    Nil
+                  }
                 }
               }
               _ -> {
@@ -471,30 +468,27 @@ fn on_contracts_loaded(
   case get_contracts_modal_state() {
     Ok(state) -> {
       case result {
-        Error(err) -> {
+        Error(error) -> {
           // Display error in list pane
-          let _ =
-            state.left_pane
-            |> dromel.set_inner_html(
-              "<div style='color: var(--color-body-text); padding: 1rem;'>Error loading contracts:<br><br>"
-              <> snag.line_print(err)
-              <> "</div>",
-            )
+          dromel.set_inner_html(state.left_pane, log.render_source_error(error))
 
-          // Show error in preview pane
-          render_preview_error(state.right_pane, snag.line_print(err))
+          // Show nothing in preview pane
+          dromel.set_inner_html(state.right_pane, "")
+          Nil
         }
 
         Ok(contracts) -> {
           case list.is_empty(contracts) {
             True -> {
               // Treat empty list as error
-              let _ =
-                state.left_pane
-                |> dromel.set_inner_html(
-                  "<div style='color: var(--color-body-text); padding: 1rem;'>No contracts found</div>",
-                )
-              render_preview_error(state.right_pane, "No contracts available")
+              dromel.set_inner_html(
+                state.left_pane,
+                log.render_source_error(snag.new("No contracts found")),
+              )
+
+              // Show nothing in preview pane
+              dromel.set_inner_html(state.right_pane, "")
+              Nil
             }
 
             False -> {
