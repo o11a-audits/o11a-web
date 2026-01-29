@@ -111,6 +111,22 @@ pub type ActivePanel {
   ReferencesPanel
 }
 
+/// Identifies which token array field to update in ActiveViewElements
+type TokenField {
+  TopicPanelTokens
+  ReferencesPanelTokens
+}
+
+/// Configuration for rendering a panel with grouped source containers
+type GroupedSourcePanelConfig {
+  GroupedSourcePanelConfig(
+    /// The container element to render into
+    panel: element.Element,
+    /// Which token field to update when gathering tokens
+    token_field: TokenField,
+  )
+}
+
 // ============================================================================
 // Active View Elements (transient, only exists for currently displayed view)
 // ============================================================================
@@ -120,7 +136,6 @@ type ActiveViewElements {
     previous_topic_scope: element.Element,
     previous_topic_panel: element.Element,
     previous_topic_container: element.Element,
-    topic_scope: element.Element,
     topic_panel: element.Element,
     topic_title: element.Element,
     topic_source: element.Element,
@@ -305,15 +320,13 @@ fn get_active_panel(container: element.Element) -> ActivePanel {
 // 40ch for the source width, 1rem for the padding widths, 2px for the borders wid
 const container_style = "position: relative; padding-top: 0.5rem; width: calc(40ch + 1rem + 2px);"
 
-const panel_style = "border-radius: 8px; border: 1px solid var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg); max-height: 100%;"
+const panel_style = "min-height: 0; height: 100%; width: unset;"
 
 const combined_panel_first_style = "border-top: 1px solid var(--color-body-border); border-top-right-radius: 8px; border-top-left-radius: 8px;"
 
 const combined_panel_last_style = "border-bottom-right-radius: 8px; border-bottom-left-radius: 8px; border-bottom: 1px solid var(--color-body-border);"
 
 const combined_panel_style = "border-right: 1px solid var(--color-body-border); border-left: 1px solid var(--color-body-border); border-bottom: 1px dashed var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg); max-height: 100%;"
-
-// const combined_panel_member_title_style = "border-bottom: 1px dashed var(--color-body-border); margin-bottom: 0.5rem;"
 
 const combined_panel_member_title_style = "outline: 1px solid var(--color-body-border); border-radius: 4px; margin-bottom: 0.5rem; background: var(--color-body-bg); padding-left: 0.5rem;"
 
@@ -323,11 +336,13 @@ const scope_standard_class = dromel.Class("scope-standard")
 
 const scope_expanded_class = dromel.Class("scope-expanded")
 
+const reference_group_class = dromel.Class("reference-group")
+
 const scope_overflow_gradient_style_hidden = "display: none;"
 
 const scope_overflow_gradient_style_visible = "position: absolute; left: 0; top: 0; bottom: 0; width: 1.5rem; background: linear-gradient(to right, var(--color-body-bg), transparent); pointer-events: none;"
 
-const footer_style = "position: absolute; bottom: -1rem; right: 0.5rem;"
+const footer_style = "position: absolute; bottom: 0.25rem; right: 0.5rem;"
 
 fn mount_topic_view(container: element.Element) -> ActiveViewElements {
   // Create the previous topic panel element (muted border)
@@ -366,11 +381,6 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
     |> dromel.append_child(topic_title)
     |> dromel.append_child(topic_source)
 
-  let topic_scope =
-    dromel.new_div()
-    |> dromel.set_style(scope_style)
-    |> dromel.add_class(scope_standard_class)
-
   let topic_footer =
     dromel.new_div()
     |> dromel.set_style(footer_style)
@@ -379,7 +389,6 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
   let topic_container =
     dromel.new_div()
     |> dromel.set_style(container_style)
-    |> dromel.append_child(topic_scope)
     |> dromel.append_child(topic_panel)
     |> dromel.append_child(topic_footer)
 
@@ -387,9 +396,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
   let references_panel =
     dromel.new_div()
     |> dromel.set_class(elements.source_container_class)
-    |> dromel.set_style(
-      "min-height: 0; display: flex; flex-direction: column; gap: 0.5rem; height: 100%; width: unset;",
-    )
+    |> dromel.set_style(panel_style)
 
   let references_footer =
     dromel.new_div()
@@ -411,7 +418,6 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
       previous_topic_scope:,
       previous_topic_panel:,
       previous_topic_container:,
-      topic_scope:,
       topic_panel:,
       topic_title:,
       topic_source:,
@@ -448,7 +454,6 @@ fn reset_active_view(
 
       let _ = dromel.set_inner_html(elements.topic_title, "")
       let _ = dromel.set_inner_html(elements.topic_source, "")
-      let _ = dromel.set_inner_html(elements.topic_scope, "")
       // Reset the topic panel style to default (removes out-of-scope border color)
       let _ = dromel.set_style(elements.topic_panel, panel_style)
       // Remove data attributes from previous view
@@ -480,69 +485,11 @@ fn reset_active_view(
 // ============================================================================
 
 /// Specifies how to restore focus after loading source text
-pub type FocusTarget {
+type FocusTarget {
   /// Focus the child at the given index with a specific scroll position
   FocusByIndex(index: Int, scroll_position: Float)
   /// Focus the child with the given element id (scroll position will be 0)
   FocusById(id: String)
-}
-
-/// Callback for loading source text when restoring a view (restore scroll position, focus specific child)
-fn restore_source_text(
-  result,
-  container: element.Element,
-  elements: ActiveViewElements,
-  focus_target focus_target: FocusTarget,
-) -> Nil {
-  case result {
-    Ok(source_text) -> {
-      let _ = elements.topic_source |> dromel.set_inner_html(source_text)
-
-      let children =
-        dromel.query_element_all(
-          elements.topic_source,
-          elements.source_topic_tokens,
-        )
-
-      set_active_view_elements(
-        ActiveViewElements(..elements, topic_children_tokens: children),
-      )
-
-      // Focus and set scroll based on the target type
-      case focus_target {
-        FocusByIndex(index:, scroll_position:) -> {
-          dromel.set_scroll_top(elements.topic_panel, scroll_position)
-          let _ =
-            array.get(children, index)
-            |> result.map(focus_topic_token_and_prefetch)
-          set_current_child_topic_index(container, index)
-          // When setting up the main child topic index, reset references index
-          set_current_references_index(container, 0)
-        }
-        FocusById(id) -> {
-          case find_child_by_id(children, id) {
-            Ok(#(child, index)) -> {
-              let _ = focus_topic_token_and_prefetch(child)
-              set_current_child_topic_index(container, index)
-              // When setting up the main child topic index, reset references index
-              set_current_references_index(container, 0)
-            }
-            Error(Nil) -> Nil
-          }
-        }
-      }
-
-      Nil
-    }
-
-    Error(error) -> {
-      let _ =
-        elements.topic_source
-        |> dromel.set_inner_html(log.render_source_error(error))
-
-      Nil
-    }
-  }
 }
 
 /// Hide the topic title element
@@ -550,104 +497,6 @@ fn hide_topic_title(elements: ActiveViewElements) -> Nil {
   let _ = dromel.set_style(elements.topic_title, "display: none;")
   let _ = dromel.set_inner_html(elements.topic_title, "")
   Nil
-}
-
-/// Set up topic panel data attributes and member title based on scope
-fn setup_topic_panel_for_scope(
-  metadata: Result(audit_data.TopicMetadata, snag.Snag),
-  elements: ActiveViewElements,
-) -> Nil {
-  case metadata {
-    Error(_) -> Nil
-    Ok(metadata) -> {
-      let scope = case metadata {
-        audit_data.NamedTopic(scope:, ..) -> scope
-        audit_data.NamedMutableTopic(scope:, ..) -> scope
-        audit_data.UnnamedTopic(scope:, ..) -> scope
-      }
-
-      // Set data-topic to the current topic
-      let topic = case metadata {
-        audit_data.NamedTopic(topic:, ..) -> topic
-        audit_data.NamedMutableTopic(topic:, ..) -> topic
-        audit_data.UnnamedTopic(topic:, ..) -> topic
-      }
-      let _ = dromel.set_data(elements.topic_panel, topic_key, topic.id)
-
-      // Set data attributes based on scope level
-      case scope {
-        audit_data.Member(component:, member:, ..) -> {
-          // Member scope - set both contract and member
-          let _ =
-            dromel.set_data(elements.topic_panel, contract_key, component.id)
-          let _ = dromel.set_data(elements.topic_panel, member_key, member.id)
-
-          // Show member title
-          let _ =
-            dromel.set_style(
-              elements.topic_title,
-              combined_panel_member_title_style,
-            )
-          let _ = dromel.set_inner_html(elements.topic_title, "...")
-          audit_data.with_topic_metadata(member, fn(member_metadata) {
-            case member_metadata {
-              Ok(member_metadata) -> {
-                let _ =
-                  dromel.set_inner_html(
-                    elements.topic_title,
-                    audit_data.topic_metadata_highlighted_name(member_metadata),
-                  )
-                Nil
-              }
-              Error(_) -> Nil
-            }
-          })
-          Nil
-        }
-        audit_data.SemanticBlock(component:, member:, ..) -> {
-          // SemanticBlock scope - set both contract and member
-          let _ =
-            dromel.set_data(elements.topic_panel, contract_key, component.id)
-          let _ = dromel.set_data(elements.topic_panel, member_key, member.id)
-
-          // Show member title
-          let _ =
-            dromel.set_style(
-              elements.topic_title,
-              combined_panel_member_title_style,
-            )
-          let _ = dromel.set_inner_html(elements.topic_title, "...")
-          audit_data.with_topic_metadata(member, fn(member_metadata) {
-            case member_metadata {
-              Ok(member_metadata) -> {
-                let _ =
-                  dromel.set_inner_html(
-                    elements.topic_title,
-                    audit_data.topic_metadata_highlighted_name(member_metadata),
-                  )
-                Nil
-              }
-              Error(_) -> Nil
-            }
-          })
-          Nil
-        }
-        audit_data.Component(component:, ..) -> {
-          // Component scope (viewing a member) - set contract only
-          let _ =
-            dromel.set_data(elements.topic_panel, contract_key, component.id)
-          // Hide member title since we're at member level
-          hide_topic_title(elements)
-          Nil
-        }
-        audit_data.Container(..) | audit_data.Global -> {
-          // Contract or global scope - no data attributes needed
-          hide_topic_title(elements)
-          Nil
-        }
-      }
-    }
-  }
 }
 
 /// Find and focus a child element by id, updating the current index
@@ -737,8 +586,176 @@ fn populate_reference_source(
   }
 }
 
-/// Callback for loading topic metadata and populating the references panel
-fn populate_references_panel(metadata, elements: ActiveViewElements) -> Nil {
+/// Generic function to populate a panel with grouped source containers
+fn populate_grouped_source_panel(
+  config: GroupedSourcePanelConfig,
+  groups: List(audit_data.ReferenceGroup),
+) -> Nil {
+  list.each(groups, fn(ref_group) {
+    let group_container =
+      dromel.new_div()
+      |> dromel.set_style("margin-bottom: 0.5rem;")
+      |> dromel.set_class(reference_group_class)
+      |> dromel.append_as_child(to: config.panel)
+
+    // Mount the contract breadcrumb once per reference group
+    let contract_scope =
+      dromel.new_div()
+      |> dromel.set_class(reference_title_class)
+      |> dromel.set_style(scope_style)
+      |> dromel.add_class(scope_standard_class)
+      |> dromel.append_as_child(to: group_container)
+
+    mount_breadcrumb_parts(contract_scope, [TopicPart(ref_group.contract)])
+
+    // Calculate total reference count for first/last styling
+    let total_references =
+      list.length(ref_group.contract_references)
+      + list.fold(ref_group.member_references, 0, fn(acc, member_group) {
+        acc + list.length(member_group.references)
+      })
+
+    // Render contract-level references
+    let index_after_contract =
+      list.index_fold(ref_group.contract_references, 0, fn(index, ref_topic, _) {
+        let source_placeholder =
+          dromel.new_div()
+          |> dromel.append_as_child(to: group_container)
+
+        audit_data.with_topic_data(ref_topic, fn(_metadata, source_text) {
+          let reference_source =
+            dromel.new_div()
+            |> dromel.add_class(elements.source_container_class)
+            |> dromel.set_data(topic_key, ref_topic.id)
+            |> dromel.set_data(contract_key, ref_group.contract.id)
+            |> dromel.set_style(combined_panel_style)
+            |> dromel.add_style("padding-left: 0.5rem;")
+
+          apply_first_last_style(reference_source, index, total_references)
+          populate_reference_source(reference_source, source_text)
+
+          let _ =
+            source_placeholder
+            |> dromel.append_child(reference_source)
+
+          // Re-gather tokens after each source loads
+          gather_panel_tokens(config)
+
+          Nil
+        })
+
+        index + 1
+      })
+
+    // Render member-level references, grouped by member
+    list.fold(
+      ref_group.member_references,
+      index_after_contract,
+      fn(current_index, member_group) {
+        // Track whether this is the first reference in the member group
+        list.index_fold(
+          member_group.references,
+          current_index,
+          fn(index, ref_topic, member_ref_index) {
+            let source_placeholder =
+              dromel.new_div()
+              |> dromel.append_as_child(to: group_container)
+
+            audit_data.with_topic_data(ref_topic, fn(_metadata, source_text) {
+              let reference_source =
+                dromel.new_div()
+                |> dromel.add_class(elements.source_container_class)
+                |> dromel.set_data(topic_key, ref_topic.id)
+                |> dromel.set_data(member_key, member_group.member.id)
+                |> dromel.set_data(contract_key, ref_group.contract.id)
+                |> dromel.set_style(combined_panel_style)
+                |> dromel.add_style("padding-left: 0.5rem;")
+
+              apply_first_last_style(reference_source, index, total_references)
+
+              // Add member title only for the first reference in the member group
+              case member_ref_index {
+                0 -> {
+                  let member_title =
+                    dromel.new_div()
+                    |> dromel.set_style(combined_panel_member_title_style)
+                    |> dromel.set_inner_html("...")
+                    |> dromel.append_as_child(to: reference_source)
+
+                  audit_data.with_topic_metadata(
+                    member_group.member,
+                    fn(metadata: Result(audit_data.TopicMetadata, snag.Snag)) -> Nil {
+                      case metadata {
+                        Ok(metadata) -> {
+                          member_title
+                          |> dromel.set_inner_html(
+                            audit_data.topic_metadata_highlighted_name(metadata),
+                          )
+                          Nil
+                        }
+                        Error(snag) -> {
+                          member_title
+                          |> dromel.set_inner_html(snag.line_print(snag))
+                          Nil
+                        }
+                      }
+                    },
+                  )
+                  Nil
+                }
+                _ -> Nil
+              }
+
+              populate_reference_source(reference_source, source_text)
+
+              let _ =
+                source_placeholder
+                |> dromel.append_child(reference_source)
+
+              // Re-gather tokens after each source loads
+              gather_panel_tokens(config)
+
+              Nil
+            })
+
+            index + 1
+          },
+        )
+      },
+    )
+  })
+}
+
+/// Gather topic tokens for a panel based on its configuration
+fn gather_panel_tokens(config: GroupedSourcePanelConfig) -> Nil {
+  case get_active_view_elements() {
+    Ok(active_elements) -> {
+      let tokens =
+        dromel.query_element_all(config.panel, elements.source_topic_tokens)
+      case config.token_field {
+        TopicPanelTokens ->
+          set_active_view_elements(
+            ActiveViewElements(..active_elements, topic_children_tokens: tokens),
+          )
+        ReferencesPanelTokens ->
+          set_active_view_elements(
+            ActiveViewElements(
+              ..active_elements,
+              references_topic_tokens: tokens,
+            ),
+          )
+      }
+      Nil
+    }
+    Error(Nil) -> Nil
+  }
+}
+
+/// Callback for loading topic metadata and populating the topic panel
+fn populate_topic_panel(
+  metadata: Result(audit_data.TopicMetadata, snag.Snag),
+  elements: ActiveViewElements,
+) -> Nil {
   case metadata {
     Ok(metadata) -> {
       let references = case metadata {
@@ -746,155 +763,49 @@ fn populate_references_panel(metadata, elements: ActiveViewElements) -> Nil {
         | audit_data.NamedMutableTopic(references:, ..) -> references
         _ -> []
       }
-      list.each(references, fn(ref_group) {
-        let group_container =
-          dromel.new_div()
-          |> dromel.set_class(dromel.Class("reference-group"))
 
-        let _ = dromel.append_child(elements.references_panel, group_container)
+      // Clear the topic source and use grouped source panel rendering
+      let _ = dromel.set_inner_html(elements.topic_source, "")
 
-        // Mount the contract breadcrumb once per reference group
-        let contract_scope =
-          dromel.new_div()
-          |> dromel.set_class(reference_title_class)
-          |> dromel.set_style(scope_style)
-          |> dromel.add_class(scope_standard_class)
-          |> dromel.append_as_child(to: group_container)
-
-        mount_breadcrumb_parts(contract_scope, [TopicPart(ref_group.contract)])
-
-        // Calculate total reference count for first/last styling
-        let total_references =
-          list.length(ref_group.contract_references)
-          + list.fold(ref_group.member_references, 0, fn(acc, member_group) {
-            acc + list.length(member_group.references)
-          })
-
-        // Render contract-level references
-        let index_after_contract =
-          list.index_fold(
-            ref_group.contract_references,
-            0,
-            fn(index, ref_topic, _) {
-              let source_placeholder =
-                dromel.new_div()
-                |> dromel.append_as_child(to: group_container)
-
-              audit_data.with_topic_data(ref_topic, fn(_metadata, source_text) {
-                let reference_source =
-                  dromel.new_div()
-                  |> dromel.add_class(elements.source_container_class)
-                  |> dromel.set_data(topic_key, ref_topic.id)
-                  |> dromel.set_data(contract_key, ref_group.contract.id)
-                  |> dromel.set_style(combined_panel_style)
-                  |> dromel.add_style("padding-left: 0.5rem;")
-
-                apply_first_last_style(
-                  reference_source,
-                  index,
-                  total_references,
-                )
-                populate_reference_source(reference_source, source_text)
-
-                let _ =
-                  source_placeholder
-                  |> dromel.append_child(reference_source)
-
-                Nil
-              })
-
-              index + 1
-            },
-          )
-
-        // Render member-level references, grouped by member
-        list.fold(
-          ref_group.member_references,
-          index_after_contract,
-          fn(current_index, member_group) {
-            // Track whether this is the first reference in the member group
-            list.index_fold(
-              member_group.references,
-              current_index,
-              fn(index, ref_topic, member_ref_index) {
-                let source_placeholder =
-                  dromel.new_div()
-                  |> dromel.append_as_child(to: group_container)
-
-                audit_data.with_topic_data(
-                  ref_topic,
-                  fn(_metadata, source_text) {
-                    let reference_source =
-                      dromel.new_div()
-                      |> dromel.add_class(elements.source_container_class)
-                      |> dromel.set_data(topic_key, ref_topic.id)
-                      |> dromel.set_data(member_key, member_group.member.id)
-                      |> dromel.set_data(contract_key, ref_group.contract.id)
-                      |> dromel.set_style(combined_panel_style)
-                      |> dromel.add_style("padding-left: 0.5rem;")
-
-                    apply_first_last_style(
-                      reference_source,
-                      index,
-                      total_references,
-                    )
-
-                    // Add member title only for the first reference in the member group
-                    case member_ref_index {
-                      0 -> {
-                        let member_title =
-                          dromel.new_div()
-                          |> dromel.set_style(combined_panel_member_title_style)
-                          |> dromel.set_inner_html("...")
-                          |> dromel.append_as_child(to: reference_source)
-
-                        audit_data.with_topic_metadata(
-                          member_group.member,
-                          fn(
-                            metadata: Result(
-                              audit_data.TopicMetadata,
-                              snag.Snag,
-                            ),
-                          ) -> Nil {
-                            case metadata {
-                              Ok(metadata) -> {
-                                member_title
-                                |> dromel.set_inner_html(
-                                  audit_data.topic_metadata_highlighted_name(
-                                    metadata,
-                                  ),
-                                )
-                                Nil
-                              }
-                              Error(snag) -> {
-                                member_title
-                                |> dromel.set_inner_html(snag.line_print(snag))
-                                Nil
-                              }
-                            }
-                          },
-                        )
-                        Nil
-                      }
-                      _ -> Nil
-                    }
-
-                    populate_reference_source(reference_source, source_text)
-
-                    let _ =
-                      source_placeholder
-                      |> dromel.append_child(reference_source)
-
-                    Nil
-                  },
-                )
-
-                index + 1
-              },
-            )
-          },
+      populate_grouped_source_panel(
+        GroupedSourcePanelConfig(
+          panel: elements.topic_source,
+          token_field: TopicPanelTokens,
+        ),
+        references,
+      )
+    }
+    Error(_snag) -> {
+      let _ =
+        elements.topic_source
+        |> dromel.set_inner_html(
+          "<div style='color: var(--color-body-text); font-size: 0.9rem;'>Unable to load topic</div>",
         )
-      })
+      Nil
+    }
+  }
+}
+
+/// Callback for loading topic metadata and populating the references panel
+fn populate_references_panel(
+  metadata: Result(audit_data.TopicMetadata, snag.Snag),
+  elements: ActiveViewElements,
+) -> Nil {
+  case metadata {
+    Ok(metadata) -> {
+      let references = case metadata {
+        audit_data.NamedTopic(references:, ..)
+        | audit_data.NamedMutableTopic(references:, ..) -> references
+        _ -> []
+      }
+
+      populate_grouped_source_panel(
+        GroupedSourcePanelConfig(
+          panel: elements.references_panel,
+          token_field: ReferencesPanelTokens,
+        ),
+        references,
+      )
     }
     Error(_snag) -> {
       let _ =
@@ -933,7 +844,9 @@ fn load_previous_topic_panel(
                   Ok(source_text) -> {
                     let _ =
                       elements.previous_topic_panel
-                      |> dromel.set_style(panel_style)
+                      |> dromel.set_style(
+                        "border-radius: 8px; border: 1px solid var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg); max-height: 100%;",
+                      )
                       |> dromel.set_inner_html(source_text)
                     dromel.set_scroll_top(
                       elements.previous_topic_panel,
@@ -1187,7 +1100,7 @@ pub fn navigate_to_new_entry(
 fn navigate_to_new_entry_with_focus(
   container: element.Element,
   topic: audit_data.Topic,
-  focus_target: FocusTarget,
+  _focus_target: FocusTarget,
 ) {
   let active_topic_view_res = get_active_topic_view(container)
   case active_topic_view_res {
@@ -1231,7 +1144,7 @@ fn navigate_to_new_entry_with_focus(
       // but no new context to replace it with yet.
       audit_data.with_topic_data(
         audit_data.Topic(id: new_entry.topic_id),
-        fn(metadata, source_text) {
+        fn(metadata, _source_text) {
           // Reset DOM elements for reuse (saves scroll position, clears content)
           let elements = case reset_active_view(container) {
             Ok(elements) -> elements
@@ -1254,17 +1167,11 @@ fn navigate_to_new_entry_with_focus(
           // Load previous topic panel content
           load_previous_topic_panel(new_entry.id, elements)
 
-          // Update the scope breadcrumb
-          populate_topic_scope(
-            metadata,
-            elements.topic_scope,
-            elements.topic_panel,
-          )
+          // Hide the topic title (each source container has its own member title)
+          hide_topic_title(elements)
 
-          // Set data attributes and member title based on scope
-          setup_topic_panel_for_scope(metadata, elements)
-
-          restore_source_text(source_text, container, elements, focus_target:)
+          // Populate topic panel with grouped sources
+          populate_topic_panel(metadata, elements)
 
           // Load topic metadata and populate references panel
           populate_references_panel(metadata, elements)
@@ -1289,7 +1196,7 @@ pub fn navigate_back(container) -> Nil {
           |> snag.line_print
           |> io.println_error
 
-        Ok(#(parent_entry, child_topic_index)) -> {
+        Ok(#(parent_entry, _child_topic_index)) -> {
           case get_topic_view(parent_entry.id) {
             Ok(parent_view) -> {
               // Update the parent entry so that the child that this came from
@@ -1322,7 +1229,7 @@ pub fn navigate_back(container) -> Nil {
               let parent_topic = audit_data.Topic(id: parent_entry.topic_id)
               audit_data.with_topic_data(
                 parent_topic,
-                fn(metadata, source_text) {
+                fn(metadata, _source_text) {
                   // Reset DOM elements for reuse (saves scroll position, clears content)
                   let elements = case reset_active_view(container) {
                     Ok(elements) -> elements
@@ -1335,25 +1242,11 @@ pub fn navigate_back(container) -> Nil {
                   // Load previous topic panel content
                   load_previous_topic_panel(parent_entry.id, elements)
 
-                  // Update the scope breadcrumb
-                  populate_topic_scope(
-                    metadata,
-                    elements.topic_scope,
-                    elements.topic_panel,
-                  )
+                  // Hide the topic title (each source container has its own member title)
+                  hide_topic_title(elements)
 
-                  // Set data attributes and member title based on scope
-                  setup_topic_panel_for_scope(metadata, elements)
-
-                  restore_source_text(
-                    source_text,
-                    container,
-                    elements,
-                    focus_target: FocusByIndex(
-                      child_topic_index,
-                      parent_view.scroll_position,
-                    ),
-                  )
+                  // Populate topic panel with grouped sources
+                  populate_topic_panel(metadata, elements)
 
                   // Load topic metadata and populate references panel
                   populate_references_panel(metadata, elements)
@@ -1389,7 +1282,7 @@ pub fn navigate_forward(container) -> Nil {
           |> snag.line_print
           |> io.println_error
 
-        Ok(#(child_entry, child_topic_index)) -> {
+        Ok(#(child_entry, _child_topic_index)) -> {
           case get_topic_view(child_entry.id) {
             Error(Nil) ->
               snag.new("Child view not found for entry: " <> child_entry.id)
@@ -1410,42 +1303,31 @@ pub fn navigate_forward(container) -> Nil {
               // DOM elements until after we have the source text so that
               // there is no flicker when navigating to a new topic.
               let child_topic = audit_data.Topic(id: child_entry.topic_id)
-              audit_data.with_topic_data(child_topic, fn(metadata, source_text) {
-                // Reset DOM elements for reuse (saves scroll position, clears content)
-                let elements = case reset_active_view(container) {
-                  Ok(elements) -> elements
-                  Error(Nil) -> mount_topic_view(container)
-                }
+              audit_data.with_topic_data(
+                child_topic,
+                fn(metadata, _source_text) {
+                  // Reset DOM elements for reuse (saves scroll position, clears content)
+                  let elements = case reset_active_view(container) {
+                    Ok(elements) -> elements
+                    Error(Nil) -> mount_topic_view(container)
+                  }
 
-                set_active_topic_view(container, child_view)
-                set_active_panel(container, TopicPanel)
+                  set_active_topic_view(container, child_view)
+                  set_active_panel(container, TopicPanel)
 
-                // Update the scope breadcrumb
-                populate_topic_scope(
-                  metadata,
-                  elements.topic_scope,
-                  elements.topic_panel,
-                )
+                  // Hide the topic title (each source container has its own member title)
+                  hide_topic_title(elements)
 
-                // Set data attributes and member title based on scope
-                setup_topic_panel_for_scope(metadata, elements)
+                  // Populate topic panel with grouped sources
+                  populate_topic_panel(metadata, elements)
 
-                restore_source_text(
-                  source_text,
-                  container,
-                  elements,
-                  focus_target: FocusByIndex(
-                    child_topic_index,
-                    child_view.scroll_position,
-                  ),
-                )
+                  // Load previous topic panel content
+                  load_previous_topic_panel(child_entry.id, elements)
 
-                // Load previous topic panel content
-                load_previous_topic_panel(child_entry.id, elements)
-
-                // Load topic metadata and populate references panel
-                populate_references_panel(metadata, elements)
-              })
+                  // Load topic metadata and populate references panel
+                  populate_references_panel(metadata, elements)
+                },
+              )
 
               Nil
             }
@@ -1933,7 +1815,7 @@ fn collapse_member_group(
 
 /// Find the reference-group ancestor of an element
 fn find_reference_group(elem: element.Element) -> Result(element.Element, Nil) {
-  case dromel.has_class(elem, dromel.Class("reference-group")) {
+  case dromel.has_class(elem, reference_group_class) {
     True -> Ok(elem)
     False ->
       case dromel.parent_element(elem) {
