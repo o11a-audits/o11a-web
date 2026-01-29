@@ -140,10 +140,10 @@ type ActiveViewElements {
     topic_title: element.Element,
     topic_source: element.Element,
     topic_container: element.Element,
-    references_panel: element.Element,
-    references_container: element.Element,
+    expanded_references_panel: element.Element,
+    expanded_references_container: element.Element,
     topic_children_tokens: array.Array(element.Element),
-    references_topic_tokens: array.Array(element.Element),
+    expanded_references_tokens: array.Array(element.Element),
   )
 }
 
@@ -392,26 +392,26 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
     |> dromel.append_child(topic_panel)
     |> dromel.append_child(topic_footer)
 
-  // Create the references panel element
-  let references_panel =
+  // Create the expanded references panel element
+  let expanded_references_panel =
     dromel.new_div()
     |> dromel.set_class(elements.source_container_class)
     |> dromel.set_style(panel_style)
 
-  let references_footer =
+  let expanded_references_footer =
     dromel.new_div()
-    |> dromel.set_inner_text("References")
+    |> dromel.set_inner_text("Expanded References")
     |> dromel.set_style(footer_style)
 
-  let references_container =
+  let expanded_references_container =
     dromel.new_div()
     |> dromel.set_style(container_style)
-    |> dromel.append_child(references_footer)
-    |> dromel.append_child(references_panel)
+    |> dromel.append_child(expanded_references_footer)
+    |> dromel.append_child(expanded_references_panel)
 
   let _ = container |> dromel.append_child(previous_topic_container)
   let _ = container |> dromel.append_child(topic_container)
-  let _ = container |> dromel.append_child(references_container)
+  let _ = container |> dromel.append_child(expanded_references_container)
 
   let elements =
     ActiveViewElements(
@@ -422,10 +422,10 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
       topic_title:,
       topic_source:,
       topic_container:,
-      references_panel:,
-      references_container:,
+      expanded_references_panel:,
+      expanded_references_container:,
       topic_children_tokens: array.from_list([]),
-      references_topic_tokens: array.from_list([]),
+      expanded_references_tokens: array.from_list([]),
     )
 
   set_active_view_elements(elements)
@@ -462,15 +462,15 @@ fn reset_active_view(
       let _ = dromel.remove_data(elements.topic_panel, contract_key)
       dromel.set_scroll_top(elements.topic_panel, 0.0)
 
-      let _ = dromel.set_inner_html(elements.references_panel, "")
-      dromel.set_scroll_top(elements.references_panel, 0.0)
+      let _ = dromel.set_inner_html(elements.expanded_references_panel, "")
+      dromel.set_scroll_top(elements.expanded_references_panel, 0.0)
 
       // Reset the token arrays since content was cleared
       let reset_elements =
         ActiveViewElements(
           ..elements,
           topic_children_tokens: array.from_list([]),
-          references_topic_tokens: array.from_list([]),
+          expanded_references_tokens: array.from_list([]),
         )
       set_active_view_elements(reset_elements)
 
@@ -741,7 +741,7 @@ fn gather_panel_tokens(config: GroupedSourcePanelConfig) -> Nil {
           set_active_view_elements(
             ActiveViewElements(
               ..active_elements,
-              references_topic_tokens: tokens,
+              expanded_references_tokens: tokens,
             ),
           )
       }
@@ -786,32 +786,33 @@ fn populate_topic_panel(
   }
 }
 
-/// Callback for loading topic metadata and populating the references panel
-fn populate_references_panel(
+/// Callback for loading topic metadata and populating the expanded references panel
+fn populate_expanded_references_panel(
   metadata: Result(audit_data.TopicMetadata, snag.Snag),
   elements: ActiveViewElements,
 ) -> Nil {
   case metadata {
     Ok(metadata) -> {
-      let references = case metadata {
-        audit_data.NamedTopic(references:, ..)
-        | audit_data.NamedMutableTopic(references:, ..) -> references
+      let expanded_references = case metadata {
+        audit_data.NamedTopic(expanded_references:, ..)
+        | audit_data.NamedMutableTopic(expanded_references:, ..) ->
+          expanded_references
         _ -> []
       }
 
       populate_grouped_source_panel(
         GroupedSourcePanelConfig(
-          panel: elements.references_panel,
+          panel: elements.expanded_references_panel,
           token_field: ReferencesPanelTokens,
         ),
-        references,
+        expanded_references,
       )
     }
     Error(_snag) -> {
       let _ =
-        elements.references_panel
+        elements.expanded_references_panel
         |> dromel.set_inner_html(
-          "<div style='color: var(--color-body-text); font-size: 0.9rem;'>Unable to load references</div>",
+          "<div style='color: var(--color-body-text); font-size: 0.9rem;'>Unable to load expanded references</div>",
         )
       Nil
     }
@@ -1173,8 +1174,8 @@ fn navigate_to_new_entry_with_focus(
           // Populate topic panel with grouped sources
           populate_topic_panel(metadata, elements)
 
-          // Load topic metadata and populate references panel
-          populate_references_panel(metadata, elements)
+          // Load topic metadata and populate expanded references panel
+          populate_expanded_references_panel(metadata, elements)
         },
       )
     }
@@ -1248,8 +1249,8 @@ pub fn navigate_back(container) -> Nil {
                   // Populate topic panel with grouped sources
                   populate_topic_panel(metadata, elements)
 
-                  // Load topic metadata and populate references panel
-                  populate_references_panel(metadata, elements)
+                  // Load topic metadata and populate expanded references panel
+                  populate_expanded_references_panel(metadata, elements)
                 },
               )
 
@@ -1324,8 +1325,8 @@ pub fn navigate_forward(container) -> Nil {
                   // Load previous topic panel content
                   load_previous_topic_panel(child_entry.id, elements)
 
-                  // Load topic metadata and populate references panel
-                  populate_references_panel(metadata, elements)
+                  // Load topic metadata and populate expanded references panel
+                  populate_expanded_references_panel(metadata, elements)
                 },
               )
 
@@ -1381,7 +1382,7 @@ pub fn handle_topic_view_keydown(event) {
       case get_active_panel(container) {
         TopicPanel -> {
           // Gather reference tokens lazily when entering references panel
-          gather_references_topic_tokens()
+          gather_expanded_references_tokens()
           set_active_panel(container, ReferencesPanel)
           // Focus the first reference token if available
           navigate_to_reference(container, 0)
@@ -1471,7 +1472,7 @@ fn navigate_into_reference(container) {
     Ok(elements) -> {
       case
         array.get(
-          elements.references_topic_tokens,
+          elements.expanded_references_tokens,
           get_current_references_index(container),
         )
         |> result.try(dromel.get_data(_, topic_key))
@@ -1634,7 +1635,7 @@ fn navigate_scope_up_reference(container) {
       // Get the currently focused reference element
       case
         array.get(
-          elements.references_topic_tokens,
+          elements.expanded_references_tokens,
           get_current_references_index(container),
         )
       {
@@ -1718,7 +1719,7 @@ fn restore_reference_focus(
   container: element.Element,
   focused_element_id: String,
 ) -> Nil {
-  gather_references_topic_tokens()
+  gather_expanded_references_tokens()
 
   case get_active_view_elements() {
     Error(Nil) -> Nil
@@ -1726,7 +1727,7 @@ fn restore_reference_focus(
       find_and_focus_element_by_id(
         container,
         ReferencesPanel,
-        elements.references_topic_tokens,
+        elements.expanded_references_tokens,
         focused_element_id,
         0,
       )
@@ -1975,13 +1976,13 @@ fn navigate_to_reference(container, index_diff) {
       let new_index = case current_index + index_diff {
         n if n <= 0 -> 0
         n ->
-          case array.size(elements.references_topic_tokens) - 1 {
+          case array.size(elements.expanded_references_tokens) - 1 {
             size if n > size -> size
             _size -> n
           }
       }
 
-      case elements.references_topic_tokens |> array.get(new_index) {
+      case elements.expanded_references_tokens |> array.get(new_index) {
         Ok(el) -> {
           focus_topic_token_and_prefetch(el)
           set_current_references_index(container, new_index)
@@ -1999,16 +2000,19 @@ fn navigate_to_reference(container, index_diff) {
 
 const reference_title_class = dromel.Class("topic-reference-title")
 
-fn gather_references_topic_tokens() -> Nil {
+fn gather_expanded_references_tokens() -> Nil {
   case get_active_view_elements() {
     Ok(active_elements) -> {
       let tokens =
         dromel.query_element_all(
-          active_elements.references_panel,
+          active_elements.expanded_references_panel,
           elements.source_topic_tokens,
         )
       set_active_view_elements(
-        ActiveViewElements(..active_elements, references_topic_tokens: tokens),
+        ActiveViewElements(
+          ..active_elements,
+          expanded_references_tokens: tokens,
+        ),
       )
       Nil
     }

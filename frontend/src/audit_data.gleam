@@ -435,6 +435,7 @@ pub type TopicMetadata {
     name: String,
     visibility: NamedTopicVisibility,
     references: List(ReferenceGroup),
+    expanded_references: List(ReferenceGroup),
     ancestors: List(Topic),
     descendants: List(Topic),
   )
@@ -445,6 +446,7 @@ pub type TopicMetadata {
     name: String,
     visibility: NamedTopicVisibility,
     references: List(ReferenceGroup),
+    expanded_references: List(ReferenceGroup),
     mutations: List(Topic),
     ancestors: List(Topic),
     descendants: List(Topic),
@@ -476,6 +478,10 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         "references",
         decode.list(reference_group_decoder()),
       )
+      use expanded_references <- decode.field(
+        "expanded_references",
+        decode.list(reference_group_decoder()),
+      )
       use ancestor_ids <- decode.field("ancestors", decode.list(decode.string))
       use descendant_ids <- decode.field(
         "descendants",
@@ -488,6 +494,7 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         name:,
         visibility:,
         references:,
+        expanded_references:,
         mutations: list.map(mutation_ids, Topic),
         ancestors: list.map(ancestor_ids, Topic),
         descendants: list.map(descendant_ids, Topic),
@@ -498,6 +505,10 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
       use visibility <- decode.then(named_topic_visibility_decoder())
       use references <- decode.field(
         "references",
+        decode.list(reference_group_decoder()),
+      )
+      use expanded_references <- decode.field(
+        "expanded_references",
         decode.list(reference_group_decoder()),
       )
       use ancestor_ids <- decode.field("ancestors", decode.list(decode.string))
@@ -512,6 +523,7 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         name:,
         visibility:,
         references:,
+        expanded_references:,
         ancestors: list.map(ancestor_ids, Topic),
         descendants: list.map(descendant_ids, Topic),
       ))
