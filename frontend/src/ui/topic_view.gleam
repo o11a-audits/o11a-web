@@ -121,7 +121,9 @@ type TokenField {
 /// Configuration for rendering a panel with grouped source containers
 type GroupedSourcePanelConfig {
   GroupedSourcePanelConfig(
-    /// The container element to render into
+    /// The view container element (for state like pending focus)
+    container: element.Element,
+    /// The panel element to render into
     panel: element.Element,
     /// Which token field to update when gathering tokens
     token_field: TokenField,
@@ -775,10 +777,17 @@ fn gather_panel_tokens(config: GroupedSourcePanelConfig) -> Nil {
       let tokens =
         dromel.query_element_all(config.panel, elements.source_topic_tokens)
       case config.token_field {
-        TopicPanelTokens ->
+        TopicPanelTokens -> {
           set_active_view_elements(
             ActiveViewElements(..active_elements, topic_children_tokens: tokens),
           )
+          // Focus the child at the current index
+          let index = get_current_child_topic_index(config.container)
+          case array.get(tokens, index) {
+            Ok(el) -> focus_topic_token_and_prefetch(el)
+            Error(Nil) -> Nil
+          }
+        }
         ReferencesPanelTokens ->
           set_active_view_elements(
             ActiveViewElements(
@@ -795,6 +804,7 @@ fn gather_panel_tokens(config: GroupedSourcePanelConfig) -> Nil {
 
 /// Callback for loading topic metadata and populating the topic panel
 fn populate_topic_panel(
+  container: element.Element,
   metadata: Result(audit_data.TopicMetadata, snag.Snag),
   elements: ActiveViewElements,
 ) -> Nil {
@@ -811,6 +821,7 @@ fn populate_topic_panel(
 
       populate_grouped_source_panel(
         GroupedSourcePanelConfig(
+          container:,
           panel: elements.topic_panel,
           token_field: TopicPanelTokens,
         ),
@@ -830,6 +841,7 @@ fn populate_topic_panel(
 
 /// Callback for loading topic metadata and populating the expanded references panel
 fn populate_expanded_references_panel(
+  container: element.Element,
   metadata: Result(audit_data.TopicMetadata, snag.Snag),
   elements: ActiveViewElements,
 ) -> Nil {
@@ -844,6 +856,7 @@ fn populate_expanded_references_panel(
 
       populate_grouped_source_panel(
         GroupedSourcePanelConfig(
+          container:,
           panel: elements.expanded_references_panel,
           token_field: ReferencesPanelTokens,
         ),
@@ -1143,7 +1156,7 @@ pub fn navigate_to_new_entry(
 fn navigate_to_new_entry_with_focus(
   container: element.Element,
   topic: audit_data.Topic,
-  _focus_target: FocusTarget,
+  focus_target: FocusTarget,
 ) {
   let active_topic_view_res = get_active_topic_view(container)
   case active_topic_view_res {
@@ -1180,6 +1193,12 @@ fn navigate_to_new_entry_with_focus(
       // Update the fully qualified name display
       mount_fully_qualified_name(get_history_container(), new_entry.topic_id)
 
+      // Set the child topic index for focus when tokens are gathered
+      case focus_target {
+        FocusByIndex(index, _scroll_position) ->
+          set_current_child_topic_index(container, index)
+      }
+
       // Load source text and replace
       // DOM elements. We wait to replace DOM elements until after
       // we have the source text so that there is no flicker when
@@ -1211,10 +1230,10 @@ fn navigate_to_new_entry_with_focus(
           load_previous_topic_panel(new_entry.id, elements)
 
           // Populate topic panel with grouped sources
-          populate_topic_panel(metadata, elements)
+          populate_topic_panel(container, metadata, elements)
 
           // Load topic metadata and populate expanded references panel
-          populate_expanded_references_panel(metadata, elements)
+          populate_expanded_references_panel(container, metadata, elements)
         },
       )
     }
@@ -1236,7 +1255,7 @@ pub fn navigate_back(container) -> Nil {
           |> snag.line_print
           |> io.println_error
 
-        Ok(#(parent_entry, _child_topic_index)) -> {
+        Ok(#(parent_entry, child_topic_index)) -> {
           case get_topic_view(parent_entry.id) {
             Ok(parent_view) -> {
               // Update the parent entry so that the child that this came from
@@ -1263,6 +1282,9 @@ pub fn navigate_back(container) -> Nil {
                 parent_entry.topic_id,
               )
 
+              // Set the child topic index for focus restoration
+              set_current_child_topic_index(container, child_topic_index)
+
               // Load source text and restore scroll position. We wait to reset
               // DOM elements until after we have the source text so that
               // there is no flicker when navigating to a new topic.
@@ -1283,10 +1305,14 @@ pub fn navigate_back(container) -> Nil {
                   load_previous_topic_panel(parent_entry.id, elements)
 
                   // Populate topic panel with grouped sources
-                  populate_topic_panel(metadata, elements)
+                  populate_topic_panel(container, metadata, elements)
 
                   // Load topic metadata and populate expanded references panel
-                  populate_expanded_references_panel(metadata, elements)
+                  populate_expanded_references_panel(
+                    container,
+                    metadata,
+                    elements,
+                  )
                 },
               )
 
@@ -1319,7 +1345,7 @@ pub fn navigate_forward(container) -> Nil {
           |> snag.line_print
           |> io.println_error
 
-        Ok(#(child_entry, _child_topic_index)) -> {
+        Ok(#(child_entry, child_topic_index)) -> {
           case get_topic_view(child_entry.id) {
             Error(Nil) ->
               snag.new("Child view not found for entry: " <> child_entry.id)
@@ -1335,6 +1361,9 @@ pub fn navigate_forward(container) -> Nil {
                 get_history_container(),
                 child_entry.topic_id,
               )
+
+              // Set the child topic index for focus restoration
+              set_current_child_topic_index(container, child_topic_index)
 
               // Load source text and restore scroll position. We wait to reset
               // DOM elements until after we have the source text so that
@@ -1353,13 +1382,17 @@ pub fn navigate_forward(container) -> Nil {
                   set_active_panel(container, TopicPanel)
 
                   // Populate topic panel with grouped sources
-                  populate_topic_panel(metadata, elements)
+                  populate_topic_panel(container, metadata, elements)
 
                   // Load previous topic panel content
                   load_previous_topic_panel(child_entry.id, elements)
 
                   // Load topic metadata and populate expanded references panel
-                  populate_expanded_references_panel(metadata, elements)
+                  populate_expanded_references_panel(
+                    container,
+                    metadata,
+                    elements,
+                  )
                 },
               )
 
