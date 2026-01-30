@@ -10,8 +10,24 @@ import tempo/instant
 // Types
 // =============================================================================
 
+/// Which panel has focus in the topic view
+pub type ActivePanel {
+  TopicPanel
+  ReferencesPanel
+}
+
+/// Focus state capturing the user's position in both panels
+pub type FocusState {
+  FocusState(topic_index: Int, references_index: Int, active_panel: ActivePanel)
+}
+
+/// Default focus state for new entries
+pub fn default_focus_state() -> FocusState {
+  FocusState(topic_index: 0, references_index: 0, active_panel: TopicPanel)
+}
+
 pub type Relative {
-  Relative(id: String, child_topic_index: Int)
+  Relative(id: String, focus_state: FocusState)
 }
 
 pub type HistoryEntry {
@@ -50,7 +66,7 @@ pub fn create_root(topic: audit_data.Topic) {
 /// Sets up parent-child relationship between entries
 pub fn go_to_new_entry(
   current_entry_id: String,
-  current_child_topic_number: Int,
+  current_focus_state: FocusState,
   new_topic: audit_data.Topic,
 ) -> Result(HistoryEntry, snag.Snag) {
   case get_history_entry(current_entry_id) {
@@ -65,7 +81,7 @@ pub fn go_to_new_entry(
           topic_id: new_topic.id,
           parent: Some(Relative(
             id: current_entry_id,
-            child_topic_index: current_child_topic_number,
+            focus_state: current_focus_state,
           )),
           children: [],
         )
@@ -73,7 +89,7 @@ pub fn go_to_new_entry(
       // Update current entry to add child
       let updated_current_entry =
         HistoryEntry(..current_entry, children: [
-          Relative(id: new_entry_id, child_topic_index: 0),
+          Relative(id: new_entry_id, focus_state: default_focus_state()),
           ..current_entry.children
         ])
 
@@ -87,21 +103,21 @@ pub fn go_to_new_entry(
 }
 
 /// Go back to parent entry (if exists)
-/// Returns the parent entry and the child topic number it was entered from
+/// Returns the parent entry and the focus state to restore
 pub fn go_back(
   current_entry_id: String,
-) -> Result(#(HistoryEntry, Int), snag.Snag) {
+) -> Result(#(HistoryEntry, FocusState), snag.Snag) {
   case get_history_entry(current_entry_id) {
     Error(Nil) ->
       snag.error("Failed to read history entry: " <> current_entry_id)
     Ok(entry) ->
       case entry.parent {
         None -> snag.error("Already at root, cannot go back")
-        Some(Relative(id: parent_id, child_topic_index:)) ->
+        Some(Relative(id: parent_id, focus_state:)) ->
           case get_history_entry(parent_id) {
             Error(Nil) -> snag.error("Failed to read parent history entry")
             Ok(parent_entry) -> {
-              Ok(#(parent_entry, child_topic_index))
+              Ok(#(parent_entry, focus_state))
             }
           }
       }
@@ -109,9 +125,10 @@ pub fn go_back(
 }
 
 /// Go forward to the most recent child (first in list)
+/// Returns the child entry and the focus state to restore
 pub fn go_forward(
   current_entry_id: String,
-) -> Result(#(HistoryEntry, Int), snag.Snag) {
+) -> Result(#(HistoryEntry, FocusState), snag.Snag) {
   case get_history_entry(current_entry_id) {
     Error(Nil) ->
       snag.error("Failed to read history entry: " <> current_entry_id)
@@ -122,7 +139,7 @@ pub fn go_forward(
           case get_history_entry(first_child.id) {
             Error(Nil) -> snag.error("Failed to read child history entry")
             Ok(child_entry) -> {
-              Ok(#(child_entry, first_child.child_topic_index))
+              Ok(#(child_entry, first_child.focus_state))
             }
           }
       }
@@ -130,17 +147,18 @@ pub fn go_forward(
 }
 
 /// Go forward to a specific child by index
+/// Returns the child entry id and the focus state to restore
 pub fn go_forward_to_branch(
   current_entry_id: String,
   child_index: Int,
-) -> Result(#(String, Int), snag.Snag) {
+) -> Result(#(String, FocusState), snag.Snag) {
   case get_history_entry(current_entry_id) {
     Error(Nil) ->
       snag.error("Failed to read history entry: " <> current_entry_id)
     Ok(entry) -> {
       case get_child_at_index(entry.children, child_index) {
         Error(Nil) -> snag.error("Child index out of bounds")
-        Ok(child) -> Ok(#(child.id, child.child_topic_index))
+        Ok(child) -> Ok(#(child.id, child.focus_state))
       }
     }
   }
