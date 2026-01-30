@@ -86,7 +86,7 @@ import gleam/int
 import gleam/io
 import gleam/javascript/array
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option
 import gleam/result
 import gleam/string
 import history_graph
@@ -142,8 +142,6 @@ type ActiveViewElements {
     previous_topic_panel: element.Element,
     previous_topic_container: element.Element,
     topic_panel: element.Element,
-    topic_title: element.Element,
-    topic_source: element.Element,
     topic_container: element.Element,
     expanded_references_panel: element.Element,
     expanded_references_container: element.Element,
@@ -452,20 +450,12 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
     |> dromel.append_child(previous_topic_panel)
     |> dromel.append_child(previous_topic_footer)
 
-  // Create the source view element
-  let topic_title =
-    dromel.new_div()
-    |> dromel.set_style(combined_panel_member_title_style)
-
-  let topic_source = dromel.new_div()
-
+  // Create the topic panel element
   let topic_panel =
     dromel.new_div()
     |> dromel.set_id(topic_panel_id)
     |> dromel.set_class(elements.source_container_class)
     |> dromel.set_style(panel_style)
-    |> dromel.append_child(topic_title)
-    |> dromel.append_child(topic_source)
 
   let topic_footer =
     dromel.new_div()
@@ -506,8 +496,6 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
       previous_topic_panel:,
       previous_topic_container:,
       topic_panel:,
-      topic_title:,
-      topic_source:,
       topic_container:,
       expanded_references_panel:,
       expanded_references_container:,
@@ -539,8 +527,7 @@ fn reset_active_view(
       let _ = elements.previous_topic_panel |> dromel.set_style("")
       dromel.set_scroll_top(elements.previous_topic_panel, 0.0)
 
-      let _ = dromel.set_inner_html(elements.topic_title, "")
-      let _ = dromel.set_inner_html(elements.topic_source, "")
+      let _ = dromel.set_inner_html(elements.topic_panel, "")
       // Reset the topic panel style to default (removes out-of-scope border color)
       let _ = dromel.set_style(elements.topic_panel, panel_style)
       // Remove data attributes from previous view
@@ -575,38 +562,6 @@ fn reset_active_view(
 type FocusTarget {
   /// Focus the child at the given index with a specific scroll position
   FocusByIndex(index: Int, scroll_position: Float)
-  /// Focus the child with the given element id (scroll position will be 0)
-  FocusById(id: String)
-}
-
-/// Hide the topic title element
-fn hide_topic_title(elements: ActiveViewElements) -> Nil {
-  let _ = dromel.set_style(elements.topic_title, "display: none;")
-  let _ = dromel.set_inner_html(elements.topic_title, "")
-  Nil
-}
-
-/// Find and focus a child element by id, updating the current index
-fn find_child_by_id(children: array.Array(element.Element), target_id: String) {
-  do_find_child_by_id(children, target_id, 0)
-}
-
-fn do_find_child_by_id(
-  children: array.Array(element.Element),
-  target_id: String,
-  index: Int,
-) {
-  case array.get(children, index) {
-    Error(Nil) -> Error(Nil)
-    Ok(el) -> {
-      case dromel.get_attribute(el, "id") {
-        Ok(id) if id == target_id -> {
-          Ok(#(el, index))
-        }
-        _ -> do_find_child_by_id(children, target_id, index + 1)
-      }
-    }
-  }
 }
 
 /// Helper to apply first/last styling to reference source elements
@@ -851,12 +806,12 @@ fn populate_topic_panel(
         _ -> []
       }
 
-      // Clear the topic source and use grouped source panel rendering
-      let _ = dromel.set_inner_html(elements.topic_source, "")
+      // Clear the topic panel and use grouped source panel rendering
+      let _ = dromel.set_inner_html(elements.topic_panel, "")
 
       populate_grouped_source_panel(
         GroupedSourcePanelConfig(
-          panel: elements.topic_source,
+          panel: elements.topic_panel,
           token_field: TopicPanelTokens,
         ),
         references,
@@ -864,7 +819,7 @@ fn populate_topic_panel(
     }
     Error(_snag) -> {
       let _ =
-        elements.topic_source
+        elements.topic_panel
         |> dromel.set_inner_html(
           "<div style='color: var(--color-body-text); font-size: 0.9rem;'>Unable to load topic</div>",
         )
@@ -1255,9 +1210,6 @@ fn navigate_to_new_entry_with_focus(
           // Load previous topic panel content
           load_previous_topic_panel(new_entry.id, elements)
 
-          // Hide the topic title (each source container has its own member title)
-          hide_topic_title(elements)
-
           // Populate topic panel with grouped sources
           populate_topic_panel(metadata, elements)
 
@@ -1330,9 +1282,6 @@ pub fn navigate_back(container) -> Nil {
                   // Load previous topic panel content
                   load_previous_topic_panel(parent_entry.id, elements)
 
-                  // Hide the topic title (each source container has its own member title)
-                  hide_topic_title(elements)
-
                   // Populate topic panel with grouped sources
                   populate_topic_panel(metadata, elements)
 
@@ -1402,9 +1351,6 @@ pub fn navigate_forward(container) -> Nil {
 
                   set_active_topic_view(container, child_view, metadata)
                   set_active_panel(container, TopicPanel)
-
-                  // Hide the topic title (each source container has its own member title)
-                  hide_topic_title(elements)
 
                   // Populate topic panel with grouped sources
                   populate_topic_panel(metadata, elements)
@@ -1575,71 +1521,58 @@ fn navigate_into_reference(container) {
 }
 
 /// Navigate up one scope level in the topic panel
-/// Uses member/contract collapse pattern similar to references panel
+/// For member-grouped topics, collapses all topics in the group into a single member view
 fn navigate_scope_up_topic(container) {
-  case get_active_topic_view(container), get_active_view_elements() {
-    Error(Nil), _ -> io.println_error("No active topic view")
-    _, Error(Nil) -> io.println_error("No active view elements")
-    Ok(view), Ok(elements) -> {
-      // Get the currently focused element's id to restore focus after reload
-      let focused_element_id =
+  case get_active_view_elements() {
+    Error(Nil) -> io.println_error("No active view elements")
+    Ok(elements) -> {
+      // Get the currently focused topic element
+      case
         array.get(
           elements.topic_children_tokens,
           get_current_child_topic_index(container),
         )
-        |> result.try(fn(el) { dromel.get_attribute(el, "id") })
+      {
+        Error(Nil) -> io.println_error("No topic element selected")
+        Ok(focused_element) -> {
+          // Get the element's id to restore focus after reload
+          let focused_element_id =
+            dromel.get_attribute(focused_element, "id") |> result.unwrap("")
 
-      case focused_element_id {
-        Error(Nil) -> io.println_error("Unable to find current element id")
-        Ok(focused_element_id) -> {
-          // Check for data-member first (collapse to member view)
-          case dromel.get_data(elements.topic_panel, member_key) {
-            Ok(member_id) -> {
-              collapse_topic_panel(
-                container,
-                elements,
-                member_id,
-                focused_element_id,
-                member_key,
-                hide_title: False,
-              )
-            }
-            Error(Nil) -> {
-              // Check for data-contract (collapse to contract view)
-              case dromel.get_data(elements.topic_panel, contract_key) {
-                Ok(contract_id) -> {
-                  collapse_topic_panel(
-                    container,
-                    elements,
-                    contract_id,
+          // Find the source container by traversing up from the focused element
+          case find_source_container(focused_element) {
+            Error(Nil) -> io.println_error("Unable to find source container")
+            Ok(source_container) -> {
+              // Check if this source container belongs to a member group
+              case dromel.get_data(source_container, member_key) {
+                Ok(member_id) -> {
+                  // This is a member-grouped topic - collapse the group
+                  collapse_member_group(
+                    source_container,
+                    member_id,
                     focused_element_id,
-                    contract_key,
-                    hide_title: True,
+                    container,
+                    TopicPanel,
                   )
                 }
                 Error(Nil) -> {
-                  // No member or contract - use existing navigation behavior
-                  audit_data.with_topic_metadata(
-                    audit_data.Topic(id: view.topic_id),
-                    fn(result) {
-                      case result {
-                        Error(_) ->
-                          io.println_error("Unable to get topic metadata")
-                        Ok(metadata) -> {
-                          case audit_data.parent_topic(metadata.scope) {
-                            None -> io.println("Already at top scope level")
-                            Some(parent_topic) -> {
-                              navigate_to_new_entry_with_focus(
-                                container,
-                                parent_topic,
-                                FocusById(focused_element_id),
-                              )
-                            }
-                          }
-                        }
-                      }
-                    },
-                  )
+                  // No member group - check for contract group
+                  case dromel.get_data(source_container, contract_key) {
+                    Ok(contract_id) -> {
+                      // This is a contract-grouped topic - collapse to contract
+                      collapse_contract_group(
+                        source_container,
+                        contract_id,
+                        focused_element_id,
+                        container,
+                        TopicPanel,
+                      )
+                    }
+                    Error(Nil) -> {
+                      // No contract group - already at top scope level
+                      io.println("Already at top scope level")
+                    }
+                  }
                 }
               }
             }
@@ -1648,69 +1581,6 @@ fn navigate_scope_up_topic(container) {
       }
     }
   }
-}
-
-/// Collapse topic panel to show a parent topic's source
-/// - key_to_remove: The data key to remove from the panel (member_key or contract_key)
-/// - hide_title: Whether to hide the member title
-fn collapse_topic_panel(
-  container: element.Element,
-  elements: ActiveViewElements,
-  topic_id: String,
-  focused_element_id: String,
-  key_to_remove: dromel.DataKey,
-  hide_title hide_title: Bool,
-) -> Nil {
-  let topic = audit_data.Topic(id: topic_id)
-
-  // Remove the specified key so further scope-up checks the next level
-  let _ = dromel.remove_data(elements.topic_panel, key_to_remove)
-
-  // Update topic_key to the new topic
-  let _ = dromel.set_data(elements.topic_panel, topic_key, topic_id)
-
-  // Optionally hide member title
-  case hide_title {
-    True -> hide_topic_title(elements)
-    False -> Nil
-  }
-
-  // Load source text
-  audit_data.with_source_text(topic, fn(source_text) {
-    case source_text {
-      Ok(text) -> {
-        let _ = dromel.set_inner_html(elements.topic_source, text)
-
-        // Re-gather tokens and restore focus
-        let children =
-          dromel.query_element_all(
-            elements.topic_source,
-            elements.source_topic_tokens,
-          )
-        set_active_view_elements(
-          ActiveViewElements(..elements, topic_children_tokens: children),
-        )
-
-        case find_child_by_id(children, focused_element_id) {
-          Ok(#(child, index)) -> {
-            let _ = focus_topic_token_and_prefetch(child)
-            set_current_child_topic_index(container, index)
-          }
-          Error(Nil) -> Nil
-        }
-
-        Nil
-      }
-      Error(error) -> {
-        let _ =
-          dromel.set_inner_html(
-            elements.topic_source,
-            log.render_source_error(error),
-          )
-        Nil
-      }
-    }
-  })
 }
 
 /// Navigate up one scope level in the references panel (only affects the current reference preview)
@@ -1745,6 +1615,7 @@ fn navigate_scope_up_reference(container) {
                     member_id,
                     focused_element_id,
                     container,
+                    ReferencesPanel,
                   )
                 }
                 Error(Nil) -> {
@@ -1757,6 +1628,7 @@ fn navigate_scope_up_reference(container) {
                         contract_id,
                         focused_element_id,
                         container,
+                        ReferencesPanel,
                       )
                     }
                     Error(Nil) -> {
@@ -1801,24 +1673,50 @@ fn remove_containers_after_first(
   Nil
 }
 
-/// Restore focus to a reference element after re-gathering tokens
-fn restore_reference_focus(
+/// Restore focus to an element after re-gathering tokens for the specified panel
+fn restore_panel_focus(
   container: element.Element,
   focused_element_id: String,
+  panel: ActivePanel,
 ) -> Nil {
-  gather_expanded_references_tokens()
+  case panel {
+    TopicPanel -> gather_topic_panel_tokens()
+    ReferencesPanel -> gather_expanded_references_tokens()
+  }
 
   case get_active_view_elements() {
     Error(Nil) -> Nil
     Ok(elements) -> {
+      let tokens = case panel {
+        TopicPanel -> elements.topic_children_tokens
+        ReferencesPanel -> elements.expanded_references_tokens
+      }
       find_and_focus_element_by_id(
         container,
-        ReferencesPanel,
-        elements.expanded_references_tokens,
+        panel,
+        tokens,
         focused_element_id,
         0,
       )
     }
+  }
+}
+
+/// Gather topic tokens for the topic panel
+fn gather_topic_panel_tokens() -> Nil {
+  case get_active_view_elements() {
+    Ok(active_elements) -> {
+      let tokens =
+        dromel.query_element_all(
+          active_elements.topic_panel,
+          elements.source_topic_tokens,
+        )
+      set_active_view_elements(
+        ActiveViewElements(..active_elements, topic_children_tokens: tokens),
+      )
+      Nil
+    }
+    Error(Nil) -> Nil
   }
 }
 
@@ -1828,6 +1726,7 @@ fn collapse_member_group(
   member_id: String,
   focused_element_id: String,
   container: element.Element,
+  panel: ActivePanel,
 ) -> Nil {
   // Find the reference-group parent that contains all the source containers
   case find_reference_group(source_container) {
@@ -1881,7 +1780,7 @@ fn collapse_member_group(
                   }
                 }
 
-                restore_reference_focus(container, focused_element_id)
+                restore_panel_focus(container, focused_element_id, panel)
 
                 Nil
               }
@@ -1919,6 +1818,7 @@ fn collapse_contract_group(
   contract_id: String,
   focused_element_id: String,
   container: element.Element,
+  panel: ActivePanel,
 ) -> Nil {
   // Find the reference-group parent that contains all the source containers
   case find_reference_group(source_container) {
@@ -1962,7 +1862,7 @@ fn collapse_contract_group(
                   |> dromel.set_inner_html(text)
                   |> dromel.append_as_child(to: first_container)
 
-                restore_reference_focus(container, focused_element_id)
+                restore_panel_focus(container, focused_element_id, panel)
 
                 Nil
               }
