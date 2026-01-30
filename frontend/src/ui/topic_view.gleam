@@ -424,11 +424,13 @@ const container_style = "position: relative; padding-top: 0.5rem; width: calc(40
 
 const panel_style = "min-height: 0; height: 100%; width: unset;"
 
-const combined_panel_first_style = "border-top: 1px solid var(--color-body-border); border-top-right-radius: 8px; border-top-left-radius: 8px;"
+// Note: These styles use border-width and border-style separately from border-color
+// so that the out-of-scope border-color (--color-body-out-of-scope-bg) is not overridden
+const combined_panel_first_style = "border-top-width: 1px; border-top-style: solid; border-top-right-radius: 8px; border-top-left-radius: 8px;"
 
-const combined_panel_last_style = "border-bottom-right-radius: 8px; border-bottom-left-radius: 8px; border-bottom: 1px solid var(--color-body-border);"
+const combined_panel_last_style = "border-bottom-right-radius: 8px; border-bottom-left-radius: 8px; border-bottom-width: 1px; border-bottom-style: solid;"
 
-const combined_panel_style = "border-right: 1px solid var(--color-body-border); border-left: 1px solid var(--color-body-border); border-bottom: 1px dashed var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg); max-height: 100%;"
+const combined_panel_style = "border-color: var(--color-body-border); border-right-width: 1px; border-right-style: solid; border-left-width: 1px; border-left-style: solid; border-bottom-width: 1px; border-bottom-style: dashed; padding: 0.5rem; background: var(--color-code-bg); max-height: 100%;"
 
 const combined_panel_member_title_style = "outline: 1px solid var(--color-body-border); border-radius: 4px; margin-bottom: 0.5rem; background: var(--color-body-bg); padding-left: 0.5rem;"
 
@@ -692,6 +694,18 @@ fn populate_grouped_source_panel(
             |> dromel.set_style(combined_panel_style)
             |> dromel.add_style("padding-left: 0.5rem;")
 
+          // Apply out-of-scope border color if contract is not in scope
+          case ref_group.is_in_scope {
+            True -> Nil
+            False -> {
+              dromel.add_style(
+                reference_source,
+                "border-color: var(--color-body-out-of-scope-bg)",
+              )
+              Nil
+            }
+          }
+
           apply_first_last_style(reference_source, index, total_references)
           populate_reference_source(reference_source, source_text)
 
@@ -731,6 +745,18 @@ fn populate_grouped_source_panel(
                 |> dromel.set_data(contract_key, ref_group.contract.id)
                 |> dromel.set_style(combined_panel_style)
                 |> dromel.add_style("padding-left: 0.5rem;")
+
+              // Apply out-of-scope border color if contract is not in scope
+              case ref_group.is_in_scope {
+                True -> Nil
+                False -> {
+                  dromel.add_style(
+                    reference_source,
+                    "border-color: var(--color-body-out-of-scope-bg)",
+                  )
+                  Nil
+                }
+              }
 
               apply_first_last_style(reference_source, index, total_references)
 

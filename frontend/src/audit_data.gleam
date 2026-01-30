@@ -268,6 +268,7 @@ pub type MemberReferenceGroup {
 pub type ReferenceGroup {
   ReferenceGroup(
     contract: Topic,
+    is_in_scope: Bool,
     contract_references: List(Topic),
     member_references: List(MemberReferenceGroup),
   )
@@ -374,6 +375,7 @@ fn member_reference_group_decoder() -> decode.Decoder(MemberReferenceGroup) {
 
 fn reference_group_decoder() -> decode.Decoder(ReferenceGroup) {
   use contract_id <- decode.field("contract", decode.string)
+  use is_in_scope <- decode.field("is_in_scope", decode.bool)
   use contract_reference_ids <- decode.field(
     "contract_references",
     decode.list(decode.string),
@@ -384,6 +386,7 @@ fn reference_group_decoder() -> decode.Decoder(ReferenceGroup) {
   )
   decode.success(ReferenceGroup(
     contract: Topic(id: contract_id),
+    is_in_scope:,
     contract_references: list.map(contract_reference_ids, Topic),
     member_references:,
   ))
