@@ -228,15 +228,6 @@ code,
 }
 span[data-topic]:focus {
   text-decoration: underline;
-  text-decoration: underline wavy;
-  /*background: url("data:image/svg+xml;utf8,\*/
-  /*<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'>\*/
-  /*<path d='M0 3 Q5 0 10 3 T20 3' stroke='currentColor' fill='transparent' stroke-width='1'/>\*/
-  /*</svg>")*/
-  /*repeat-x;*/
-  /*background-position: 0 100%;*/
-  /*background-size: 10px 6px; /* wavelength + amplitude */
-  /*padding-bottom: 4px;*/
 }
 
 .scope-standard {

@@ -88,6 +88,7 @@ import gleam/javascript/array
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/string
 import history_graph
 import plinth/browser/element
 import plinth/browser/event
@@ -130,6 +131,10 @@ type GroupedSourcePanelConfig {
 // ============================================================================
 // Active View Elements (transient, only exists for currently displayed view)
 // ============================================================================
+
+const topic_panel_id = dromel.Id("topic-panel")
+
+const expanded_references_panel_id = dromel.Id("expanded-references-panel")
 
 type ActiveViewElements {
   ActiveViewElements(
@@ -215,16 +220,96 @@ const active_topic_view_key = dromel.DataKey("active_topic_view")
 
 const active_topic_style_id = "active-topic-highlight-style"
 
-fn set_active_topic_view(container: element.Element, view: TopicView) -> Nil {
+fn set_active_topic_view(
+  container: element.Element,
+  view: TopicView,
+  metadata: Result(audit_data.TopicMetadata, snag.Snag),
+) -> Nil {
   let _ = dromel.set_data(container, active_topic_view_key, view.entry_id)
-  set_active_topic_highlight_style(view.topic_id)
+  set_active_topic_highlight_style(view.topic_id, metadata)
   Nil
 }
 
+/// Flatten expanded_references into a list of topic IDs
+fn flatten_expanded_references(
+  expanded_references: List(audit_data.ReferenceGroup),
+) -> List(String) {
+  list.flat_map(expanded_references, fn(group) {
+    let contract_ids = [group.contract.id]
+    let contract_ref_ids = list.map(group.contract_references, fn(t) { t.id })
+    let member_ids =
+      list.flat_map(group.member_references, fn(member_group) {
+        [
+          member_group.member.id,
+          ..list.map(member_group.references, fn(t) { t.id })
+        ]
+      })
+    list.flatten([contract_ids, contract_ref_ids, member_ids])
+  })
+}
+
 /// Sets a dynamic CSS rule on the app element to highlight elements with data-topic matching the active topic
-fn set_active_topic_highlight_style(topic_id: String) -> Nil {
-  let style_content =
+fn set_active_topic_highlight_style(
+  topic_id: String,
+  metadata: Result(audit_data.TopicMetadata, snag.Snag),
+) -> Nil {
+  // Build style for the active topic (solid underline)
+  let active_topic_style =
     "span[data-topic=\"" <> topic_id <> "\"] { text-decoration: underline; }"
+
+  // Extract ancestors and descendants from metadata
+  let #(ancestor_ids, descendant_ids, relative_ids) = case metadata {
+    Ok(audit_data.NamedTopic(ancestors:, descendants:, expanded_references:, ..))
+    | Ok(audit_data.NamedMutableTopic(
+        ancestors:,
+        descendants:,
+        expanded_references:,
+        ..,
+      )) -> {
+      let ancestor_id_list = list.map(ancestors, fn(t) { t.id })
+      let descendant_id_list = list.map(descendants, fn(t) { t.id })
+      let relative_id_list = flatten_expanded_references(expanded_references)
+      #(ancestor_id_list, descendant_id_list, relative_id_list)
+    }
+    _ -> #([], [], [])
+  }
+
+  // Build styles for ancestors (wavy underline in ancestor color)
+  let ancestor_styles =
+    list.map(ancestor_ids, fn(id) {
+      dromel.selector(expanded_references_panel_id)
+      <> " span[data-topic=\""
+      <> id
+      <> "\"] { text-decoration: underline; }"
+    })
+    |> string.join("\n")
+
+  // Build styles for descendants (wavy underline in descendant color)
+  let descendant_styles =
+    list.map(descendant_ids, fn(id) {
+      dromel.selector(expanded_references_panel_id)
+      <> " span[data-topic=\""
+      <> id
+      <> "\"] { text-decoration: underline; }"
+    })
+    |> string.join("\n")
+
+  // Build styles for relatives (wavy underline in relative color)
+  let relative_styles =
+    list.map(relative_ids, fn(id) {
+      dromel.selector(expanded_references_panel_id)
+      <> " span[data-topic=\""
+      <> id
+      <> "\"] { text-decoration: underline; }"
+    })
+    |> string.join("\n")
+
+  // Combine all styles (active topic style comes last to take precedence)
+  let style_content =
+    string.join(
+      [relative_styles, ancestor_styles, descendant_styles, active_topic_style],
+      "\n",
+    )
 
   let style_id = dromel.Id(active_topic_style_id)
 
@@ -376,6 +461,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
 
   let topic_panel =
     dromel.new_div()
+    |> dromel.set_id(topic_panel_id)
     |> dromel.set_class(elements.source_container_class)
     |> dromel.set_style(panel_style)
     |> dromel.append_child(topic_title)
@@ -395,6 +481,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
   // Create the expanded references panel element
   let expanded_references_panel =
     dromel.new_div()
+    |> dromel.set_id(expanded_references_panel_id)
     |> dromel.set_class(elements.source_container_class)
     |> dromel.set_style(panel_style)
 
@@ -1162,7 +1249,7 @@ fn navigate_to_new_entry_with_focus(
           set_topic_view(new_entry.id, view)
 
           // Set as active view
-          set_active_topic_view(container, view)
+          set_active_topic_view(container, view, metadata)
           set_active_panel(container, TopicPanel)
 
           // Load previous topic panel content
@@ -1237,7 +1324,7 @@ pub fn navigate_back(container) -> Nil {
                     Error(Nil) -> mount_topic_view(container)
                   }
 
-                  set_active_topic_view(container, parent_view)
+                  set_active_topic_view(container, parent_view, metadata)
                   set_active_panel(container, TopicPanel)
 
                   // Load previous topic panel content
@@ -1313,7 +1400,7 @@ pub fn navigate_forward(container) -> Nil {
                     Error(Nil) -> mount_topic_view(container)
                   }
 
-                  set_active_topic_view(container, child_view)
+                  set_active_topic_view(container, child_view, metadata)
                   set_active_panel(container, TopicPanel)
 
                   // Hide the topic title (each source container has its own member title)
