@@ -304,6 +304,7 @@ pub type UnnamedTopicKind {
   Signature
   DocumentationRoot
   DocumentationSection
+  DocumentationHeading
   DocumentationParagraph
   DocumentationSentence
   DocumentationCodeBlock
@@ -430,6 +431,7 @@ fn unnamed_topic_kind_decoder() -> decode.Decoder(UnnamedTopicKind) {
     "Signature" -> decode.success(Signature)
     "DocumentationRoot" -> decode.success(DocumentationRoot)
     "DocumentationSection" -> decode.success(DocumentationSection)
+    "DocumentationHeading" -> decode.success(DocumentationHeading)
     "DocumentationParagraph" -> decode.success(DocumentationParagraph)
     "DocumentationSentence" -> decode.success(DocumentationSentence)
     "DocumentationCodeBlock" -> decode.success(DocumentationCodeBlock)
@@ -666,6 +668,7 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
         Signature -> "<span class=\"identifier\">Signature</span>"
         DocumentationRoot -> "<span>Documentation</span>"
         DocumentationSection -> "<span>DocumentationSection</span>"
+        DocumentationHeading -> "<span>DocumentationHeading</span>"
         DocumentationParagraph -> "<span>DocumentationParagraph</span>"
         DocumentationSentence -> "<span>DocumentationSentence</span>"
         DocumentationCodeBlock -> "<span>DocumentationCodeBlock</span>"
@@ -745,6 +748,84 @@ fn fetch_audit_contracts() {
     |> snag.map_error(string.inspect)
 
   promise.resolve(contracts)
+}
+
+@external(javascript, "./mem_ffi.mjs", "set_documents_promise")
+fn set_documents_promise(
+  promise: promise.Promise(Result(List(TopicMetadata), snag.Snag)),
+) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_documents_promise")
+fn read_documents_promise() -> Result(
+  promise.Promise(Result(List(TopicMetadata), snag.Snag)),
+  Nil,
+)
+
+@external(javascript, "./mem_ffi.mjs", "get_documents")
+fn read_documents() -> Result(List(TopicMetadata), snag.Snag)
+
+@external(javascript, "./mem_ffi.mjs", "set_documents")
+fn set_documents(documents: List(TopicMetadata)) -> Nil
+
+fn fetch_audit_documents() {
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/" <> audit_name() <> "/documents",
+    )
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_json_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  let documents =
+    decode.run(resp.body, {
+      use documents <- decode.field(
+        "documents",
+        decode.list(topic_metadata_decoder()),
+      )
+      decode.success(documents)
+    })
+    |> snag.map_error(string.inspect)
+
+  promise.resolve(documents)
+}
+
+pub fn with_audit_documents(callback) {
+  case read_documents() {
+    Ok(documents) -> {
+      callback(Ok(documents))
+      Nil
+    }
+    Error(_) -> {
+      let promise = case read_documents_promise() {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_audit_documents()
+          set_documents_promise(promise)
+          promise
+        }
+      }
+
+      promise.await(promise, fn(documents) {
+        case documents {
+          Ok(documents) -> set_documents(documents)
+          Error(error) ->
+            snag.layer(error, "Unable to fetch documents")
+            |> snag.line_print
+            |> io.println_error
+        }
+        callback(documents)
+
+        promise.resolve(Nil)
+      })
+
+      Nil
+    }
+  }
 }
 
 @external(javascript, "./mem_ffi.mjs", "set_source_text_promise")

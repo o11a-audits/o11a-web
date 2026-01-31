@@ -73,6 +73,32 @@ export function get_contracts() {
   return Result$Ok(contracts);
 }
 
+let documents_promise;
+
+export function set_documents_promise(promise) {
+  documents_promise = promise;
+}
+
+export function get_documents_promise() {
+  if (!documents_promise) {
+    return Result$Error();
+  }
+  return Result$Ok(documents_promise);
+}
+
+let documents;
+
+export function set_documents(val) {
+  documents = val;
+}
+
+export function get_documents() {
+  if (!documents) {
+    return Result$Error();
+  }
+  return Result$Ok(documents);
+}
+
 let source_text_dict = {};
 
 let source_text_promises = {};
@@ -145,6 +171,23 @@ export function get_contracts_modal_state() {
 
 export function set_contracts_modal_state(state) {
   contracts_modal_state = state;
+}
+
+// =============================================================================
+// Documents Modal
+// =============================================================================
+
+let documents_modal_state = null;
+
+export function get_documents_modal_state() {
+  if (!documents_modal_state) {
+    return Result$Error();
+  }
+  return Result$Ok(documents_modal_state);
+}
+
+export function set_documents_modal_state(state) {
+  documents_modal_state = state;
 }
 
 let context = null;

@@ -19,9 +19,5 @@ pub const source_container_class = dromel.Class(
 pub const token_topic_id_key = dromel.DataKey(key: "topic")
 
 pub const source_topic_tokens = dromel.Selector(
-  selector: "div[data-topic]:not(."
-    <> source_container_class_name
-    <> "), span[data-topic]:not(."
-    <> source_container_class_name
-    <> ")",
+  selector: ".topic-token[data-topic]",
 )

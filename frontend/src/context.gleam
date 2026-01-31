@@ -3,6 +3,7 @@ import gleam/list
 pub type Context {
   Default
   ContractsModal
+  DocumentsModal
   Input
 }
 

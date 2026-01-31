@@ -86,7 +86,6 @@ import gleam/int
 import gleam/io
 import gleam/javascript/array
 import gleam/list
-import gleam/option
 import gleam/result
 import gleam/string
 import history_graph
@@ -423,6 +422,8 @@ fn set_focus_state(
 const container_style = "position: relative; padding-top: 0.5rem; width: calc(40ch + 1rem + 2px);"
 
 const panel_style = "min-height: 0; height: 100%; width: unset;"
+
+const single_panel_style = "border-radius: 8px; border: 1px solid var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg); margin-bottom: 0.5rem;"
 
 // Note: These styles use border-width and border-style separately from border-color
 // so that the out-of-scope border-color (--color-body-out-of-scope-bg) is not overridden
@@ -873,16 +874,28 @@ fn populate_topic_panel(
   elements: ActiveViewElements,
 ) -> Nil {
   case metadata {
-    Ok(audit_data.UnnamedTopic(topic:, ..)) -> {
+    Ok(audit_data.UnnamedTopic(topic:, kind:, scope:)) -> {
       // For unnamed topics, directly render the topic's source text
       audit_data.with_source_text(topic, fn(source_text) {
         case source_text {
           Ok(text) -> {
+            let topic_title =
+              dromel.new_div()
+              |> dromel.set_style(
+                "padding-left: 0.5rem; margin-bottom: 0.5rem;",
+              )
+
+            get_unnamed_topic_scope_parts(scope, kind)
+            |> mount_breadcrumb_parts(to: topic_title)
+
+            let source_panel =
+              dromel.new_div()
+              |> dromel.set_style(single_panel_style)
+              |> dromel.set_inner_html(text)
+
             elements.topic_panel
-            |> dromel.set_style(
-              "border-radius: 8px; border: 1px solid var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg); max-height: 100%;",
-            )
-            |> dromel.set_inner_html(text)
+            |> dromel.append_child(topic_title)
+            |> dromel.append_child(source_panel)
 
             // Gather tokens after source loads
             gather_panel_tokens(GroupedSourcePanelConfig(
@@ -958,83 +971,6 @@ fn populate_expanded_references_panel(
   }
 }
 
-/// Load the previous topic panel content based on the parent entry in history
-fn load_previous_topic_panel(
-  entry_id: String,
-  elements: ActiveViewElements,
-) -> Nil {
-  case history_graph.get_history_entry(entry_id) {
-    Error(Nil) -> clear_previous_topic_panel(elements)
-    Ok(entry) ->
-      case entry.parent {
-        option.None -> clear_previous_topic_panel(elements)
-        option.Some(history_graph.Relative(id: parent_id, focus_state:)) ->
-          case history_graph.get_history_entry(parent_id) {
-            Error(Nil) -> clear_previous_topic_panel(elements)
-            Ok(parent_entry) -> {
-              // Get the stored scroll position for the parent view
-              let scroll_position = case get_topic_view(parent_entry.id) {
-                Ok(parent_view) -> parent_view.scroll_position
-                Error(Nil) -> 0.0
-              }
-
-              let topic = audit_data.Topic(id: parent_entry.topic_id)
-              audit_data.with_topic_data(topic, fn(metadata, source_text) {
-                case source_text {
-                  Ok(source_text) -> {
-                    let _ =
-                      elements.previous_topic_panel
-                      |> dromel.set_style(
-                        "border-radius: 8px; border: 1px solid var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg); max-height: 100%;",
-                      )
-                      |> dromel.set_inner_html(source_text)
-                    dromel.set_scroll_top(
-                      elements.previous_topic_panel,
-                      scroll_position,
-                    )
-
-                    // Highlight the previous topic index
-                    let _ =
-                      dromel.query_element_all(
-                        elements.previous_topic_panel,
-                        elements.source_topic_tokens,
-                      )
-                      |> array.get(focus_state.topic_index)
-                      |> result.map(fn(element) {
-                        element
-                        |> dromel.add_style("text-decoration: underline;")
-                      })
-
-                    // Update the scope breadcrumb
-                    populate_topic_scope(
-                      metadata,
-                      elements.previous_topic_scope,
-                      elements.previous_topic_panel,
-                    )
-
-                    Nil
-                  }
-                  Error(_) -> {
-                    // Silently fail - previous topic panel is optional
-                    Nil
-                  }
-                }
-              })
-            }
-          }
-      }
-  }
-}
-
-fn clear_previous_topic_panel(elements: ActiveViewElements) -> Nil {
-  let _ =
-    elements.previous_topic_panel
-    |> dromel.set_inner_html("")
-    |> dromel.set_style("")
-  let _ = elements.previous_topic_scope |> dromel.set_inner_html("")
-  Nil
-}
-
 // ============================================================================
 // Topic Scope Breadcrumb
 // ============================================================================
@@ -1043,35 +979,6 @@ const scope_item_style = "color: var(--color-body-text); white-space: nowrap;"
 
 const scope_chevron_style = "display: inline-flex; align-items: center; opacity: 0.6; width: 0.75em; height: 0.75em; line-height: 1; flex-shrink: 0;"
 
-/// Populate a scope container with a breadcrumb showing Component > Member > Name
-fn populate_topic_scope(
-  metadata,
-  scope_container: element.Element,
-  source_panel: element.Element,
-) -> Nil {
-  case metadata {
-    Ok(metadata) -> {
-      mount_scope_breadcrumb(scope_container, metadata)
-      audit_data.with_is_in_scope(metadata.scope, fn(is_in_scope) {
-        case is_in_scope {
-          True -> Nil
-          False -> {
-            dromel.add_style(
-              source_panel,
-              "border-color: var(--color-body-out-of-scope-bg)",
-            )
-            Nil
-          }
-        }
-      })
-    }
-    Error(_) -> {
-      let _ = dromel.set_inner_html(scope_container, "Unable to Fetch")
-      Nil
-    }
-  }
-}
-
 /// A part of a breadcrumb - either a file name string or a topic
 type BreadcrumbPart {
   // For file names and other prefixes like "global"
@@ -1079,13 +986,81 @@ type BreadcrumbPart {
   TopicPart(audit_data.Topic)
 }
 
+fn get_fully_qualified_name_parts(
+  metadata: Result(audit_data.TopicMetadata, snag.Snag),
+) {
+  case metadata {
+    Ok(metadata) ->
+      case metadata.scope {
+        audit_data.Global -> [TextPart("global"), TopicPart(metadata.topic)]
+        audit_data.Container(container:) -> [
+          TextPart(container),
+          TopicPart(metadata.topic),
+        ]
+        audit_data.Component(container:, component:) -> [
+          TextPart(container),
+          TopicPart(component),
+          TopicPart(metadata.topic),
+        ]
+        audit_data.Member(container:, component:, member:)
+        | audit_data.SemanticBlock(container:, component:, member:, ..) -> [
+          TextPart(container),
+          TopicPart(component),
+          TopicPart(member),
+          TopicPart(metadata.topic),
+        ]
+      }
+    Error(_snag) -> [TextPart("Unknown")]
+  }
+}
+
+fn get_unnamed_topic_scope_parts(
+  scope: audit_data.Scope,
+  kind: audit_data.UnnamedTopicKind,
+) {
+  case kind {
+    // For documentation unnamed topics with Container scope, show the
+    // container path as the scope
+    audit_data.DocumentationBlockQuote
+    | audit_data.DocumentationCodeBlock
+    | audit_data.DocumentationHeading
+    | audit_data.DocumentationList
+    | audit_data.DocumentationParagraph
+    | audit_data.DocumentationRoot
+    | audit_data.DocumentationSection
+    | audit_data.DocumentationSentence -> [
+      TextPart(case scope {
+        audit_data.Global -> "global"
+        audit_data.Container(container:) -> container
+        audit_data.Component(container:, ..) -> container
+        audit_data.Member(container:, ..) -> container
+        audit_data.SemanticBlock(container:, ..) -> container
+      }),
+    ]
+    _ ->
+      case scope {
+        audit_data.Global -> [TextPart("global")]
+        audit_data.Container(container:) -> [TextPart(container)]
+        audit_data.Component(component:, ..)
+        | audit_data.Member(component:, ..)
+        | audit_data.SemanticBlock(component:, ..) -> [
+          TopicPart(component),
+        ]
+      }
+  }
+}
+
 /// Render breadcrumb parts into a container element
 /// Creates breadcrumb elements separated by chevron_right icons
 /// Parts should be in display order (will be reversed for RTL container)
 fn mount_breadcrumb_parts(
-  container: element.Element,
-  parts: List(BreadcrumbPart),
+  to container: element.Element,
+  parts parts: List(BreadcrumbPart),
 ) -> Nil {
+  // Clear current container content to save a clear slate to insert new
+  // breadcrumb elements to
+  dromel.set_inner_html(container, "")
+
   // Create gradient overlay element (hidden by default, shown when overflowing)
   let gradient =
     dromel.new_div()
@@ -1163,65 +1138,6 @@ fn mount_breadcrumb_parts(
   Nil
 }
 
-/// Mount a breadcrumb display for a topic's scope
-/// Shows component > member (excludes file name and topic name)
-fn mount_scope_breadcrumb(
-  container: element.Element,
-  metadata: audit_data.TopicMetadata,
-) -> Nil {
-  let _ = dromel.set_inner_html(container, "")
-  let parts = case metadata.scope {
-    audit_data.Global -> [TextPart("global"), TopicPart(metadata.topic)]
-    audit_data.Container(..) -> [TopicPart(metadata.topic)]
-    audit_data.Component(component:, ..)
-    | audit_data.Member(component:, ..)
-    | audit_data.SemanticBlock(component:, ..) -> [
-      TopicPart(component),
-    ]
-  }
-  mount_breadcrumb_parts(container, parts)
-}
-
-/// Mount a fully qualified name display for the current topic
-/// Shows file name > scope topics > subject name with chevrons between them
-fn mount_fully_qualified_name(
-  container: element.Element,
-  topic_id: String,
-) -> Nil {
-  let _ = dromel.set_inner_html(container, "")
-
-  audit_data.with_topic_metadata(audit_data.Topic(id: topic_id), fn(result) {
-    case result {
-      Ok(metadata) -> {
-        let parts = case metadata.scope {
-          audit_data.Global -> [TextPart("global"), TopicPart(metadata.topic)]
-          audit_data.Container(container:) -> [
-            TextPart(container),
-            TopicPart(metadata.topic),
-          ]
-          audit_data.Component(container:, component:) -> [
-            TextPart(container),
-            TopicPart(component),
-            TopicPart(metadata.topic),
-          ]
-          audit_data.Member(container:, component:, member:)
-          | audit_data.SemanticBlock(container:, component:, member:, ..) -> [
-            TextPart(container),
-            TopicPart(component),
-            TopicPart(member),
-            TopicPart(metadata.topic),
-          ]
-        }
-        mount_breadcrumb_parts(container, parts)
-      }
-      Error(_) -> {
-        let _ = dromel.set_inner_html(container, "Unable to Fetch")
-        Nil
-      }
-    }
-  })
-}
-
 // ============================================================================
 // Public API
 // ============================================================================
@@ -1274,9 +1190,6 @@ fn navigate_to_new_entry_with_focus(
       // Update the URL to reflect the active topic
       update_url_for_topic(new_entry.topic_id)
 
-      // Update the fully qualified name display
-      mount_fully_qualified_name(get_history_container(), new_entry.topic_id)
-
       // Set the focus state for the new entry (default to index 0 in topic panel)
       case focus_target {
         FocusByIndex(index, _scroll_position) ->
@@ -1317,8 +1230,9 @@ fn navigate_to_new_entry_with_focus(
           set_active_topic_view(container, view, metadata)
           set_active_panel(container, history_graph.TopicPanel)
 
-          // Load previous topic panel content
-          load_previous_topic_panel(new_entry.id, elements)
+          // Update the fully qualified name display
+          get_fully_qualified_name_parts(metadata)
+          |> mount_breadcrumb_parts(to: get_history_container())
 
           // Populate topic panel with grouped sources
           populate_topic_panel(container, metadata, elements)
@@ -1367,12 +1281,6 @@ pub fn navigate_back(container) -> Nil {
               // Update the URL to reflect the active topic
               update_url_for_topic(parent_entry.topic_id)
 
-              // Update the fully qualified name display
-              mount_fully_qualified_name(
-                get_history_container(),
-                parent_entry.topic_id,
-              )
-
               // Set the focus state for restoration
               set_focus_state(container, focus_state)
 
@@ -1391,8 +1299,9 @@ pub fn navigate_back(container) -> Nil {
 
                   set_active_topic_view(container, parent_view, metadata)
 
-                  // Load previous topic panel content
-                  load_previous_topic_panel(parent_entry.id, elements)
+                  // Update the fully qualified name display
+                  get_fully_qualified_name_parts(metadata)
+                  |> mount_breadcrumb_parts(to: get_history_container())
 
                   // Populate topic panel with grouped sources
                   populate_topic_panel(container, metadata, elements)
@@ -1446,12 +1355,6 @@ pub fn navigate_forward(container) -> Nil {
               // Update the URL to reflect the active topic
               update_url_for_topic(child_entry.topic_id)
 
-              // Update the fully qualified name display
-              mount_fully_qualified_name(
-                get_history_container(),
-                child_entry.topic_id,
-              )
-
               // Set the focus state for restoration
               set_focus_state(container, focus_state)
 
@@ -1468,13 +1371,14 @@ pub fn navigate_forward(container) -> Nil {
                     Error(Nil) -> mount_topic_view(container)
                   }
 
+                  // Update the fully qualified name display
+                  get_fully_qualified_name_parts(metadata)
+                  |> mount_breadcrumb_parts(to: get_history_container())
+
                   set_active_topic_view(container, child_view, metadata)
 
                   // Populate topic panel with grouped sources
                   populate_topic_panel(container, metadata, elements)
-
-                  // Load previous topic panel content
-                  load_previous_topic_panel(child_entry.id, elements)
 
                   // Load topic metadata and populate expanded references panel
                   populate_expanded_references_panel(

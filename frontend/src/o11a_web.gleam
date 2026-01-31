@@ -9,6 +9,7 @@ import plinth/browser/event
 import plinth/browser/window
 import snag
 import ui/contracts_modal
+import ui/documents_modal
 import ui/elements
 import ui/topic_view
 
@@ -106,18 +107,22 @@ fn open_url() {
 }
 
 fn handle_window_keydown(event) {
-  // Only handle global shortcuts when not in input context
+  // Only handle global shortcuts when in default context
   case
     context.get_current_context(),
     event.key(event),
     event.ctrl_key(event),
     event.shift_key(event)
   {
-    context.Input, _, _, _ -> Nil
-    _, "t", _, _ -> {
+    context.Default, "t", _, _ -> {
       event.prevent_default(event)
       event.stop_propagation(event)
       contracts_modal.open()
+    }
+    context.Default, "d", _, _ -> {
+      event.prevent_default(event)
+      event.stop_propagation(event)
+      documents_modal.open()
     }
     context.Default, _, _, _ -> topic_view.handle_topic_view_keydown(event)
     _, _, _, _ -> Nil
