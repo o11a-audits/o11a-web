@@ -873,13 +873,36 @@ fn populate_topic_panel(
   elements: ActiveViewElements,
 ) -> Nil {
   case metadata {
-    Ok(metadata) -> {
-      let references = case metadata {
-        audit_data.NamedTopic(references:, ..)
-        | audit_data.NamedMutableTopic(references:, ..) -> references
-        _ -> []
-      }
+    Ok(audit_data.UnnamedTopic(topic:, ..)) -> {
+      // For unnamed topics, directly render the topic's source text
+      audit_data.with_source_text(topic, fn(source_text) {
+        case source_text {
+          Ok(text) -> {
+            elements.topic_panel
+            |> dromel.set_style(
+              "border-radius: 8px; border: 1px solid var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg); max-height: 100%;",
+            )
+            |> dromel.set_inner_html(text)
 
+            // Gather tokens after source loads
+            gather_panel_tokens(GroupedSourcePanelConfig(
+              container:,
+              panel: elements.topic_panel,
+              token_field: TopicPanelTokens,
+            ))
+
+            Nil
+          }
+          Error(error) -> {
+            elements.topic_panel
+            |> dromel.set_inner_html(log.render_source_error(error))
+            Nil
+          }
+        }
+      })
+    }
+    Ok(audit_data.NamedTopic(references:, ..))
+    | Ok(audit_data.NamedMutableTopic(references:, ..)) -> {
       // Clear the topic panel and use grouped source panel rendering
       let _ = dromel.set_inner_html(elements.topic_panel, "")
 
@@ -892,12 +915,9 @@ fn populate_topic_panel(
         references,
       )
     }
-    Error(_snag) -> {
-      let _ =
-        elements.topic_panel
-        |> dromel.set_inner_html(
-          "<div style='color: var(--color-body-text); font-size: 0.9rem;'>Unable to load topic</div>",
-        )
+    Error(snag) -> {
+      elements.topic_panel
+      |> dromel.set_inner_html(log.render_source_error(snag))
       Nil
     }
   }

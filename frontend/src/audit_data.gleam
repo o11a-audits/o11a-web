@@ -302,8 +302,13 @@ pub type UnnamedTopicKind {
   Reference
   MutableReference
   Signature
+  DocumentationRoot
   DocumentationSection
   DocumentationParagraph
+  DocumentationSentence
+  DocumentationCodeBlock
+  DocumentationList
+  DocumentationBlockQuote
   Other
 }
 
@@ -423,8 +428,13 @@ fn unnamed_topic_kind_decoder() -> decode.Decoder(UnnamedTopicKind) {
     "Reference" -> decode.success(Reference)
     "MutableReference" -> decode.success(MutableReference)
     "Signature" -> decode.success(Signature)
+    "DocumentationRoot" -> decode.success(DocumentationRoot)
     "DocumentationSection" -> decode.success(DocumentationSection)
     "DocumentationParagraph" -> decode.success(DocumentationParagraph)
+    "DocumentationSentence" -> decode.success(DocumentationSentence)
+    "DocumentationCodeBlock" -> decode.success(DocumentationCodeBlock)
+    "DocumentationList" -> decode.success(DocumentationList)
+    "DocumentationBlockQuote" -> decode.success(DocumentationBlockQuote)
     "Other" -> decode.success(Other)
     _ -> decode.failure(Other, "UnnamedTopicKind")
   }
@@ -654,8 +664,13 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
         Reference -> "<span class=\"identifier\">Reference</span>"
         MutableReference -> "<span class=\"identifier\">MutableReference</span>"
         Signature -> "<span class=\"identifier\">Signature</span>"
+        DocumentationRoot -> "<span>Documentation</span>"
         DocumentationSection -> "<span>DocumentationSection</span>"
         DocumentationParagraph -> "<span>DocumentationParagraph</span>"
+        DocumentationSentence -> "<span>DocumentationSentence</span>"
+        DocumentationCodeBlock -> "<span>DocumentationCodeBlock</span>"
+        DocumentationList -> "<span>DocumentationList</span>"
+        DocumentationBlockQuote -> "<span>DocumentationBlockQuote</span>"
         Other -> "<span>Other</span>"
       }
   }
