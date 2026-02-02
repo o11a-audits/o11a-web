@@ -459,23 +459,15 @@ pub type TopicMetadata {
 }
 
 fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
+  use topic_type <- decode.field("type", decode.string)
   use topic_id <- decode.field("topic_id", decode.string)
   use scope <- decode.field("scope", scope_decoder())
-  use maybe_name <- decode.optional_field(
-    "name",
-    None,
-    decode.optional(decode.string),
-  )
-  use maybe_title <- decode.optional_field(
-    "title",
-    None,
-    decode.optional(decode.string),
-  )
 
   let topic = Topic(id: topic_id)
 
-  case maybe_name, maybe_title {
-    Some(name), None -> {
+  case topic_type {
+    "named" -> {
+      use name <- decode.field("name", decode.string)
       use kind <- decode.then(named_topic_kind_decoder())
       use visibility <- decode.then(named_topic_visibility_decoder())
       use references <- decode.field(
@@ -486,8 +478,15 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         "expanded_references",
         decode.list(reference_group_decoder()),
       )
-      use is_mutable <- decode.field("is_mutable", decode.bool)
-      use mutation_ids <- decode.field("mutations", decode.list(decode.string))
+      use mutation_ids <- decode.optional_field(
+        "mutations",
+        [],
+        decode.list(decode.string),
+      )
+      let is_mutable = case mutation_ids {
+        [_, ..] -> True
+        _ -> False
+      }
       use ancestor_ids <- decode.field("ancestors", decode.list(decode.string))
       use descendant_ids <- decode.field(
         "descendants",
@@ -514,11 +513,12 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         mentions:,
       ))
     }
-    None, Some(title) -> {
+    "titled" -> {
+      use title <- decode.field("title", decode.string)
       use kind <- decode.then(titled_topic_kind_decoder())
       decode.success(TitledTopic(topic:, scope:, kind:, title:))
     }
-    _, _ -> {
+    _ -> {
       use kind <- decode.then(unnamed_topic_kind_decoder())
       decode.success(UnnamedTopic(topic:, scope:, kind:))
     }

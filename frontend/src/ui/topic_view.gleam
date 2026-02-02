@@ -111,6 +111,7 @@ pub type ActivePanel =
 
 /// Identifies which token array field to update in ActiveViewElements
 type TokenField {
+  MentionsPanelTokens
   TopicPanelTokens
   ReferencesPanelTokens
 }
@@ -137,13 +138,13 @@ const expanded_references_panel_id = dromel.Id("expanded-references-panel")
 
 type ActiveViewElements {
   ActiveViewElements(
-    previous_topic_scope: element.Element,
-    previous_topic_panel: element.Element,
-    previous_topic_container: element.Element,
+    mentions_panel: element.Element,
+    mentions_container: element.Element,
     topic_panel: element.Element,
     topic_container: element.Element,
     expanded_references_panel: element.Element,
     expanded_references_container: element.Element,
+    mentions_tokens: array.Array(element.Element),
     topic_children_tokens: array.Array(element.Element),
     expanded_references_tokens: array.Array(element.Element),
   )
@@ -444,27 +445,22 @@ const scope_overflow_gradient_style_visible = "position: absolute; left: 0; top:
 const footer_style = "position: absolute; bottom: 0.25rem; right: 0.5rem;"
 
 fn mount_topic_view(container: element.Element) -> ActiveViewElements {
-  // Create the previous topic panel element (muted border)
-  let previous_topic_panel =
+  // Create the mentions panel element
+  let mentions_panel =
     dromel.new_div()
     |> dromel.set_class(elements.source_container_class)
+    |> dromel.set_style(panel_style)
 
-  let previous_topic_scope =
+  let mentions_footer =
     dromel.new_div()
-    |> dromel.set_style(scope_style)
-    |> dromel.add_class(scope_standard_class)
-
-  let previous_topic_footer =
-    dromel.new_div()
-    |> dromel.set_inner_text("Previous Topic")
+    |> dromel.set_inner_text("Mentions")
     |> dromel.set_style(footer_style)
 
-  let previous_topic_container =
+  let mentions_container =
     dromel.new_div()
     |> dromel.set_style(container_style)
-    |> dromel.append_child(previous_topic_scope)
-    |> dromel.append_child(previous_topic_panel)
-    |> dromel.append_child(previous_topic_footer)
+    |> dromel.append_child(mentions_footer)
+    |> dromel.append_child(mentions_panel)
 
   // Create the topic panel element
   let topic_panel =
@@ -502,19 +498,19 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
     |> dromel.append_child(expanded_references_footer)
     |> dromel.append_child(expanded_references_panel)
 
-  let _ = container |> dromel.append_child(previous_topic_container)
+  let _ = container |> dromel.append_child(mentions_container)
   let _ = container |> dromel.append_child(topic_container)
   let _ = container |> dromel.append_child(expanded_references_container)
 
   let elements =
     ActiveViewElements(
-      previous_topic_scope:,
-      previous_topic_panel:,
-      previous_topic_container:,
+      mentions_panel:,
+      mentions_container:,
       topic_panel:,
       topic_container:,
       expanded_references_panel:,
       expanded_references_container:,
+      mentions_tokens: array.from_list([]),
       topic_children_tokens: array.from_list([]),
       expanded_references_tokens: array.from_list([]),
     )
@@ -538,10 +534,8 @@ fn reset_active_view(
       set_topic_view(view.entry_id, updated_view)
 
       // Clear inner HTML of panels and reset scroll positions
-      let _ = dromel.set_inner_html(elements.previous_topic_panel, "")
-      let _ = dromel.set_inner_html(elements.previous_topic_scope, "")
-      let _ = elements.previous_topic_panel |> dromel.set_style("")
-      dromel.set_scroll_top(elements.previous_topic_panel, 0.0)
+      let _ = dromel.set_inner_html(elements.mentions_panel, "")
+      dromel.set_scroll_top(elements.mentions_panel, 0.0)
 
       let _ = dromel.set_inner_html(elements.topic_panel, "")
       // Reset the topic panel style to default (removes out-of-scope border color)
@@ -559,6 +553,7 @@ fn reset_active_view(
       let reset_elements =
         ActiveViewElements(
           ..elements,
+          mentions_tokens: array.from_list([]),
           topic_children_tokens: array.from_list([]),
           expanded_references_tokens: array.from_list([]),
         )
@@ -816,6 +811,12 @@ fn gather_panel_tokens(config: GroupedSourcePanelConfig) -> Nil {
         dromel.query_element_all(config.panel, elements.source_topic_tokens)
       let active_panel = get_active_panel(config.container)
       case config.token_field {
+        MentionsPanelTokens -> {
+          // Store tokens for the mentions panel (no focus management needed)
+          set_active_view_elements(
+            ActiveViewElements(..active_elements, mentions_tokens: tokens),
+          )
+        }
         TopicPanelTokens -> {
           set_active_view_elements(
             ActiveViewElements(..active_elements, topic_children_tokens: tokens),
@@ -964,6 +965,39 @@ fn populate_expanded_references_panel(
         elements.expanded_references_panel
         |> dromel.set_inner_html(
           "<div style='color: var(--color-body-text); font-size: 0.9rem;'>Unable to load expanded references</div>",
+        )
+      Nil
+    }
+  }
+}
+
+/// Callback for loading topic metadata and populating the mentions panel
+fn populate_mentions_panel(
+  container: element.Element,
+  metadata: Result(audit_data.TopicMetadata, snag.Snag),
+  elements: ActiveViewElements,
+) -> Nil {
+  case metadata {
+    Ok(metadata) -> {
+      let mentions = case metadata {
+        audit_data.NamedTopic(mentions:, ..) -> mentions
+        _ -> []
+      }
+
+      populate_grouped_source_panel(
+        GroupedSourcePanelConfig(
+          container:,
+          panel: elements.mentions_panel,
+          token_field: MentionsPanelTokens,
+        ),
+        mentions,
+      )
+    }
+    Error(_snag) -> {
+      let _ =
+        elements.mentions_panel
+        |> dromel.set_inner_html(
+          "<div style='color: var(--color-body-text); font-size: 0.9rem;'>Unable to load mentions</div>",
         )
       Nil
     }
@@ -1237,6 +1271,9 @@ fn navigate_to_new_entry_with_focus(
 
           // Load topic metadata and populate expanded references panel
           populate_expanded_references_panel(container, metadata, elements)
+
+          // Populate mentions panel
+          populate_mentions_panel(container, metadata, elements)
         },
       )
     }
@@ -1310,6 +1347,9 @@ pub fn navigate_back(container) -> Nil {
                     metadata,
                     elements,
                   )
+
+                  // Populate mentions panel
+                  populate_mentions_panel(container, metadata, elements)
                 },
               )
 
@@ -1384,6 +1424,9 @@ pub fn navigate_forward(container) -> Nil {
                     metadata,
                     elements,
                   )
+
+                  // Populate mentions panel
+                  populate_mentions_panel(container, metadata, elements)
                 },
               )
 

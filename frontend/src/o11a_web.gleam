@@ -90,6 +90,37 @@ pub fn prefetch_hot_data() {
       }
     }
   })
+
+  // Prefetch documentation
+  audit_data.with_audit_documents(fn(documents) {
+    case documents {
+      Error(snag) ->
+        snag.layer(snag, "Unable to fetch documentation")
+        |> snag.line_print
+        |> io.println_error
+
+      Ok(documents) -> {
+        // Prefetch source text for each document's topic
+        list.each(documents, fn(document) {
+          audit_data.with_source_text(document.topic, fn(source_text) {
+            case source_text {
+              Error(snag) ->
+                snag.layer(
+                  snag,
+                  "Unable to fetch source text for topic " <> document.topic.id,
+                )
+                |> snag.line_print
+                |> io.println_error
+
+              Ok(_text) -> Nil
+            }
+          })
+        })
+
+        Nil
+      }
+    }
+  })
 }
 
 fn open_url() {
