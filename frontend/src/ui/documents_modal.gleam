@@ -158,8 +158,8 @@ fn mount_documents_modal(container: element.Element) -> Nil {
 
 fn get_document_name(document: audit_data.TopicMetadata) -> String {
   case document {
-    audit_data.NamedTopic(name:, ..) | audit_data.NamedMutableTopic(name:, ..) ->
-      name
+    audit_data.NamedTopic(name:, ..) -> name
+    audit_data.TitledTopic(title:, ..) -> title
     audit_data.UnnamedTopic(scope:, ..) ->
       case scope {
         audit_data.Container(container:) -> container
@@ -250,7 +250,7 @@ fn render_document_list(
 fn get_document_topic(document: audit_data.TopicMetadata) -> audit_data.Topic {
   case document {
     audit_data.NamedTopic(topic:, ..)
-    | audit_data.NamedMutableTopic(topic:, ..)
+    | audit_data.TitledTopic(topic:, ..)
     | audit_data.UnnamedTopic(topic:, ..) -> topic
   }
 }

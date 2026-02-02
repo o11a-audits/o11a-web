@@ -232,16 +232,16 @@ fn flatten_expanded_references(
   expanded_references: List(audit_data.ReferenceGroup),
 ) -> List(String) {
   list.flat_map(expanded_references, fn(group) {
-    let contract_ids = [group.contract.id]
-    let contract_ref_ids = list.map(group.contract_references, fn(t) { t.id })
-    let member_ids =
-      list.flat_map(group.member_references, fn(member_group) {
+    let scope_ids = [group.scope.id]
+    let scope_ref_ids = list.map(group.scope_references, fn(t) { t.id })
+    let nested_ids =
+      list.flat_map(group.nested_references, fn(nested_group) {
         [
-          member_group.member.id,
-          ..list.map(member_group.references, fn(t) { t.id })
+          nested_group.subscope.id,
+          ..list.map(nested_group.references, fn(t) { t.id })
         ]
       })
-    list.flatten([contract_ids, contract_ref_ids, member_ids])
+    list.flatten([scope_ids, scope_ref_ids, nested_ids])
   })
 }
 
@@ -256,13 +256,7 @@ fn set_active_topic_highlight_style(
 
   // Extract ancestors and descendants from metadata
   let #(ancestor_ids, descendant_ids, relative_ids) = case metadata {
-    Ok(audit_data.NamedTopic(ancestors:, descendants:, expanded_references:, ..))
-    | Ok(audit_data.NamedMutableTopic(
-        ancestors:,
-        descendants:,
-        expanded_references:,
-        ..,
-      )) -> {
+    Ok(audit_data.NamedTopic(ancestors:, descendants:, expanded_references:, ..)) -> {
       let ancestor_id_list = list.map(ancestors, fn(t) { t.id })
       let descendant_id_list = list.map(descendants, fn(t) { t.id })
       let relative_id_list = flatten_expanded_references(expanded_references)
@@ -670,18 +664,18 @@ fn populate_grouped_source_panel(
       |> dromel.add_class(scope_standard_class)
       |> dromel.append_as_child(to: group_container)
 
-    mount_breadcrumb_parts(contract_scope, [TopicPart(ref_group.contract)])
+    mount_breadcrumb_parts(contract_scope, [TopicPart(ref_group.scope)])
 
     // Calculate total reference count for first/last styling
     let total_references =
-      list.length(ref_group.contract_references)
-      + list.fold(ref_group.member_references, 0, fn(acc, member_group) {
-        acc + list.length(member_group.references)
+      list.length(ref_group.scope_references)
+      + list.fold(ref_group.nested_references, 0, fn(acc, nested_group) {
+        acc + list.length(nested_group.references)
       })
 
-    // Render contract-level references
-    let index_after_contract =
-      list.index_fold(ref_group.contract_references, 0, fn(index, ref_topic, _) {
+    // Render scope-level references
+    let index_after_scope =
+      list.index_fold(ref_group.scope_references, 0, fn(index, ref_topic, _) {
         let source_placeholder =
           dromel.new_div()
           |> dromel.append_as_child(to: group_container)
@@ -691,11 +685,11 @@ fn populate_grouped_source_panel(
             dromel.new_div()
             |> dromel.add_class(elements.source_container_class)
             |> dromel.set_data(topic_key, ref_topic.id)
-            |> dromel.set_data(contract_key, ref_group.contract.id)
+            |> dromel.set_data(contract_key, ref_group.scope.id)
             |> dromel.set_style(combined_panel_style)
             |> dromel.add_style("padding-left: 0.5rem;")
 
-          // Apply out-of-scope border color if contract is not in scope
+          // Apply out-of-scope border color if scope is not in scope
           case ref_group.is_in_scope {
             True -> Nil
             False -> {
@@ -723,16 +717,16 @@ fn populate_grouped_source_panel(
         index + 1
       })
 
-    // Render member-level references, grouped by member
+    // Render nested-level references, grouped by subscope
     list.fold(
-      ref_group.member_references,
-      index_after_contract,
-      fn(current_index, member_group) {
-        // Track whether this is the first reference in the member group
+      ref_group.nested_references,
+      index_after_scope,
+      fn(current_index, nested_group) {
+        // Track whether this is the first reference in the nested group
         list.index_fold(
-          member_group.references,
+          nested_group.references,
           current_index,
-          fn(index, ref_topic, member_ref_index) {
+          fn(index, ref_topic, nested_ref_index) {
             let source_placeholder =
               dromel.new_div()
               |> dromel.append_as_child(to: group_container)
@@ -742,8 +736,8 @@ fn populate_grouped_source_panel(
                 dromel.new_div()
                 |> dromel.add_class(elements.source_container_class)
                 |> dromel.set_data(topic_key, ref_topic.id)
-                |> dromel.set_data(member_key, member_group.member.id)
-                |> dromel.set_data(contract_key, ref_group.contract.id)
+                |> dromel.set_data(member_key, nested_group.subscope.id)
+                |> dromel.set_data(contract_key, ref_group.scope.id)
                 |> dromel.set_style(combined_panel_style)
                 |> dromel.add_style("padding-left: 0.5rem;")
 
@@ -761,28 +755,28 @@ fn populate_grouped_source_panel(
 
               apply_first_last_style(reference_source, index, total_references)
 
-              // Add member title only for the first reference in the member group
-              case member_ref_index {
+              // Add subscope title only for the first reference in the nested group
+              case nested_ref_index {
                 0 -> {
-                  let member_title =
+                  let subscope_title =
                     dromel.new_div()
                     |> dromel.set_style(combined_panel_member_title_style)
                     |> dromel.set_inner_html("...")
                     |> dromel.append_as_child(to: reference_source)
 
                   audit_data.with_topic_metadata(
-                    member_group.member,
+                    nested_group.subscope,
                     fn(metadata: Result(audit_data.TopicMetadata, snag.Snag)) -> Nil {
                       case metadata {
                         Ok(metadata) -> {
-                          member_title
+                          subscope_title
                           |> dromel.set_inner_html(
                             audit_data.topic_metadata_highlighted_name(metadata),
                           )
                           Nil
                         }
                         Error(snag) -> {
-                          member_title
+                          subscope_title
                           |> dromel.set_inner_html(snag.line_print(snag))
                           Nil
                         }
@@ -874,9 +868,31 @@ fn populate_topic_panel(
   elements: ActiveViewElements,
 ) -> Nil {
   case metadata {
-    Ok(audit_data.UnnamedTopic(topic:, kind:, scope:)) -> {
+    Ok(audit_data.NamedTopic(references:, ..)) -> {
+      // Clear the topic panel and use grouped source panel rendering
+      let _ = dromel.set_inner_html(elements.topic_panel, "")
+
+      populate_grouped_source_panel(
+        GroupedSourcePanelConfig(
+          container:,
+          panel: elements.topic_panel,
+          token_field: TopicPanelTokens,
+        ),
+        references,
+      )
+    }
+    Ok(metadata) -> {
+      let parts = case metadata {
+        audit_data.UnnamedTopic(kind:, scope:, ..) ->
+          get_unnamed_topic_scope_parts(scope, kind)
+        audit_data.TitledTopic(title:, ..) -> {
+          [TextPart(title)]
+        }
+        audit_data.NamedTopic(..) -> panic as "unreachable"
+      }
+
       // For unnamed topics, directly render the topic's source text
-      audit_data.with_source_text(topic, fn(source_text) {
+      audit_data.with_source_text(metadata.topic, fn(source_text) {
         case source_text {
           Ok(text) -> {
             let topic_title =
@@ -885,8 +901,7 @@ fn populate_topic_panel(
                 "padding-left: 0.5rem; margin-bottom: 0.5rem;",
               )
 
-            get_unnamed_topic_scope_parts(scope, kind)
-            |> mount_breadcrumb_parts(to: topic_title)
+            mount_breadcrumb_parts(parts, to: topic_title)
 
             let source_panel =
               dromel.new_div()
@@ -914,20 +929,6 @@ fn populate_topic_panel(
         }
       })
     }
-    Ok(audit_data.NamedTopic(references:, ..))
-    | Ok(audit_data.NamedMutableTopic(references:, ..)) -> {
-      // Clear the topic panel and use grouped source panel rendering
-      let _ = dromel.set_inner_html(elements.topic_panel, "")
-
-      populate_grouped_source_panel(
-        GroupedSourcePanelConfig(
-          container:,
-          panel: elements.topic_panel,
-          token_field: TopicPanelTokens,
-        ),
-        references,
-      )
-    }
     Error(snag) -> {
       elements.topic_panel
       |> dromel.set_inner_html(log.render_source_error(snag))
@@ -945,9 +946,7 @@ fn populate_expanded_references_panel(
   case metadata {
     Ok(metadata) -> {
       let expanded_references = case metadata {
-        audit_data.NamedTopic(expanded_references:, ..)
-        | audit_data.NamedMutableTopic(expanded_references:, ..) ->
-          expanded_references
+        audit_data.NamedTopic(expanded_references:, ..) -> expanded_references
         _ -> []
       }
 
@@ -1027,15 +1026,14 @@ fn get_unnamed_topic_scope_parts(
     | audit_data.DocumentationList
     | audit_data.DocumentationParagraph
     | audit_data.DocumentationRoot
-    | audit_data.DocumentationSection
     | audit_data.DocumentationSentence -> [
-      TextPart(case scope {
-        audit_data.Global -> "global"
-        audit_data.Container(container:) -> container
-        audit_data.Component(container:, ..) -> container
-        audit_data.Member(container:, ..) -> container
-        audit_data.SemanticBlock(container:, ..) -> container
-      }),
+      case scope {
+        audit_data.Global -> TextPart("global")
+        audit_data.Container(container:) -> TextPart(container)
+        audit_data.Component(component:, ..)
+        | audit_data.Member(component:, ..)
+        | audit_data.SemanticBlock(component:, ..) -> TopicPart(component)
+      },
     ]
     _ ->
       case scope {

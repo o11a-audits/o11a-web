@@ -33,6 +33,7 @@
   --color-number: #d19a66;
   --color-comment: #5c6370;
   --color-brace: #abb2bf;
+  --color-documentation-link: #61afef;
 }
 
 html,
@@ -236,4 +237,20 @@ span[data-topic]:focus {
 }
 .scope-expanded {
   max-width: calc(40ch + 0.5rem);
+}
+
+.strong {
+  font-weight: bold;
+}
+
+.emphasis {
+  font-style: italic;
+}
+
+.link {
+  color: var(--color-documentation-link);
+}
+
+.link:hover {
+  text-decoration: underline;
 }

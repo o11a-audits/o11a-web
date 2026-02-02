@@ -256,22 +256,21 @@ pub type NamedTopicKind {
   Builtin
 }
 
-pub type NamedMutableTopicKind {
-  MutableStateVariable
-  MutableLocalVariable
-}
-
-pub type MemberReferenceGroup {
-  MemberReferenceGroup(member: Topic, references: List(Topic))
+pub type NestedReferenceGroup {
+  NestedReferenceGroup(subscope: Topic, references: List(Topic))
 }
 
 pub type ReferenceGroup {
   ReferenceGroup(
-    contract: Topic,
+    scope: Topic,
     is_in_scope: Bool,
-    contract_references: List(Topic),
-    member_references: List(MemberReferenceGroup),
+    scope_references: List(Topic),
+    nested_references: List(NestedReferenceGroup),
   )
+}
+
+pub type TitledTopicKind {
+  DocumentationSection
 }
 
 pub type UnnamedTopicKind {
@@ -303,7 +302,6 @@ pub type UnnamedTopicKind {
   MutableReference
   Signature
   DocumentationRoot
-  DocumentationSection
   DocumentationHeading
   DocumentationParagraph
   DocumentationSentence
@@ -348,13 +346,12 @@ fn named_topic_kind_decoder() -> decode.Decoder(NamedTopicKind) {
   }
 }
 
-fn named_mutable_topic_kind_decoder() -> decode.Decoder(NamedMutableTopicKind) {
+fn titled_topic_kind_decoder() -> decode.Decoder(TitledTopicKind) {
   use kind_str <- decode.field("kind", decode.string)
 
   case kind_str {
-    "StateVariable" -> decode.success(MutableStateVariable)
-    "LocalVariable" -> decode.success(MutableLocalVariable)
-    _ -> decode.failure(MutableLocalVariable, "NamedMutableTopicKind")
+    "DocumentationSection" -> decode.success(DocumentationSection)
+    _ -> decode.failure(DocumentationSection, "TitledTopicKind")
   }
 }
 
@@ -370,31 +367,31 @@ fn named_topic_visibility_decoder() -> decode.Decoder(NamedTopicVisibility) {
   }
 }
 
-fn member_reference_group_decoder() -> decode.Decoder(MemberReferenceGroup) {
-  use member_id <- decode.field("member", decode.string)
+fn nested_reference_group_decoder() -> decode.Decoder(NestedReferenceGroup) {
+  use subscope_id <- decode.field("subscope", decode.string)
   use reference_ids <- decode.field("references", decode.list(decode.string))
-  decode.success(MemberReferenceGroup(
-    member: Topic(id: member_id),
+  decode.success(NestedReferenceGroup(
+    subscope: Topic(id: subscope_id),
     references: list.map(reference_ids, Topic),
   ))
 }
 
 fn reference_group_decoder() -> decode.Decoder(ReferenceGroup) {
-  use contract_id <- decode.field("contract", decode.string)
+  use scope_id <- decode.field("scope", decode.string)
   use is_in_scope <- decode.field("is_in_scope", decode.bool)
-  use contract_reference_ids <- decode.field(
-    "contract_references",
+  use scope_reference_ids <- decode.field(
+    "scope_references",
     decode.list(decode.string),
   )
-  use member_references <- decode.field(
-    "member_references",
-    decode.list(member_reference_group_decoder()),
+  use nested_references <- decode.field(
+    "nested_references",
+    decode.list(nested_reference_group_decoder()),
   )
   decode.success(ReferenceGroup(
-    contract: Topic(id: contract_id),
+    scope: Topic(id: scope_id),
     is_in_scope:,
-    contract_references: list.map(contract_reference_ids, Topic),
-    member_references:,
+    scope_references: list.map(scope_reference_ids, Topic),
+    nested_references:,
   ))
 }
 
@@ -430,7 +427,6 @@ fn unnamed_topic_kind_decoder() -> decode.Decoder(UnnamedTopicKind) {
     "MutableReference" -> decode.success(MutableReference)
     "Signature" -> decode.success(Signature)
     "DocumentationRoot" -> decode.success(DocumentationRoot)
-    "DocumentationSection" -> decode.success(DocumentationSection)
     "DocumentationHeading" -> decode.success(DocumentationHeading)
     "DocumentationParagraph" -> decode.success(DocumentationParagraph)
     "DocumentationSentence" -> decode.success(DocumentationSentence)
@@ -451,21 +447,14 @@ pub type TopicMetadata {
     visibility: NamedTopicVisibility,
     references: List(ReferenceGroup),
     expanded_references: List(ReferenceGroup),
-    ancestors: List(Topic),
-    descendants: List(Topic),
-  )
-  NamedMutableTopic(
-    topic: Topic,
-    scope: Scope,
-    kind: NamedMutableTopicKind,
-    name: String,
-    visibility: NamedTopicVisibility,
-    references: List(ReferenceGroup),
-    expanded_references: List(ReferenceGroup),
+    is_mutable: Bool,
     mutations: List(Topic),
     ancestors: List(Topic),
     descendants: List(Topic),
+    relatives: List(Topic),
+    mentions: List(ReferenceGroup),
   )
+  TitledTopic(topic: Topic, scope: Scope, kind: TitledTopicKind, title: String)
   UnnamedTopic(topic: Topic, scope: Scope, kind: UnnamedTopicKind)
 }
 
@@ -477,44 +466,15 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
     None,
     decode.optional(decode.string),
   )
-  use maybe_mutations <- decode.optional_field(
-    "mutations",
+  use maybe_title <- decode.optional_field(
+    "title",
     None,
-    decode.optional(decode.list(decode.string)),
+    decode.optional(decode.string),
   )
 
   let topic = Topic(id: topic_id)
 
-  case maybe_name, maybe_mutations {
-    Some(name), Some(mutation_ids) -> {
-      use kind <- decode.then(named_mutable_topic_kind_decoder())
-      use visibility <- decode.then(named_topic_visibility_decoder())
-      use references <- decode.field(
-        "references",
-        decode.list(reference_group_decoder()),
-      )
-      use expanded_references <- decode.field(
-        "expanded_references",
-        decode.list(reference_group_decoder()),
-      )
-      use ancestor_ids <- decode.field("ancestors", decode.list(decode.string))
-      use descendant_ids <- decode.field(
-        "descendants",
-        decode.list(decode.string),
-      )
-      decode.success(NamedMutableTopic(
-        topic:,
-        scope:,
-        kind:,
-        name:,
-        visibility:,
-        references:,
-        expanded_references:,
-        mutations: list.map(mutation_ids, Topic),
-        ancestors: list.map(ancestor_ids, Topic),
-        descendants: list.map(descendant_ids, Topic),
-      ))
-    }
+  case maybe_name, maybe_title {
     Some(name), None -> {
       use kind <- decode.then(named_topic_kind_decoder())
       use visibility <- decode.then(named_topic_visibility_decoder())
@@ -526,10 +486,17 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         "expanded_references",
         decode.list(reference_group_decoder()),
       )
+      use is_mutable <- decode.field("is_mutable", decode.bool)
+      use mutation_ids <- decode.field("mutations", decode.list(decode.string))
       use ancestor_ids <- decode.field("ancestors", decode.list(decode.string))
       use descendant_ids <- decode.field(
         "descendants",
         decode.list(decode.string),
+      )
+      use relative_ids <- decode.field("relatives", decode.list(decode.string))
+      use mentions <- decode.field(
+        "mentions",
+        decode.list(reference_group_decoder()),
       )
       decode.success(NamedTopic(
         topic:,
@@ -539,11 +506,19 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         visibility:,
         references:,
         expanded_references:,
+        is_mutable:,
+        mutations: list.map(mutation_ids, Topic),
         ancestors: list.map(ancestor_ids, Topic),
         descendants: list.map(descendant_ids, Topic),
+        relatives: list.map(relative_ids, Topic),
+        mentions:,
       ))
     }
-    None, _ -> {
+    None, Some(title) -> {
+      use kind <- decode.then(titled_topic_kind_decoder())
+      decode.success(TitledTopic(topic:, scope:, kind:, title:))
+    }
+    _, _ -> {
       use kind <- decode.then(unnamed_topic_kind_decoder())
       decode.success(UnnamedTopic(topic:, scope:, kind:))
     }
@@ -552,7 +527,8 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
 
 pub fn topic_metadata_name(metadata: TopicMetadata) -> String {
   case metadata {
-    NamedTopic(name:, ..) | NamedMutableTopic(name:, ..) -> name
+    NamedTopic(name:, ..) -> name
+    TitledTopic(title:, ..) -> title
     UnnamedTopic(topic:, ..) -> topic.id
   }
 }
@@ -569,73 +545,76 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
   }
 
   let highlighted_name = case metadata {
-    NamedTopic(name:, kind:, visibility:, ..) ->
-      case kind {
-        TopicContract(contract_kind) ->
+    NamedTopic(name:, kind:, visibility:, is_mutable:, ..) ->
+      case kind, is_mutable {
+        TopicContract(contract_kind), _ ->
           kw(contract_kind_to_keyword(contract_kind))
           <> " <span class=\"contract\">"
           <> name
           <> "</span>"
-        TopicFunction(Function) | TopicFunction(FreeFunction) ->
+        TopicFunction(Function), _ | TopicFunction(FreeFunction), _ ->
           visibility_kw(visibility)
           <> kw("fn")
           <> " <span class=\"function\">"
           <> name
           <> "</span>"
-        TopicFunction(Receive) -> visibility_kw(visibility) <> kw("receive")
-        TopicFunction(Fallback) -> visibility_kw(visibility) <> kw("fallback")
-        TopicFunction(Constructor) -> kw("constructor")
-        Modifier ->
+        TopicFunction(Receive), _ -> visibility_kw(visibility) <> kw("receive")
+        TopicFunction(Fallback), _ ->
+          visibility_kw(visibility) <> kw("fallback")
+        TopicFunction(Constructor), _ -> kw("constructor")
+        Modifier, _ ->
           kw("mod") <> " <span class=\"modifier\">" <> name <> "</span>"
-        Event ->
+        Event, _ ->
           visibility_kw(visibility)
           <> kw("event")
           <> " <span class=\"event\">"
           <> name
           <> "</span>"
-        TopicError ->
+        TopicError, _ ->
           visibility_kw(visibility)
           <> kw("error")
           <> " <span class=\"error\">"
           <> name
           <> "</span>"
-        Struct ->
+        Struct, _ ->
           visibility_kw(visibility)
           <> kw("struct")
           <> " <span class=\"struct\">"
           <> name
           <> "</span>"
-        Enum ->
+        Enum, _ ->
           visibility_kw(visibility)
           <> kw("enum")
           <> " <span class=\"enum\">"
           <> name
           <> "</span>"
-        EnumMember -> "<span class=\"enum-value\">" <> name <> "</span>"
-        StateVariable(Constant) ->
+        EnumMember, _ -> "<span class=\"enum-value\">" <> name <> "</span>"
+        StateVariable(_), True ->
+          visibility_kw(visibility)
+          <> "<span class=\"mutable-state-variable\">"
+          <> name
+          <> "</span>"
+        StateVariable(Constant), False ->
           visibility_kw(visibility)
           <> kw("const")
           <> " <span class=\"constant\">"
           <> name
           <> "</span>"
-        StateVariable(Immutable) ->
+        StateVariable(Immutable), False ->
           visibility_kw(visibility)
           <> kw("immutable")
           <> " <span class=\"immutable-state-variable\">"
           <> name
           <> "</span>"
-        LocalVariable -> "<span class=\"local-variable\">" <> name <> "</span>"
-        Builtin -> "<span class=\"global\">" <> name <> "</span>"
-      }
-    NamedMutableTopic(name:, kind:, visibility:, ..) ->
-      case kind {
-        MutableStateVariable ->
-          visibility_kw(visibility)
-          <> "<span class=\"mutable-state-variable\">"
-          <> name
-          <> "</span>"
-        MutableLocalVariable ->
+        LocalVariable, True ->
           "<span class=\"mutable-local-variable\">" <> name <> "</span>"
+        LocalVariable, False ->
+          "<span class=\"local-variable\">" <> name <> "</span>"
+        Builtin, _ -> "<span class=\"global\">" <> name <> "</span>"
+      }
+    TitledTopic(title:, kind:, ..) ->
+      case kind {
+        DocumentationSection -> "<span>" <> title <> "</span>"
       }
     UnnamedTopic(kind:, ..) ->
       case kind {
@@ -667,7 +646,6 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
         MutableReference -> "<span class=\"identifier\">MutableReference</span>"
         Signature -> "<span class=\"identifier\">Signature</span>"
         DocumentationRoot -> "<span>Documentation</span>"
-        DocumentationSection -> "<span>DocumentationSection</span>"
         DocumentationHeading -> "<span>DocumentationHeading</span>"
         DocumentationParagraph -> "<span>DocumentationParagraph</span>"
         DocumentationSentence -> "<span>DocumentationSentence</span>"
