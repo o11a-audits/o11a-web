@@ -233,6 +233,7 @@ pub type FunctionKind {
 pub type VariableMutability {
   Constant
   Immutable
+  Mutable
 }
 
 pub type NamedTopicVisibility {
@@ -340,6 +341,7 @@ fn named_topic_kind_decoder() -> decode.Decoder(NamedTopicKind) {
     "StateVariable", Some("Constant") -> decode.success(StateVariable(Constant))
     "StateVariable", Some("Immutable") ->
       decode.success(StateVariable(Immutable))
+    "StateVariable", Some("Mutable") -> decode.success(StateVariable(Mutable))
     "LocalVariable", None -> decode.success(LocalVariable)
     "Builtin", None -> decode.success(Builtin)
     _, _ -> decode.failure(Builtin, "NamedTopicKind")
@@ -589,7 +591,7 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
           <> name
           <> "</span>"
         EnumMember, _ -> "<span class=\"enum-value\">" <> name <> "</span>"
-        StateVariable(_), True ->
+        StateVariable(_), True | StateVariable(Mutable), _ ->
           visibility_kw(visibility)
           <> "<span class=\"mutable-state-variable\">"
           <> name

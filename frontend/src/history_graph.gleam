@@ -12,18 +12,29 @@ import tempo/instant
 
 /// Which panel has focus in the topic view
 pub type ActivePanel {
+  MentionsPanel
   TopicPanel
   ReferencesPanel
 }
 
-/// Focus state capturing the user's position in both panels
+/// Focus state capturing the user's position in all three panels
 pub type FocusState {
-  FocusState(topic_index: Int, references_index: Int, active_panel: ActivePanel)
+  FocusState(
+    mentions_index: Int,
+    topic_index: Int,
+    references_index: Int,
+    active_panel: ActivePanel,
+  )
 }
 
 /// Default focus state for new entries
 pub fn default_focus_state() -> FocusState {
-  FocusState(topic_index: 0, references_index: 0, active_panel: TopicPanel)
+  FocusState(
+    mentions_index: 0,
+    topic_index: 0,
+    references_index: 0,
+    active_panel: TopicPanel,
+  )
 }
 
 pub type Relative {

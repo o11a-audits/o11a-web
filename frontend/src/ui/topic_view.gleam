@@ -328,6 +328,8 @@ fn get_active_topic_view(container: element.Element) -> Result(TopicView, Nil) {
   |> result.try(get_topic_view)
 }
 
+const current_mentions_index_key = dromel.DataKey("current_mentions_index")
+
 const current_child_topic_index_key = dromel.DataKey(
   "current_child_topic_index",
 )
@@ -341,6 +343,18 @@ const topic_key = dromel.DataKey("topic")
 const member_key = dromel.DataKey("member")
 
 const contract_key = dromel.DataKey("contract")
+
+fn set_current_mentions_index(container: element.Element, index: Int) -> Nil {
+  let _ =
+    dromel.set_data(container, current_mentions_index_key, int.to_string(index))
+  Nil
+}
+
+fn get_current_mentions_index(container: element.Element) -> Int {
+  dromel.get_data(container, current_mentions_index_key)
+  |> result.try(int.parse)
+  |> result.unwrap(0)
+}
 
 fn set_current_child_topic_index(container: element.Element, index: Int) -> Nil {
   let _ =
@@ -376,6 +390,7 @@ fn get_current_references_index(container: element.Element) -> Int {
 
 fn set_active_panel(container: element.Element, panel: ActivePanel) -> Nil {
   let panel_str = case panel {
+    history_graph.MentionsPanel -> "mentions"
     history_graph.TopicPanel -> "topic"
     history_graph.ReferencesPanel -> "references"
   }
@@ -385,6 +400,7 @@ fn set_active_panel(container: element.Element, panel: ActivePanel) -> Nil {
 
 fn get_active_panel(container: element.Element) -> ActivePanel {
   case dromel.get_data(container, active_panel_key) {
+    Ok("mentions") -> history_graph.MentionsPanel
     Ok("references") -> history_graph.ReferencesPanel
     _ -> history_graph.TopicPanel
   }
@@ -394,6 +410,7 @@ fn get_current_focus_state(
   container: element.Element,
 ) -> history_graph.FocusState {
   history_graph.FocusState(
+    mentions_index: get_current_mentions_index(container),
     topic_index: get_current_child_topic_index(container),
     references_index: get_current_references_index(container),
     active_panel: get_active_panel(container),
@@ -404,6 +421,7 @@ fn set_focus_state(
   container: element.Element,
   focus_state: history_graph.FocusState,
 ) -> Nil {
+  set_current_mentions_index(container, focus_state.mentions_index)
   set_current_child_topic_index(container, focus_state.topic_index)
   set_current_references_index(container, focus_state.references_index)
   set_active_panel(container, focus_state.active_panel)
@@ -812,10 +830,20 @@ fn gather_panel_tokens(config: GroupedSourcePanelConfig) -> Nil {
       let active_panel = get_active_panel(config.container)
       case config.token_field {
         MentionsPanelTokens -> {
-          // Store tokens for the mentions panel (no focus management needed)
           set_active_view_elements(
             ActiveViewElements(..active_elements, mentions_tokens: tokens),
           )
+          // Only focus if this is the active panel
+          case active_panel {
+            history_graph.MentionsPanel -> {
+              let index = get_current_mentions_index(config.container)
+              case array.get(tokens, index) {
+                Ok(el) -> focus_topic_token_and_prefetch(el)
+                Error(Nil) -> Nil
+              }
+            }
+            history_graph.TopicPanel | history_graph.ReferencesPanel -> Nil
+          }
         }
         TopicPanelTokens -> {
           set_active_view_elements(
@@ -833,7 +861,7 @@ fn gather_panel_tokens(config: GroupedSourcePanelConfig) -> Nil {
                 Error(Nil) -> Nil
               }
             }
-            history_graph.ReferencesPanel -> Nil
+            history_graph.MentionsPanel | history_graph.ReferencesPanel -> Nil
           }
         }
         ReferencesPanelTokens -> {
@@ -852,7 +880,7 @@ fn gather_panel_tokens(config: GroupedSourcePanelConfig) -> Nil {
                 Error(Nil) -> Nil
               }
             }
-            history_graph.TopicPanel -> Nil
+            history_graph.MentionsPanel | history_graph.TopicPanel -> Nil
           }
         }
       }
@@ -1224,11 +1252,12 @@ fn navigate_to_new_entry_with_focus(
 
       // Set the focus state for the new entry (default to index 0 in topic panel)
       case focus_target {
-        FocusByIndex(index, _scroll_position) ->
+        FocusByIndex(_index, _scroll_position) ->
           set_focus_state(
             container,
             history_graph.FocusState(
-              topic_index: index,
+              mentions_index: 0,
+              topic_index: 0,
               references_index: 0,
               active_panel: history_graph.TopicPanel,
             ),
@@ -1462,6 +1491,7 @@ pub fn handle_topic_view_keydown(event) {
     False, False, "h" -> {
       event.prevent_default(event)
       case get_active_panel(container) {
+        history_graph.MentionsPanel -> navigate_into_mention(container)
         history_graph.TopicPanel -> navigate_into_topic(container)
         history_graph.ReferencesPanel -> navigate_into_reference(container)
       }
@@ -1480,6 +1510,11 @@ pub fn handle_topic_view_keydown(event) {
     False, False, "ArrowRight" -> {
       event.prevent_default(event)
       case get_active_panel(container) {
+        history_graph.MentionsPanel -> {
+          set_active_panel(container, history_graph.TopicPanel)
+          // Refocus the current topic child
+          navigate_to_child(container, 0)
+        }
         history_graph.TopicPanel -> {
           // Gather reference tokens lazily when entering references panel
           gather_expanded_references_tokens()
@@ -1499,13 +1534,21 @@ pub fn handle_topic_view_keydown(event) {
           // Refocus the current topic child
           navigate_to_child(container, 0)
         }
-        history_graph.TopicPanel -> Nil
+        history_graph.TopicPanel -> {
+          // Gather mentions tokens lazily when entering mentions panel
+          gather_mentions_tokens()
+          set_active_panel(container, history_graph.MentionsPanel)
+          // Focus the current mention token
+          navigate_to_mention(container, 0)
+        }
+        history_graph.MentionsPanel -> Nil
       }
     }
 
     False, False, "ArrowDown" | False, False, "," -> {
       event.prevent_default(event)
       case get_active_panel(container) {
+        history_graph.MentionsPanel -> navigate_to_mention(container, 1)
         history_graph.TopicPanel -> navigate_to_child(container, 1)
         history_graph.ReferencesPanel -> navigate_to_reference(container, 1)
       }
@@ -1513,6 +1556,7 @@ pub fn handle_topic_view_keydown(event) {
     False, True, "ArrowDown" | False, True, "<" -> {
       event.prevent_default(event)
       case get_active_panel(container) {
+        history_graph.MentionsPanel -> navigate_to_mention(container, 10)
         history_graph.TopicPanel -> navigate_to_child(container, 10)
         history_graph.ReferencesPanel -> navigate_to_reference(container, 10)
       }
@@ -1521,6 +1565,7 @@ pub fn handle_topic_view_keydown(event) {
     False, False, "ArrowUp" | False, False, "e" -> {
       event.prevent_default(event)
       case get_active_panel(container) {
+        history_graph.MentionsPanel -> navigate_to_mention(container, -1)
         history_graph.TopicPanel -> navigate_to_child(container, -1)
         history_graph.ReferencesPanel -> navigate_to_reference(container, -1)
       }
@@ -1528,6 +1573,7 @@ pub fn handle_topic_view_keydown(event) {
     False, True, "ArrowUp" | False, True, "E" -> {
       event.prevent_default(event)
       case get_active_panel(container) {
+        history_graph.MentionsPanel -> navigate_to_mention(container, -10)
         history_graph.TopicPanel -> navigate_to_child(container, -10)
         history_graph.ReferencesPanel -> navigate_to_reference(container, -10)
       }
@@ -1536,6 +1582,7 @@ pub fn handle_topic_view_keydown(event) {
     False, False, "u" -> {
       event.prevent_default(event)
       case get_active_panel(container) {
+        history_graph.MentionsPanel -> navigate_scope_up_mention(container)
         history_graph.TopicPanel -> navigate_scope_up_topic(container)
         history_graph.ReferencesPanel -> navigate_scope_up_reference(container)
       }
@@ -1579,6 +1626,27 @@ fn navigate_into_reference(container) {
         |> result.map(audit_data.Topic)
       {
         Error(Nil) -> io.println_error("Unable to read reference topic")
+        Ok(topic) -> {
+          navigate_to_new_entry(container, topic)
+        }
+      }
+    }
+  }
+}
+
+fn navigate_into_mention(container) {
+  case get_active_view_elements() {
+    Error(Nil) -> io.println_error("No active topic view")
+    Ok(elements) -> {
+      case
+        array.get(
+          elements.mentions_tokens,
+          get_current_mentions_index(container),
+        )
+        |> result.try(dromel.get_data(_, topic_key))
+        |> result.map(audit_data.Topic)
+      {
+        Error(Nil) -> io.println_error("Unable to read mention topic")
         Ok(topic) -> {
           navigate_to_new_entry(container, topic)
         }
@@ -1713,6 +1781,69 @@ fn navigate_scope_up_reference(container) {
   }
 }
 
+/// Navigate up one scope level in the mentions panel
+/// For member-grouped mentions, collapses all mentions in the group into a single member view
+fn navigate_scope_up_mention(container) {
+  case get_active_view_elements() {
+    Error(Nil) -> io.println_error("No active view elements")
+    Ok(elements) -> {
+      // Get the currently focused mention element
+      case
+        array.get(
+          elements.mentions_tokens,
+          get_current_mentions_index(container),
+        )
+      {
+        Error(Nil) -> io.println_error("No mention element selected")
+        Ok(focused_element) -> {
+          // Get the element's id to restore focus after reload
+          let focused_element_id =
+            dromel.get_attribute(focused_element, "id") |> result.unwrap("")
+
+          // Find the source container by traversing up from the focused element
+          case find_source_container(focused_element) {
+            Error(Nil) -> io.println_error("Unable to find source container")
+            Ok(source_container) -> {
+              // Check if this source container belongs to a member group
+              case dromel.get_data(source_container, member_key) {
+                Ok(member_id) -> {
+                  // This is a member-grouped mention - collapse the group
+                  collapse_member_group(
+                    source_container,
+                    member_id,
+                    focused_element_id,
+                    container,
+                    history_graph.MentionsPanel,
+                  )
+                }
+                Error(Nil) -> {
+                  // No member group - check for contract group
+                  case dromel.get_data(source_container, contract_key) {
+                    Ok(contract_id) -> {
+                      // This is a contract-grouped mention - collapse to contract
+                      collapse_contract_group(
+                        source_container,
+                        contract_id,
+                        focused_element_id,
+                        container,
+                        history_graph.MentionsPanel,
+                      )
+                    }
+                    Error(Nil) -> {
+                      // No contract group - already at top scope level
+                      io.println("Already at top scope level")
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 /// Remove all containers in an array except the first one (and their placeholder parents)
 fn remove_containers_after_first(
   containers: array.Array(element.Element),
@@ -1747,6 +1878,7 @@ fn restore_panel_focus(
   panel: ActivePanel,
 ) -> Nil {
   case panel {
+    history_graph.MentionsPanel -> gather_mentions_tokens()
     history_graph.TopicPanel -> gather_topic_panel_tokens()
     history_graph.ReferencesPanel -> gather_expanded_references_tokens()
   }
@@ -1755,6 +1887,7 @@ fn restore_panel_focus(
     Error(Nil) -> Nil
     Ok(elements) -> {
       let tokens = case panel {
+        history_graph.MentionsPanel -> elements.mentions_tokens
         history_graph.TopicPanel -> elements.topic_children_tokens
         history_graph.ReferencesPanel -> elements.expanded_references_tokens
       }
@@ -1964,6 +2097,8 @@ fn find_and_focus_element_by_id(
         Ok(id) if id == target_id -> {
           focus_topic_token_and_prefetch(el)
           case panel {
+            history_graph.MentionsPanel ->
+              set_current_mentions_index(container, index)
             history_graph.TopicPanel ->
               set_current_child_topic_index(container, index)
             history_graph.ReferencesPanel ->
@@ -2054,7 +2189,53 @@ fn navigate_to_reference(container, index_diff) {
   }
 }
 
+fn navigate_to_mention(container, index_diff) {
+  case get_active_view_elements() {
+    Ok(elements) -> {
+      let current_index = get_current_mentions_index(container)
+      let new_index = case current_index + index_diff {
+        n if n <= 0 -> 0
+        n ->
+          case array.size(elements.mentions_tokens) - 1 {
+            size if n > size -> size
+            _size -> n
+          }
+      }
+
+      case elements.mentions_tokens |> array.get(new_index) {
+        Ok(el) -> {
+          focus_topic_token_and_prefetch(el)
+          set_current_mentions_index(container, new_index)
+        }
+        Error(Nil) -> {
+          io.println("no mention index diff of " <> int.to_string(index_diff))
+        }
+      }
+    }
+    Error(Nil) -> {
+      io.println_error("no active view")
+    }
+  }
+}
+
 const reference_title_class = dromel.Class("topic-reference-title")
+
+fn gather_mentions_tokens() -> Nil {
+  case get_active_view_elements() {
+    Ok(active_elements) -> {
+      let tokens =
+        dromel.query_element_all(
+          active_elements.mentions_panel,
+          elements.source_topic_tokens,
+        )
+      set_active_view_elements(
+        ActiveViewElements(..active_elements, mentions_tokens: tokens),
+      )
+      Nil
+    }
+    Error(Nil) -> Nil
+  }
+}
 
 fn gather_expanded_references_tokens() -> Nil {
   case get_active_view_elements() {
