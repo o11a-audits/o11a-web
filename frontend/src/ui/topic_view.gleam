@@ -100,9 +100,9 @@ import ui/icons
 // ============================================================================
 
 /// TopicView stores metadata about a view. DOM elements are created/destroyed
-/// on navigation, but scroll_position is preserved to restore the view state.
+/// on navigation.
 pub type TopicView {
-  TopicView(entry_id: String, topic_id: String, scroll_position: Float)
+  TopicView(entry_id: String, topic_id: String)
 }
 
 /// Re-export ActivePanel from history_graph for convenience
@@ -234,12 +234,17 @@ fn flatten_expanded_references(
 ) -> List(String) {
   list.flat_map(expanded_references, fn(group) {
     let scope_ids = [group.scope.id]
-    let scope_ref_ids = list.map(group.scope_references, fn(t) { t.id })
+    let scope_ref_ids =
+      list.map(group.scope_references, fn(entry) {
+        audit_data.reference_entry_topic(entry).id
+      })
     let nested_ids =
       list.flat_map(group.nested_references, fn(nested_group) {
         [
           nested_group.subscope.id,
-          ..list.map(nested_group.references, fn(t) { t.id })
+          ..list.map(nested_group.references, fn(entry) {
+            audit_data.reference_entry_topic(entry).id
+          })
         ]
       })
     list.flatten([scope_ids, scope_ref_ids, nested_ids])
@@ -541,16 +546,9 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
 /// Save scroll position and remove DOM elements for the active view
 /// Save scroll position and reset DOM elements for reuse (avoids flickering)
 /// Returns the existing elements with their content cleared
-fn reset_active_view(
-  container: element.Element,
-) -> Result(ActiveViewElements, Nil) {
-  case get_active_topic_view(container), get_active_view_elements() {
-    Ok(view), Ok(elements) -> {
-      // Save scroll position before resetting
-      let scroll_pos = dromel.get_scroll_top(elements.topic_panel)
-      let updated_view = TopicView(..view, scroll_position: scroll_pos)
-      set_topic_view(view.entry_id, updated_view)
-
+fn reset_active_view() -> Result(ActiveViewElements, Nil) {
+  case get_active_view_elements() {
+    Ok(elements) -> {
       // Clear inner HTML of panels and reset scroll positions
       let _ = dromel.set_inner_html(elements.mentions_panel, "")
       dromel.set_scroll_top(elements.mentions_panel, 0.0)
@@ -579,19 +577,13 @@ fn reset_active_view(
 
       Ok(reset_elements)
     }
-    _, _ -> Error(Nil)
+    _ -> Error(Nil)
   }
 }
 
 // ============================================================================
 // Source Text Loading Callbacks
 // ============================================================================
-
-/// Specifies how to restore focus after loading source text
-type FocusTarget {
-  /// Focus the child at the given index with a specific scroll position
-  FocusByIndex(index: Int, scroll_position: Float)
-}
 
 /// Helper to apply first/last styling to reference source elements
 fn apply_first_last_style(
@@ -688,7 +680,8 @@ fn populate_grouped_source_panel(
 
     // Render scope-level references
     let index_after_scope =
-      list.index_fold(ref_group.scope_references, 0, fn(index, ref_topic, _) {
+      list.index_fold(ref_group.scope_references, 0, fn(index, ref_entry, _) {
+        let ref_topic = audit_data.reference_entry_topic(ref_entry)
         let source_placeholder =
           dromel.new_div()
           |> dromel.append_as_child(to: group_container)
@@ -739,7 +732,8 @@ fn populate_grouped_source_panel(
         list.index_fold(
           nested_group.references,
           current_index,
-          fn(index, ref_topic, nested_ref_index) {
+          fn(index, ref_entry, nested_ref_index) {
+            let ref_topic = audit_data.reference_entry_topic(ref_entry)
             let source_placeholder =
               dromel.new_div()
               |> dromel.append_as_child(to: group_container)
@@ -1209,15 +1203,6 @@ pub fn navigate_to_new_entry(
   container: element.Element,
   topic: audit_data.Topic,
 ) {
-  navigate_to_new_entry_with_focus(container, topic, FocusByIndex(0, 0.0))
-}
-
-/// Navigate to a new entry with a specific focus target
-fn navigate_to_new_entry_with_focus(
-  container: element.Element,
-  topic: audit_data.Topic,
-  focus_target: FocusTarget,
-) {
   let active_topic_view_res = get_active_topic_view(container)
   case active_topic_view_res {
     Ok(active_view) if active_view.topic_id == topic.id -> {
@@ -1251,18 +1236,15 @@ fn navigate_to_new_entry_with_focus(
       update_url_for_topic(new_entry.topic_id)
 
       // Set the focus state for the new entry (default to index 0 in topic panel)
-      case focus_target {
-        FocusByIndex(_index, _scroll_position) ->
-          set_focus_state(
-            container,
-            history_graph.FocusState(
-              mentions_index: 0,
-              topic_index: 0,
-              references_index: 0,
-              active_panel: history_graph.TopicPanel,
-            ),
-          )
-      }
+      set_focus_state(
+        container,
+        history_graph.FocusState(
+          mentions_index: 0,
+          topic_index: 0,
+          references_index: 0,
+          active_panel: history_graph.TopicPanel,
+        ),
+      )
 
       // Load source text and replace
       // DOM elements. We wait to replace DOM elements until after
@@ -1272,19 +1254,15 @@ fn navigate_to_new_entry_with_focus(
       audit_data.with_topic_data(
         audit_data.Topic(id: new_entry.topic_id),
         fn(metadata, _source_text) {
-          // Reset DOM elements for reuse (saves scroll position, clears content)
-          let elements = case reset_active_view(container) {
+          // Reset DOM elements for reuse (clears content)
+          let elements = case reset_active_view() {
             Ok(elements) -> elements
             Error(Nil) -> mount_topic_view(container)
           }
 
-          // Initialize view state (scroll position starts at 0 for new views)
+          // Initialize view state
           let view =
-            TopicView(
-              entry_id: new_entry.id,
-              topic_id: new_entry.topic_id,
-              scroll_position: 0.0,
-            )
+            TopicView(entry_id: new_entry.id, topic_id: new_entry.topic_id)
           set_topic_view(new_entry.id, view)
 
           // Set as active view
@@ -1356,7 +1334,7 @@ pub fn navigate_back(container) -> Nil {
                 parent_topic,
                 fn(metadata, _source_text) {
                   // Reset DOM elements for reuse (saves scroll position, clears content)
-                  let elements = case reset_active_view(container) {
+                  let elements = case reset_active_view() {
                     Ok(elements) -> elements
                     Error(Nil) -> mount_topic_view(container)
                   }
@@ -1433,7 +1411,7 @@ pub fn navigate_forward(container) -> Nil {
                 child_topic,
                 fn(metadata, _source_text) {
                   // Reset DOM elements for reuse (saves scroll position, clears content)
-                  let elements = case reset_active_view(container) {
+                  let elements = case reset_active_view() {
                     Ok(elements) -> elements
                     Error(Nil) -> mount_topic_view(container)
                   }
@@ -1513,14 +1491,14 @@ pub fn handle_topic_view_keydown(event) {
         history_graph.MentionsPanel -> {
           set_active_panel(container, history_graph.TopicPanel)
           // Refocus the current topic child
-          navigate_to_child(container, 0)
+          move_to_topic_child(container, 0)
         }
         history_graph.TopicPanel -> {
           // Gather reference tokens lazily when entering references panel
           gather_expanded_references_tokens()
           set_active_panel(container, history_graph.ReferencesPanel)
           // Focus the first reference token if available
-          navigate_to_reference(container, 0)
+          move_to_reference_child(container, 0)
         }
         history_graph.ReferencesPanel -> Nil
       }
@@ -1532,14 +1510,14 @@ pub fn handle_topic_view_keydown(event) {
         history_graph.ReferencesPanel -> {
           set_active_panel(container, history_graph.TopicPanel)
           // Refocus the current topic child
-          navigate_to_child(container, 0)
+          move_to_topic_child(container, 0)
         }
         history_graph.TopicPanel -> {
           // Gather mentions tokens lazily when entering mentions panel
           gather_mentions_tokens()
           set_active_panel(container, history_graph.MentionsPanel)
           // Focus the current mention token
-          navigate_to_mention(container, 0)
+          move_to_mention_child(container, 0)
         }
         history_graph.MentionsPanel -> Nil
       }
@@ -1548,34 +1526,34 @@ pub fn handle_topic_view_keydown(event) {
     False, False, "ArrowDown" | False, False, "," -> {
       event.prevent_default(event)
       case get_active_panel(container) {
-        history_graph.MentionsPanel -> navigate_to_mention(container, 1)
-        history_graph.TopicPanel -> navigate_to_child(container, 1)
-        history_graph.ReferencesPanel -> navigate_to_reference(container, 1)
+        history_graph.MentionsPanel -> move_to_mention_child(container, 1)
+        history_graph.TopicPanel -> move_to_topic_child(container, 1)
+        history_graph.ReferencesPanel -> move_to_reference_child(container, 1)
       }
     }
     False, True, "ArrowDown" | False, True, "<" -> {
       event.prevent_default(event)
       case get_active_panel(container) {
-        history_graph.MentionsPanel -> navigate_to_mention(container, 10)
-        history_graph.TopicPanel -> navigate_to_child(container, 10)
-        history_graph.ReferencesPanel -> navigate_to_reference(container, 10)
+        history_graph.MentionsPanel -> move_to_mention_child(container, 10)
+        history_graph.TopicPanel -> move_to_topic_child(container, 10)
+        history_graph.ReferencesPanel -> move_to_reference_child(container, 10)
       }
     }
 
     False, False, "ArrowUp" | False, False, "e" -> {
       event.prevent_default(event)
       case get_active_panel(container) {
-        history_graph.MentionsPanel -> navigate_to_mention(container, -1)
-        history_graph.TopicPanel -> navigate_to_child(container, -1)
-        history_graph.ReferencesPanel -> navigate_to_reference(container, -1)
+        history_graph.MentionsPanel -> move_to_mention_child(container, -1)
+        history_graph.TopicPanel -> move_to_topic_child(container, -1)
+        history_graph.ReferencesPanel -> move_to_reference_child(container, -1)
       }
     }
     False, True, "ArrowUp" | False, True, "E" -> {
       event.prevent_default(event)
       case get_active_panel(container) {
-        history_graph.MentionsPanel -> navigate_to_mention(container, -10)
-        history_graph.TopicPanel -> navigate_to_child(container, -10)
-        history_graph.ReferencesPanel -> navigate_to_reference(container, -10)
+        history_graph.MentionsPanel -> move_to_mention_child(container, -10)
+        history_graph.TopicPanel -> move_to_topic_child(container, -10)
+        history_graph.ReferencesPanel -> move_to_reference_child(container, -10)
       }
     }
 
@@ -2130,7 +2108,7 @@ fn find_source_container(elem: element.Element) -> Result(element.Element, Nil) 
   }
 }
 
-fn navigate_to_child(container, index_diff) {
+fn move_to_topic_child(container, index_diff) {
   case get_active_view_elements() {
     Ok(elements) -> {
       let new_index = case
@@ -2160,7 +2138,7 @@ fn navigate_to_child(container, index_diff) {
   }
 }
 
-fn navigate_to_reference(container, index_diff) {
+fn move_to_reference_child(container, index_diff) {
   case get_active_view_elements() {
     Ok(elements) -> {
       let current_index = get_current_references_index(container)
@@ -2189,7 +2167,7 @@ fn navigate_to_reference(container, index_diff) {
   }
 }
 
-fn navigate_to_mention(container, index_diff) {
+fn move_to_mention_child(container, index_diff) {
   case get_active_view_elements() {
     Ok(elements) -> {
       let current_index = get_current_mentions_index(container)
