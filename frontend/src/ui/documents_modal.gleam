@@ -165,6 +165,7 @@ fn get_document_name(document: audit_data.TopicMetadata) -> String {
         audit_data.Container(container:) -> container
         _ -> audit_data.topic_metadata_name(document)
       }
+    audit_data.CommentTopic(topic:, ..) -> topic.id
   }
 }
 
@@ -251,7 +252,8 @@ fn get_document_topic(document: audit_data.TopicMetadata) -> audit_data.Topic {
   case document {
     audit_data.NamedTopic(topic:, ..)
     | audit_data.TitledTopic(topic:, ..)
-    | audit_data.UnnamedTopic(topic:, ..) -> topic
+    | audit_data.UnnamedTopic(topic:, ..)
+    | audit_data.CommentTopic(topic:, ..) -> topic
   }
 }
 

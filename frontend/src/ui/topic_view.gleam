@@ -912,6 +912,7 @@ fn populate_topic_panel(
           [TextPart(title)]
         }
         audit_data.NamedTopic(..) -> panic as "unreachable"
+        audit_data.CommentTopic(topic:, ..) -> [TextPart(topic.id)]
       }
 
       // For unnamed topics, directly render the topic's source text

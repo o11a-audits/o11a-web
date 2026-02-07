@@ -321,6 +321,7 @@ pub type UnnamedTopicKind {
   DocumentationCodeBlock
   DocumentationList
   DocumentationBlockQuote
+  DocumentationInlineCode
   Other
 }
 
@@ -486,6 +487,7 @@ fn unnamed_topic_kind_decoder() -> decode.Decoder(UnnamedTopicKind) {
     "DocumentationCodeBlock" -> decode.success(DocumentationCodeBlock)
     "DocumentationList" -> decode.success(DocumentationList)
     "DocumentationBlockQuote" -> decode.success(DocumentationBlockQuote)
+    "DocumentationInlineCode" -> decode.success(DocumentationInlineCode)
     "Other" -> decode.success(Other)
     _ -> decode.failure(Other, "UnnamedTopicKind")
   }
@@ -510,6 +512,16 @@ pub type TopicMetadata {
   )
   TitledTopic(topic: Topic, scope: Scope, kind: TitledTopicKind, title: String)
   UnnamedTopic(topic: Topic, scope: Scope, kind: UnnamedTopicKind)
+  CommentTopic(
+    topic: Topic,
+    scope: Scope,
+    author_id: Int,
+    comment_type: CommentType,
+    target_topic: String,
+    created_at: String,
+    mentioned_topics: List(String),
+    mentions: List(ReferenceGroup),
+  )
 }
 
 fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
@@ -577,6 +589,30 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
       use kind <- decode.then(titled_topic_kind_decoder())
       decode.success(TitledTopic(topic:, scope:, kind:, title:))
     }
+    "CommentTopic" -> {
+      use author_id <- decode.field("author_id", decode.int)
+      use comment_type <- decode.field("comment_type", comment_type_decoder())
+      use target_topic <- decode.field("target_topic", decode.string)
+      use created_at <- decode.field("created_at", decode.string)
+      use mentioned_topics <- decode.field(
+        "mentioned_topics",
+        decode.list(decode.string),
+      )
+      use mentions <- decode.field(
+        "mentions",
+        decode.list(reference_group_decoder()),
+      )
+      decode.success(CommentTopic(
+        topic:,
+        author_id:,
+        comment_type:,
+        target_topic:,
+        created_at:,
+        scope:,
+        mentioned_topics:,
+        mentions:,
+      ))
+    }
     _ -> {
       use kind <- decode.then(unnamed_topic_kind_decoder())
       decode.success(UnnamedTopic(topic:, scope:, kind:))
@@ -589,6 +625,7 @@ pub fn topic_metadata_name(metadata: TopicMetadata) -> String {
     NamedTopic(name:, ..) -> name
     TitledTopic(title:, ..) -> title
     UnnamedTopic(topic:, ..) -> topic.id
+    CommentTopic(topic:, ..) -> topic.id
   }
 }
 
@@ -711,8 +748,10 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
         DocumentationCodeBlock -> "<span>DocumentationCodeBlock</span>"
         DocumentationList -> "<span>DocumentationList</span>"
         DocumentationBlockQuote -> "<span>DocumentationBlockQuote</span>"
+        DocumentationInlineCode -> "<span>DocumentationInlineCode</span>"
         Other -> "<span>Other</span>"
       }
+    CommentTopic(topic:, ..) -> "<span>" <> topic.id <> "</span>"
   }
 
   "<code>" <> highlighted_name <> "</code>"
@@ -1483,14 +1522,17 @@ pub fn with_topic_comments(topic_id: String, callback) {
   }
 }
 
-fn fetch_comments_by_type(comment_type: CommentType) {
+fn fetch_comments_by_type(comment_type: CommentType, status: CommentStatus) {
   let type_str = comment_type_to_string(comment_type)
+  let status_str = comment_status_to_string(status)
   let assert Ok(req) =
     request.to(
       "http://172.18.115.78:3000/api/v1/audits/"
       <> audit_name()
       <> "/comments/"
-      <> type_str,
+      <> type_str
+      <> "/"
+      <> status_str,
     )
 
   use resp <- promise.try_await(
@@ -1508,28 +1550,35 @@ fn fetch_comments_by_type(comment_type: CommentType) {
   promise.resolve(result)
 }
 
-pub fn with_comments_by_type(comment_type: CommentType, callback) {
-  let type_str = comment_type_to_string(comment_type)
-  case read_comments_by_type(type_str) {
+pub fn with_comments_by_type(
+  comment_type: CommentType,
+  status: CommentStatus,
+  callback,
+) {
+  let cache_key =
+    comment_type_to_string(comment_type)
+    <> "/"
+    <> comment_status_to_string(status)
+  case read_comments_by_type(cache_key) {
     Ok(comments) -> {
       callback(Ok(comments))
       Nil
     }
     Error(_) -> {
-      let promise = case read_comments_by_type_promise(type_str) {
+      let promise = case read_comments_by_type_promise(cache_key) {
         Ok(promise) -> promise
         Error(Nil) -> {
-          let promise = fetch_comments_by_type(comment_type)
-          set_comments_by_type_promise(type_str, promise)
+          let promise = fetch_comments_by_type(comment_type, status)
+          set_comments_by_type_promise(cache_key, promise)
           promise
         }
       }
 
       promise.await(promise, fn(comments) {
         case comments {
-          Ok(comments) -> set_comments_by_type(type_str, comments)
+          Ok(comments) -> set_comments_by_type(cache_key, comments)
           Error(error) ->
-            snag.layer(error, "Unable to fetch comments of type " <> type_str)
+            snag.layer(error, "Unable to fetch comments of type " <> cache_key)
             |> snag.line_print
             |> io.println_error
         }
@@ -1546,14 +1595,14 @@ pub fn with_comments_by_type(comment_type: CommentType, callback) {
 pub fn create_comment(
   topic_id: String,
   content: String,
-  author_id: String,
+  author_id: Int,
   comment_type: CommentType,
 ) {
   let body =
     json.object([
       #("topic_id", json.string(topic_id)),
       #("content", json.string(content)),
-      #("author_id", json.string(author_id)),
+      #("author_id", json.int(author_id)),
       #("comment_type", json.string(comment_type_to_string(comment_type))),
     ])
     |> json.to_string
@@ -1665,6 +1714,10 @@ fn set_comment_status(
   val: CommentStatusResponse,
 ) -> Nil
 
+fn comment_numeric_id(comment_topic_id: String) -> String {
+  string.drop_start(comment_topic_id, 1)
+}
+
 // --- Status: Fetch Functions ---
 
 fn fetch_comment_status(comment_topic_id: String) {
@@ -1673,7 +1726,7 @@ fn fetch_comment_status(comment_topic_id: String) {
       "http://172.18.115.78:3000/api/v1/audits/"
       <> audit_name()
       <> "/comments/"
-      <> comment_topic_id
+      <> comment_numeric_id(comment_topic_id)
       <> "/status",
     )
 
@@ -1729,31 +1782,6 @@ pub fn with_comment_status(comment_topic_id: String, callback) {
   }
 }
 
-pub fn fetch_comment_statuses(ids: List(String)) {
-  let ids_param = string.join(ids, ",")
-  let assert Ok(req) =
-    request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
-      <> audit_name()
-      <> "/comments/status?ids="
-      <> ids_param,
-    )
-
-  use resp <- promise.try_await(
-    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
-  )
-  use resp <- promise.try_await(
-    fetch.read_json_body(resp)
-    |> promise.map(snag.map_error(_, string.inspect)),
-  )
-
-  let result =
-    decode.run(resp.body, decode.list(comment_status_response_decoder()))
-    |> snag.map_error(string.inspect)
-
-  promise.resolve(result)
-}
-
 pub fn update_comment_status(comment_topic_id: String, status: CommentStatus) {
   let body =
     json.object([
@@ -1766,7 +1794,7 @@ pub fn update_comment_status(comment_topic_id: String, status: CommentStatus) {
       "http://172.18.115.78:3000/api/v1/audits/"
       <> audit_name()
       <> "/comments/"
-      <> comment_topic_id
+      <> comment_numeric_id(comment_topic_id)
       <> "/status",
     )
   let req =
@@ -1901,7 +1929,7 @@ fn fetch_vote_summary(comment_topic_id: String, user_id: Int) {
       "http://172.18.115.78:3000/api/v1/audits/"
       <> audit_name()
       <> "/votes/"
-      <> comment_topic_id
+      <> comment_numeric_id(comment_topic_id)
       <> "?user_id="
       <> int.to_string(user_id),
     )
@@ -1971,7 +1999,7 @@ pub fn cast_vote(comment_topic_id: String, user_id: Int, vote: VoteValue) {
       "http://172.18.115.78:3000/api/v1/audits/"
       <> audit_name()
       <> "/votes/"
-      <> comment_topic_id,
+      <> comment_numeric_id(comment_topic_id),
     )
   let req =
     req
@@ -2006,7 +2034,7 @@ pub fn delete_vote(comment_topic_id: String, user_id: Int) {
       "http://172.18.115.78:3000/api/v1/audits/"
       <> audit_name()
       <> "/votes/"
-      <> comment_topic_id
+      <> comment_numeric_id(comment_topic_id)
       <> "?user_id="
       <> int.to_string(user_id),
     )
@@ -2020,4 +2048,94 @@ pub fn delete_vote(comment_topic_id: String, user_id: Int) {
   )
 
   promise.resolve(Ok(Nil))
+}
+
+// --- WebSocket ---
+
+@external(javascript, "./ws_ffi.mjs", "ws_connect")
+fn ws_connect(url: String, on_message: fn(String) -> Nil) -> Nil
+
+@external(javascript, "./ws_ffi.mjs", "ws_close")
+pub fn ws_close() -> Nil
+
+pub fn connect_comment_ws() -> Nil {
+  let url =
+    "ws://172.18.115.78:3000/api/v1/audits/" <> audit_name() <> "/comments/ws"
+
+  ws_connect(url, handle_comment_event)
+}
+
+fn handle_comment_event(raw: String) -> Nil {
+  case json.parse(raw, comment_event_decoder()) {
+    Ok(event) -> process_comment_event(event)
+    Error(_) -> {
+      io.println_error("Failed to decode WebSocket comment event")
+      Nil
+    }
+  }
+}
+
+fn process_comment_event(event: CommentEvent) -> Nil {
+  case event {
+    CommentCreated(audit_id: _, comment_topic_id: _) -> Nil
+    StatusUpdated(audit_id: _, comment_topic_id:, status:) -> {
+      set_comment_status(
+        comment_topic_id,
+        CommentStatusResponse(comment_topic_id:, status:),
+      )
+      Nil
+    }
+    VoteUpdated(audit_id: _, comment_topic_id:, score:, upvotes:, downvotes:) -> {
+      case read_vote_summary(comment_topic_id) {
+        Ok(existing) ->
+          set_vote_summary(
+            comment_topic_id,
+            CommentVoteSummary(..existing, score:, upvotes:, downvotes:),
+          )
+        Error(_) -> Nil
+      }
+      Nil
+    }
+    MentionsUpdated(audit_id: _, topic_id:, mentions:) -> {
+      case read_topic_metadata(topic_id) {
+        Ok(NamedTopic(
+          topic:,
+          scope:,
+          kind:,
+          name:,
+          visibility:,
+          references:,
+          expanded_references:,
+          ancestry:,
+          is_mutable:,
+          mutations:,
+          ancestors:,
+          descendants:,
+          relatives:,
+          mentions: _,
+        )) ->
+          set_topic_metadata(
+            topic_id,
+            NamedTopic(
+              topic:,
+              scope:,
+              kind:,
+              name:,
+              visibility:,
+              references:,
+              expanded_references:,
+              ancestry:,
+              is_mutable:,
+              mutations:,
+              ancestors:,
+              descendants:,
+              relatives:,
+              mentions:,
+            ),
+          )
+        _ -> Nil
+      }
+      Nil
+    }
+  }
 }
