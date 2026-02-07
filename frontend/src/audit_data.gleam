@@ -1,9 +1,12 @@
 import dromel
 import gleam/dynamic/decode
 import gleam/fetch
+import gleam/http
 import gleam/http/request
+import gleam/int
 import gleam/io
 import gleam/javascript/promise
+import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
@@ -257,15 +260,24 @@ pub type NamedTopicKind {
   Builtin
 }
 
+pub type ReferenceEntry {
+  ProjectReference(reference_topic: Topic)
+  ProjectReferenceWithMentions(
+    reference_topic: Topic,
+    mention_topics: List(Topic),
+  )
+  CommentMention(reference_topic: Topic, mention_topics: List(Topic))
+}
+
 pub type NestedReferenceGroup {
-  NestedReferenceGroup(subscope: Topic, references: List(Topic))
+  NestedReferenceGroup(subscope: Topic, references: List(ReferenceEntry))
 }
 
 pub type ReferenceGroup {
   ReferenceGroup(
     scope: Topic,
     is_in_scope: Bool,
-    scope_references: List(Topic),
+    scope_references: List(ReferenceEntry),
     nested_references: List(NestedReferenceGroup),
   )
 }
@@ -369,21 +381,60 @@ fn named_topic_visibility_decoder() -> decode.Decoder(NamedTopicVisibility) {
   }
 }
 
+fn reference_entry_decoder() -> decode.Decoder(ReferenceEntry) {
+  use ref_type <- decode.field("type", decode.string)
+  use reference_topic_id <- decode.field("reference_topic", decode.string)
+  case ref_type {
+    "project" ->
+      decode.success(
+        ProjectReference(reference_topic: Topic(id: reference_topic_id)),
+      )
+    "project_with_mentions" -> {
+      use mention_ids <- decode.field(
+        "mention_topics",
+        decode.list(decode.string),
+      )
+      decode.success(ProjectReferenceWithMentions(
+        reference_topic: Topic(id: reference_topic_id),
+        mention_topics: list.map(mention_ids, Topic),
+      ))
+    }
+    "comment" -> {
+      use mention_ids <- decode.field(
+        "mention_topics",
+        decode.list(decode.string),
+      )
+      decode.success(CommentMention(
+        reference_topic: Topic(id: reference_topic_id),
+        mention_topics: list.map(mention_ids, Topic),
+      ))
+    }
+    _ ->
+      decode.failure(
+        ProjectReference(reference_topic: Topic(id: "")),
+        "ReferenceEntry",
+      )
+  }
+}
+
 fn nested_reference_group_decoder() -> decode.Decoder(NestedReferenceGroup) {
   use subscope_id <- decode.field("subscope", decode.string)
-  use reference_ids <- decode.field("references", decode.list(decode.string))
+  use references <- decode.field(
+    "references",
+    decode.list(reference_entry_decoder()),
+  )
   decode.success(NestedReferenceGroup(
     subscope: Topic(id: subscope_id),
-    references: list.map(reference_ids, Topic),
+    references:,
   ))
 }
 
 fn reference_group_decoder() -> decode.Decoder(ReferenceGroup) {
   use scope_id <- decode.field("scope", decode.string)
   use is_in_scope <- decode.field("is_in_scope", decode.bool)
-  use scope_reference_ids <- decode.field(
+  use scope_references <- decode.field(
     "scope_references",
-    decode.list(decode.string),
+    decode.list(reference_entry_decoder()),
   )
   use nested_references <- decode.field(
     "nested_references",
@@ -392,7 +443,7 @@ fn reference_group_decoder() -> decode.Decoder(ReferenceGroup) {
   decode.success(ReferenceGroup(
     scope: Topic(id: scope_id),
     is_in_scope:,
-    scope_references: list.map(scope_reference_ids, Topic),
+    scope_references:,
     nested_references:,
   ))
 }
@@ -449,6 +500,7 @@ pub type TopicMetadata {
     visibility: NamedTopicVisibility,
     references: List(ReferenceGroup),
     expanded_references: List(ReferenceGroup),
+    ancestry: List(ReferenceGroup),
     is_mutable: Bool,
     mutations: List(Topic),
     ancestors: List(Topic),
@@ -480,6 +532,10 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         "expanded_references",
         decode.list(reference_group_decoder()),
       )
+      use ancestry <- decode.field(
+        "ancestry",
+        decode.list(reference_group_decoder()),
+      )
       use mutation_ids <- decode.optional_field(
         "mutations",
         [],
@@ -507,6 +563,7 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         visibility:,
         references:,
         expanded_references:,
+        ancestry:,
         is_mutable:,
         mutations: list.map(mutation_ids, Topic),
         ancestors: list.map(ancestor_ids, Topic),
@@ -1084,4 +1141,883 @@ pub fn with_is_in_scope(scope, callback) {
       Nil
     }
   }
+}
+
+pub fn reference_entry_topic(entry: ReferenceEntry) -> Topic {
+  case entry {
+    ProjectReference(reference_topic:) -> reference_topic
+    ProjectReferenceWithMentions(reference_topic:, ..) -> reference_topic
+    CommentMention(reference_topic:, ..) -> reference_topic
+  }
+}
+
+// --- Collaborator Types ---
+
+pub type CommentType {
+  Note
+  Info
+  Question
+  Answer
+  Todo
+  FindingLead
+}
+
+pub type CommentStatus {
+  Active
+  Hidden
+  Resolved
+  Unanswered
+  Answered
+  Unconfirmed
+  Confirmed
+  Rejected
+}
+
+pub type VoteValue {
+  Up
+  Down
+}
+
+pub type CommentStatusResponse {
+  CommentStatusResponse(comment_topic_id: String, status: CommentStatus)
+}
+
+pub type CommentVoteSummary {
+  CommentVoteSummary(
+    comment_id: Int,
+    comment_topic_id: String,
+    score: Int,
+    upvotes: Int,
+    downvotes: Int,
+    user_vote: option.Option(VoteValue),
+  )
+}
+
+pub type CommentEvent {
+  CommentCreated(audit_id: String, comment_topic_id: String)
+  StatusUpdated(
+    audit_id: String,
+    comment_topic_id: String,
+    status: CommentStatus,
+  )
+  VoteUpdated(
+    audit_id: String,
+    comment_topic_id: String,
+    score: Int,
+    upvotes: Int,
+    downvotes: Int,
+  )
+  MentionsUpdated(
+    audit_id: String,
+    topic_id: String,
+    mentions: List(ReferenceGroup),
+  )
+}
+
+// --- Collaborator Decoders ---
+
+fn comment_type_decoder() -> decode.Decoder(CommentType) {
+  use type_str <- decode.then(decode.string)
+  case type_str {
+    "note" -> decode.success(Note)
+    "info" -> decode.success(Info)
+    "question" -> decode.success(Question)
+    "answer" -> decode.success(Answer)
+    "todo" -> decode.success(Todo)
+    "finding_lead" -> decode.success(FindingLead)
+    _ -> decode.failure(Note, "CommentType")
+  }
+}
+
+fn comment_status_decoder() -> decode.Decoder(CommentStatus) {
+  use status_str <- decode.then(decode.string)
+  case status_str {
+    "active" -> decode.success(Active)
+    "hidden" -> decode.success(Hidden)
+    "resolved" -> decode.success(Resolved)
+    "unanswered" -> decode.success(Unanswered)
+    "answered" -> decode.success(Answered)
+    "unconfirmed" -> decode.success(Unconfirmed)
+    "confirmed" -> decode.success(Confirmed)
+    "rejected" -> decode.success(Rejected)
+    _ -> decode.failure(Active, "CommentStatus")
+  }
+}
+
+fn vote_value_decoder() -> decode.Decoder(VoteValue) {
+  use value_str <- decode.then(decode.string)
+  case value_str {
+    "up" -> decode.success(Up)
+    "down" -> decode.success(Down)
+    _ -> decode.failure(Up, "VoteValue")
+  }
+}
+
+fn comment_status_response_decoder() -> decode.Decoder(CommentStatusResponse) {
+  use comment_topic_id <- decode.field("comment_topic_id", decode.string)
+  use status <- decode.field("status", comment_status_decoder())
+  decode.success(CommentStatusResponse(comment_topic_id:, status:))
+}
+
+fn comment_vote_summary_decoder() -> decode.Decoder(CommentVoteSummary) {
+  use comment_id <- decode.field("comment_id", decode.int)
+  use comment_topic_id <- decode.field("comment_topic_id", decode.string)
+  use score <- decode.field("score", decode.int)
+  use upvotes <- decode.field("upvotes", decode.int)
+  use downvotes <- decode.field("downvotes", decode.int)
+  use user_vote <- decode.optional_field(
+    "user_vote",
+    None,
+    decode.optional(vote_value_decoder()),
+  )
+  decode.success(CommentVoteSummary(
+    comment_id:,
+    comment_topic_id:,
+    score:,
+    upvotes:,
+    downvotes:,
+    user_vote:,
+  ))
+}
+
+fn comment_event_decoder() -> decode.Decoder(CommentEvent) {
+  use event_type <- decode.field("type", decode.string)
+  use audit_id <- decode.field("audit_id", decode.string)
+  case event_type {
+    "Created" -> {
+      use comment_topic_id <- decode.field("comment_topic_id", decode.string)
+      decode.success(CommentCreated(audit_id:, comment_topic_id:))
+    }
+    "StatusUpdated" -> {
+      use comment_topic_id <- decode.field("comment_topic_id", decode.string)
+      use status <- decode.field("status", comment_status_decoder())
+      decode.success(StatusUpdated(audit_id:, comment_topic_id:, status:))
+    }
+    "VoteUpdated" -> {
+      use comment_topic_id <- decode.field("comment_topic_id", decode.string)
+      use score <- decode.field("score", decode.int)
+      use upvotes <- decode.field("upvotes", decode.int)
+      use downvotes <- decode.field("downvotes", decode.int)
+      decode.success(VoteUpdated(
+        audit_id:,
+        comment_topic_id:,
+        score:,
+        upvotes:,
+        downvotes:,
+      ))
+    }
+    "MentionsUpdated" -> {
+      use topic_id <- decode.field("topic_id", decode.string)
+      use mentions <- decode.field(
+        "mentions",
+        decode.list(reference_group_decoder()),
+      )
+      decode.success(MentionsUpdated(audit_id:, topic_id:, mentions:))
+    }
+    _ ->
+      decode.failure(
+        CommentCreated(audit_id: "", comment_topic_id: ""),
+        "CommentEvent",
+      )
+  }
+}
+
+// --- Collaborator Encoders ---
+
+pub fn comment_type_to_string(comment_type: CommentType) -> String {
+  case comment_type {
+    Note -> "note"
+    Info -> "info"
+    Question -> "question"
+    Answer -> "answer"
+    Todo -> "todo"
+    FindingLead -> "finding_lead"
+  }
+}
+
+pub fn comment_status_to_string(status: CommentStatus) -> String {
+  case status {
+    Active -> "active"
+    Hidden -> "hidden"
+    Resolved -> "resolved"
+    Unanswered -> "unanswered"
+    Answered -> "answered"
+    Unconfirmed -> "unconfirmed"
+    Confirmed -> "confirmed"
+    Rejected -> "rejected"
+  }
+}
+
+pub fn vote_value_to_string(vote: VoteValue) -> String {
+  case vote {
+    Up -> "up"
+    Down -> "down"
+  }
+}
+
+// --- Collaborator Response Decoders ---
+
+fn comment_list_response_decoder() -> decode.Decoder(List(String)) {
+  use ids <- decode.field("comment_topic_ids", decode.list(decode.string))
+  decode.success(ids)
+}
+
+fn comment_created_response_decoder() -> decode.Decoder(String) {
+  use id <- decode.field("comment_topic_id", decode.string)
+  decode.success(id)
+}
+
+// --- Comments: FFI Declarations ---
+
+@external(javascript, "./mem_ffi.mjs", "set_topic_comments_promise")
+fn set_topic_comments_promise(
+  topic_id: String,
+  promise: promise.Promise(Result(List(String), snag.Snag)),
+) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_topic_comments_promise")
+fn read_topic_comments_promise(
+  topic_id: String,
+) -> Result(promise.Promise(Result(List(String), snag.Snag)), Nil)
+
+@external(javascript, "./mem_ffi.mjs", "get_topic_comments")
+fn read_topic_comments(topic_id: String) -> Result(List(String), snag.Snag)
+
+@external(javascript, "./mem_ffi.mjs", "set_topic_comments")
+fn set_topic_comments(topic_id: String, val: List(String)) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "set_comments_by_type_promise")
+fn set_comments_by_type_promise(
+  comment_type: String,
+  promise: promise.Promise(Result(List(String), snag.Snag)),
+) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_comments_by_type_promise")
+fn read_comments_by_type_promise(
+  comment_type: String,
+) -> Result(promise.Promise(Result(List(String), snag.Snag)), Nil)
+
+@external(javascript, "./mem_ffi.mjs", "get_comments_by_type")
+fn read_comments_by_type(
+  comment_type: String,
+) -> Result(List(String), snag.Snag)
+
+@external(javascript, "./mem_ffi.mjs", "set_comments_by_type")
+fn set_comments_by_type(comment_type: String, val: List(String)) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "set_mentions_promise")
+fn set_mentions_promise(
+  topic_id: String,
+  promise: promise.Promise(Result(List(String), snag.Snag)),
+) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_mentions_promise")
+fn read_mentions_promise(
+  topic_id: String,
+) -> Result(promise.Promise(Result(List(String), snag.Snag)), Nil)
+
+@external(javascript, "./mem_ffi.mjs", "get_mentions")
+fn read_mentions(topic_id: String) -> Result(List(String), snag.Snag)
+
+@external(javascript, "./mem_ffi.mjs", "set_mentions")
+fn set_mentions(topic_id: String, val: List(String)) -> Nil
+
+// --- Comments: Fetch Functions ---
+
+fn fetch_topic_comments(topic_id: String) {
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/"
+      <> audit_name()
+      <> "/topics/"
+      <> topic_id
+      <> "/comments",
+    )
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_json_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  let result =
+    decode.run(resp.body, comment_list_response_decoder())
+    |> snag.map_error(string.inspect)
+
+  promise.resolve(result)
+}
+
+pub fn with_topic_comments(topic_id: String, callback) {
+  case read_topic_comments(topic_id) {
+    Ok(comments) -> {
+      callback(Ok(comments))
+      Nil
+    }
+    Error(_) -> {
+      let promise = case read_topic_comments_promise(topic_id) {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_topic_comments(topic_id)
+          set_topic_comments_promise(topic_id, promise)
+          promise
+        }
+      }
+
+      promise.await(promise, fn(comments) {
+        case comments {
+          Ok(comments) -> set_topic_comments(topic_id, comments)
+          Error(error) ->
+            snag.layer(error, "Unable to fetch comments for topic " <> topic_id)
+            |> snag.line_print
+            |> io.println_error
+        }
+        callback(comments)
+
+        promise.resolve(Nil)
+      })
+
+      Nil
+    }
+  }
+}
+
+fn fetch_comments_by_type(comment_type: CommentType) {
+  let type_str = comment_type_to_string(comment_type)
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/"
+      <> audit_name()
+      <> "/comments/"
+      <> type_str,
+    )
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_json_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  let result =
+    decode.run(resp.body, comment_list_response_decoder())
+    |> snag.map_error(string.inspect)
+
+  promise.resolve(result)
+}
+
+pub fn with_comments_by_type(comment_type: CommentType, callback) {
+  let type_str = comment_type_to_string(comment_type)
+  case read_comments_by_type(type_str) {
+    Ok(comments) -> {
+      callback(Ok(comments))
+      Nil
+    }
+    Error(_) -> {
+      let promise = case read_comments_by_type_promise(type_str) {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_comments_by_type(comment_type)
+          set_comments_by_type_promise(type_str, promise)
+          promise
+        }
+      }
+
+      promise.await(promise, fn(comments) {
+        case comments {
+          Ok(comments) -> set_comments_by_type(type_str, comments)
+          Error(error) ->
+            snag.layer(error, "Unable to fetch comments of type " <> type_str)
+            |> snag.line_print
+            |> io.println_error
+        }
+        callback(comments)
+
+        promise.resolve(Nil)
+      })
+
+      Nil
+    }
+  }
+}
+
+pub fn create_comment(
+  topic_id: String,
+  content: String,
+  author_id: String,
+  comment_type: CommentType,
+) {
+  let body =
+    json.object([
+      #("topic_id", json.string(topic_id)),
+      #("content", json.string(content)),
+      #("author_id", json.string(author_id)),
+      #("comment_type", json.string(comment_type_to_string(comment_type))),
+    ])
+    |> json.to_string
+
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/" <> audit_name() <> "/comments",
+    )
+  let req =
+    req
+    |> request.set_method(http.Post)
+    |> request.set_body(body)
+    |> request.set_header("content-type", "application/json")
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_json_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  let result =
+    decode.run(resp.body, comment_created_response_decoder())
+    |> snag.map_error(string.inspect)
+
+  promise.resolve(result)
+}
+
+fn fetch_mentions(topic_id: String) {
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/"
+      <> audit_name()
+      <> "/mentions/"
+      <> topic_id,
+    )
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_json_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  let result =
+    decode.run(resp.body, comment_list_response_decoder())
+    |> snag.map_error(string.inspect)
+
+  promise.resolve(result)
+}
+
+pub fn with_mentions(topic_id: String, callback) {
+  case read_mentions(topic_id) {
+    Ok(mentions) -> {
+      callback(Ok(mentions))
+      Nil
+    }
+    Error(_) -> {
+      let promise = case read_mentions_promise(topic_id) {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_mentions(topic_id)
+          set_mentions_promise(topic_id, promise)
+          promise
+        }
+      }
+
+      promise.await(promise, fn(mentions) {
+        case mentions {
+          Ok(mentions) -> set_mentions(topic_id, mentions)
+          Error(error) ->
+            snag.layer(error, "Unable to fetch mentions for topic " <> topic_id)
+            |> snag.line_print
+            |> io.println_error
+        }
+        callback(mentions)
+
+        promise.resolve(Nil)
+      })
+
+      Nil
+    }
+  }
+}
+
+// --- Status: FFI Declarations ---
+
+@external(javascript, "./mem_ffi.mjs", "set_comment_status_promise")
+fn set_comment_status_promise(
+  comment_topic_id: String,
+  promise: promise.Promise(Result(CommentStatusResponse, snag.Snag)),
+) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_comment_status_promise")
+fn read_comment_status_promise(
+  comment_topic_id: String,
+) -> Result(promise.Promise(Result(CommentStatusResponse, snag.Snag)), Nil)
+
+@external(javascript, "./mem_ffi.mjs", "get_comment_status")
+fn read_comment_status(
+  comment_topic_id: String,
+) -> Result(CommentStatusResponse, snag.Snag)
+
+@external(javascript, "./mem_ffi.mjs", "set_comment_status")
+fn set_comment_status(
+  comment_topic_id: String,
+  val: CommentStatusResponse,
+) -> Nil
+
+// --- Status: Fetch Functions ---
+
+fn fetch_comment_status(comment_topic_id: String) {
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/"
+      <> audit_name()
+      <> "/comments/"
+      <> comment_topic_id
+      <> "/status",
+    )
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_json_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  let result =
+    decode.run(resp.body, comment_status_response_decoder())
+    |> snag.map_error(string.inspect)
+
+  promise.resolve(result)
+}
+
+pub fn with_comment_status(comment_topic_id: String, callback) {
+  case read_comment_status(comment_topic_id) {
+    Ok(status) -> {
+      callback(Ok(status))
+      Nil
+    }
+    Error(_) -> {
+      let promise = case read_comment_status_promise(comment_topic_id) {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_comment_status(comment_topic_id)
+          set_comment_status_promise(comment_topic_id, promise)
+          promise
+        }
+      }
+
+      promise.await(promise, fn(status) {
+        case status {
+          Ok(status) -> set_comment_status(comment_topic_id, status)
+          Error(error) ->
+            snag.layer(
+              error,
+              "Unable to fetch status for comment " <> comment_topic_id,
+            )
+            |> snag.line_print
+            |> io.println_error
+        }
+        callback(status)
+
+        promise.resolve(Nil)
+      })
+
+      Nil
+    }
+  }
+}
+
+pub fn fetch_comment_statuses(ids: List(String)) {
+  let ids_param = string.join(ids, ",")
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/"
+      <> audit_name()
+      <> "/comments/status?ids="
+      <> ids_param,
+    )
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_json_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  let result =
+    decode.run(resp.body, decode.list(comment_status_response_decoder()))
+    |> snag.map_error(string.inspect)
+
+  promise.resolve(result)
+}
+
+pub fn update_comment_status(comment_topic_id: String, status: CommentStatus) {
+  let body =
+    json.object([
+      #("status", json.string(comment_status_to_string(status))),
+    ])
+    |> json.to_string
+
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/"
+      <> audit_name()
+      <> "/comments/"
+      <> comment_topic_id
+      <> "/status",
+    )
+  let req =
+    req
+    |> request.set_method(http.Put)
+    |> request.set_body(body)
+    |> request.set_header("content-type", "application/json")
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_json_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  let result =
+    decode.run(resp.body, comment_status_response_decoder())
+    |> snag.map_error(string.inspect)
+
+  // Update cache with the new status
+  case result {
+    Ok(status_response) -> set_comment_status(comment_topic_id, status_response)
+    Error(_) -> Nil
+  }
+
+  promise.resolve(result)
+}
+
+// --- Votes: FFI Declarations ---
+
+@external(javascript, "./mem_ffi.mjs", "set_vote_summary_promise")
+fn set_vote_summary_promise(
+  comment_topic_id: String,
+  promise: promise.Promise(Result(CommentVoteSummary, snag.Snag)),
+) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_vote_summary_promise")
+fn read_vote_summary_promise(
+  comment_topic_id: String,
+) -> Result(promise.Promise(Result(CommentVoteSummary, snag.Snag)), Nil)
+
+@external(javascript, "./mem_ffi.mjs", "get_vote_summary")
+fn read_vote_summary(
+  comment_topic_id: String,
+) -> Result(CommentVoteSummary, snag.Snag)
+
+@external(javascript, "./mem_ffi.mjs", "set_vote_summary")
+fn set_vote_summary(comment_topic_id: String, val: CommentVoteSummary) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "set_unvoted_promise")
+fn set_unvoted_promise(
+  user_id: String,
+  promise: promise.Promise(Result(List(String), snag.Snag)),
+) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_unvoted_promise")
+fn read_unvoted_promise(
+  user_id: String,
+) -> Result(promise.Promise(Result(List(String), snag.Snag)), Nil)
+
+@external(javascript, "./mem_ffi.mjs", "get_unvoted")
+fn read_unvoted(user_id: String) -> Result(List(String), snag.Snag)
+
+@external(javascript, "./mem_ffi.mjs", "set_unvoted")
+fn set_unvoted(user_id: String, val: List(String)) -> Nil
+
+// --- Votes: Fetch Functions ---
+
+fn fetch_unvoted(user_id: Int) {
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/"
+      <> audit_name()
+      <> "/votes/unvoted?user_id="
+      <> int.to_string(user_id),
+    )
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_json_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  let result =
+    decode.run(resp.body, decode.list(decode.string))
+    |> snag.map_error(string.inspect)
+
+  promise.resolve(result)
+}
+
+pub fn with_unvoted(user_id: Int, callback) {
+  let user_id_str = int.to_string(user_id)
+  case read_unvoted(user_id_str) {
+    Ok(unvoted) -> {
+      callback(Ok(unvoted))
+      Nil
+    }
+    Error(_) -> {
+      let promise = case read_unvoted_promise(user_id_str) {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_unvoted(user_id)
+          set_unvoted_promise(user_id_str, promise)
+          promise
+        }
+      }
+
+      promise.await(promise, fn(unvoted) {
+        case unvoted {
+          Ok(unvoted) -> set_unvoted(user_id_str, unvoted)
+          Error(error) ->
+            snag.layer(error, "Unable to fetch unvoted comments")
+            |> snag.line_print
+            |> io.println_error
+        }
+        callback(unvoted)
+
+        promise.resolve(Nil)
+      })
+
+      Nil
+    }
+  }
+}
+
+fn fetch_vote_summary(comment_topic_id: String, user_id: Int) {
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/"
+      <> audit_name()
+      <> "/votes/"
+      <> comment_topic_id
+      <> "?user_id="
+      <> int.to_string(user_id),
+    )
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_json_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  let result =
+    decode.run(resp.body, comment_vote_summary_decoder())
+    |> snag.map_error(string.inspect)
+
+  promise.resolve(result)
+}
+
+pub fn with_vote_summary(comment_topic_id: String, user_id: Int, callback) {
+  case read_vote_summary(comment_topic_id) {
+    Ok(summary) -> {
+      callback(Ok(summary))
+      Nil
+    }
+    Error(_) -> {
+      let promise = case read_vote_summary_promise(comment_topic_id) {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_vote_summary(comment_topic_id, user_id)
+          set_vote_summary_promise(comment_topic_id, promise)
+          promise
+        }
+      }
+
+      promise.await(promise, fn(summary) {
+        case summary {
+          Ok(summary) -> set_vote_summary(comment_topic_id, summary)
+          Error(error) ->
+            snag.layer(
+              error,
+              "Unable to fetch vote summary for " <> comment_topic_id,
+            )
+            |> snag.line_print
+            |> io.println_error
+        }
+        callback(summary)
+
+        promise.resolve(Nil)
+      })
+
+      Nil
+    }
+  }
+}
+
+pub fn cast_vote(comment_topic_id: String, user_id: Int, vote: VoteValue) {
+  let body =
+    json.object([
+      #("user_id", json.int(user_id)),
+      #("vote", json.string(vote_value_to_string(vote))),
+    ])
+    |> json.to_string
+
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/"
+      <> audit_name()
+      <> "/votes/"
+      <> comment_topic_id,
+    )
+  let req =
+    req
+    |> request.set_method(http.Post)
+    |> request.set_body(body)
+    |> request.set_header("content-type", "application/json")
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_json_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  let result =
+    decode.run(resp.body, comment_vote_summary_decoder())
+    |> snag.map_error(string.inspect)
+
+  // Update cache with the new summary
+  case result {
+    Ok(summary) -> set_vote_summary(comment_topic_id, summary)
+    Error(_) -> Nil
+  }
+
+  promise.resolve(result)
+}
+
+pub fn delete_vote(comment_topic_id: String, user_id: Int) {
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/"
+      <> audit_name()
+      <> "/votes/"
+      <> comment_topic_id
+      <> "?user_id="
+      <> int.to_string(user_id),
+    )
+  let req =
+    req
+    |> request.set_method(http.Delete)
+    |> request.set_body("")
+
+  use _resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  promise.resolve(Ok(Nil))
 }

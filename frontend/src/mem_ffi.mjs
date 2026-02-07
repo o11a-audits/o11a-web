@@ -324,6 +324,168 @@ export function get_in_scope_files() {
 }
 
 // =============================================================================
+// Comments
+// =============================================================================
+
+let topic_comments_dict = {};
+let topic_comments_promises = {};
+
+export function set_topic_comments_promise(topic_id, promise) {
+  topic_comments_promises[topic_id] = promise;
+}
+
+export function get_topic_comments_promise(topic_id) {
+  if (!topic_comments_promises[topic_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(topic_comments_promises[topic_id]);
+}
+
+export function get_topic_comments(topic_id) {
+  if (!topic_comments_dict[topic_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(topic_comments_dict[topic_id]);
+}
+
+export function set_topic_comments(topic_id, val) {
+  topic_comments_dict[topic_id] = val;
+}
+
+let comments_by_type_dict = {};
+let comments_by_type_promises = {};
+
+export function set_comments_by_type_promise(comment_type, promise) {
+  comments_by_type_promises[comment_type] = promise;
+}
+
+export function get_comments_by_type_promise(comment_type) {
+  if (!comments_by_type_promises[comment_type]) {
+    return Result$Error();
+  }
+  return Result$Ok(comments_by_type_promises[comment_type]);
+}
+
+export function get_comments_by_type(comment_type) {
+  if (!comments_by_type_dict[comment_type]) {
+    return Result$Error();
+  }
+  return Result$Ok(comments_by_type_dict[comment_type]);
+}
+
+export function set_comments_by_type(comment_type, val) {
+  comments_by_type_dict[comment_type] = val;
+}
+
+let mentions_dict = {};
+let mentions_promises = {};
+
+export function set_mentions_promise(topic_id, promise) {
+  mentions_promises[topic_id] = promise;
+}
+
+export function get_mentions_promise(topic_id) {
+  if (!mentions_promises[topic_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(mentions_promises[topic_id]);
+}
+
+export function get_mentions(topic_id) {
+  if (!mentions_dict[topic_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(mentions_dict[topic_id]);
+}
+
+export function set_mentions(topic_id, val) {
+  mentions_dict[topic_id] = val;
+}
+
+// =============================================================================
+// Comment Status
+// =============================================================================
+
+let comment_status_dict = {};
+let comment_status_promises = {};
+
+export function set_comment_status_promise(comment_topic_id, promise) {
+  comment_status_promises[comment_topic_id] = promise;
+}
+
+export function get_comment_status_promise(comment_topic_id) {
+  if (!comment_status_promises[comment_topic_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(comment_status_promises[comment_topic_id]);
+}
+
+export function get_comment_status(comment_topic_id) {
+  if (!comment_status_dict[comment_topic_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(comment_status_dict[comment_topic_id]);
+}
+
+export function set_comment_status(comment_topic_id, val) {
+  comment_status_dict[comment_topic_id] = val;
+}
+
+// =============================================================================
+// Votes
+// =============================================================================
+
+let vote_summary_dict = {};
+let vote_summary_promises = {};
+
+export function set_vote_summary_promise(comment_topic_id, promise) {
+  vote_summary_promises[comment_topic_id] = promise;
+}
+
+export function get_vote_summary_promise(comment_topic_id) {
+  if (!vote_summary_promises[comment_topic_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(vote_summary_promises[comment_topic_id]);
+}
+
+export function get_vote_summary(comment_topic_id) {
+  if (!vote_summary_dict[comment_topic_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(vote_summary_dict[comment_topic_id]);
+}
+
+export function set_vote_summary(comment_topic_id, val) {
+  vote_summary_dict[comment_topic_id] = val;
+}
+
+let unvoted_dict = {};
+let unvoted_promises = {};
+
+export function set_unvoted_promise(user_id, promise) {
+  unvoted_promises[user_id] = promise;
+}
+
+export function get_unvoted_promise(user_id) {
+  if (!unvoted_promises[user_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(unvoted_promises[user_id]);
+}
+
+export function get_unvoted(user_id) {
+  if (!unvoted_dict[user_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(unvoted_dict[user_id]);
+}
+
+export function set_unvoted(user_id, val) {
+  unvoted_dict[user_id] = val;
+}
+
+// =============================================================================
 // URL Management
 // =============================================================================
 
