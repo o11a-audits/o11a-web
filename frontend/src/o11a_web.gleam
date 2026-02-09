@@ -24,6 +24,10 @@ pub fn main() {
 
   let _ = prefetch_hot_data()
 
+  audit_data.connect_comment_ws(
+    on_comment_created: topic_view.reload_topic_on_screen,
+  )
+
   let _ = open_url()
 
   window.add_event_listener("keydown", handle_window_keydown)

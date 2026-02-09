@@ -1253,7 +1253,11 @@ pub type CommentVoteSummary {
 }
 
 pub type CommentEvent {
-  CommentCreated(audit_id: String, comment_topic_id: String)
+  CommentCreated(
+    audit_id: String,
+    comment_topic_id: String,
+    target_topic: String,
+  )
   StatusUpdated(
     audit_id: String,
     comment_topic_id: String,
@@ -1345,7 +1349,8 @@ fn comment_event_decoder() -> decode.Decoder(CommentEvent) {
   case event_type {
     "Created" -> {
       use comment_topic_id <- decode.field("comment_topic_id", decode.string)
-      decode.success(CommentCreated(audit_id:, comment_topic_id:))
+      use target_topic <- decode.field("target_topic", decode.string)
+      decode.success(CommentCreated(audit_id:, comment_topic_id:, target_topic:))
     }
     "StatusUpdated" -> {
       use comment_topic_id <- decode.field("comment_topic_id", decode.string)
@@ -1375,7 +1380,7 @@ fn comment_event_decoder() -> decode.Decoder(CommentEvent) {
     }
     _ ->
       decode.failure(
-        CommentCreated(audit_id: "", comment_topic_id: ""),
+        CommentCreated(audit_id: "", comment_topic_id: "", target_topic: ""),
         "CommentEvent",
       )
   }
@@ -2086,16 +2091,21 @@ fn ws_connect(url: String, on_message: fn(String) -> Nil) -> Nil
 @external(javascript, "./ws_ffi.mjs", "ws_close")
 pub fn ws_close() -> Nil
 
-pub fn connect_comment_ws() -> Nil {
+pub fn connect_comment_ws(
+  on_comment_created on_comment_created: fn(String) -> Nil,
+) -> Nil {
   let url =
     "ws://172.18.115.78:3000/api/v1/audits/" <> audit_name() <> "/comments/ws"
 
-  ws_connect(url, handle_comment_event)
+  ws_connect(url, handle_comment_event(_, on_comment_created))
 }
 
-fn handle_comment_event(raw: String) -> Nil {
+fn handle_comment_event(
+  raw: String,
+  on_comment_created: fn(String) -> Nil,
+) -> Nil {
   case json.parse(raw, comment_event_decoder()) {
-    Ok(event) -> process_comment_event(event)
+    Ok(event) -> process_comment_event(event, on_comment_created)
     Error(_) -> {
       io.println_error("Failed to decode WebSocket comment event")
       Nil
@@ -2103,9 +2113,23 @@ fn handle_comment_event(raw: String) -> Nil {
   }
 }
 
-fn process_comment_event(event: CommentEvent) -> Nil {
+fn process_comment_event(
+  event: CommentEvent,
+  on_comment_created: fn(String) -> Nil,
+) -> Nil {
   case event {
-    CommentCreated(audit_id: _, comment_topic_id: _) -> Nil
+    CommentCreated(audit_id:, comment_topic_id:, target_topic:) -> {
+      case read_topic_comments(target_topic) {
+        Ok(comments) ->
+          set_topic_comments(target_topic, [comment_topic_id, ..comments])
+        Error(_) -> Nil
+      }
+      case audit_id == audit_name() {
+        True -> on_comment_created(target_topic)
+        False -> Nil
+      }
+      Nil
+    }
     StatusUpdated(audit_id: _, comment_topic_id:, status:) -> {
       set_comment_status(
         comment_topic_id,

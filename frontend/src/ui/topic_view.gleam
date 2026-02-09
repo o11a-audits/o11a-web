@@ -1495,6 +1495,27 @@ fn mount_breadcrumb_parts(
 // Public API
 // ============================================================================
 
+fn repopulate_view(
+  container: element.Element,
+  view: TopicView,
+  metadata: Result(audit_data.TopicMetadata, snag.Snag),
+) -> Nil {
+  let elements = case reset_active_view() {
+    Ok(elements) -> elements
+    Error(Nil) -> mount_topic_view(container)
+  }
+
+  set_active_topic_view(container, view, metadata)
+
+  get_fully_qualified_name_parts(metadata)
+  |> mount_breadcrumb_parts(to: get_history_container())
+
+  populate_topic_panel(container, metadata, elements)
+  populate_expanded_references_panel(container, metadata, elements)
+  populate_mentions_panel(container, metadata, elements)
+  populate_comments_panel(container, view.topic_id, elements)
+}
+
 /// Create or get a view for a navigation entry
 /// If the view already exists, it will be reused
 /// The view will be made visible and set as the active view
@@ -1554,36 +1575,11 @@ pub fn navigate_to_new_entry(
       audit_data.with_topic_data(
         audit_data.Topic(id: new_entry.topic_id),
         fn(metadata, _source_text, _comments) {
-          // Reset DOM elements for reuse (clears content)
-          let elements = case reset_active_view() {
-            Ok(elements) -> elements
-            Error(Nil) -> mount_topic_view(container)
-          }
-
-          // Initialize view state
           let view =
             TopicView(entry_id: new_entry.id, topic_id: new_entry.topic_id)
           set_topic_view(new_entry.id, view)
-
-          // Set as active view
-          set_active_topic_view(container, view, metadata)
           set_active_panel(container, history_graph.TopicPanel)
-
-          // Update the fully qualified name display
-          get_fully_qualified_name_parts(metadata)
-          |> mount_breadcrumb_parts(to: get_history_container())
-
-          // Populate topic panel with grouped sources
-          populate_topic_panel(container, metadata, elements)
-
-          // Load topic metadata and populate expanded references panel
-          populate_expanded_references_panel(container, metadata, elements)
-
-          // Populate mentions panel
-          populate_mentions_panel(container, metadata, elements)
-
-          // Populate comments panel
-          populate_comments_panel(container, new_entry.topic_id, elements)
+          repopulate_view(container, view, metadata)
         },
       )
     }
@@ -1636,37 +1632,7 @@ pub fn navigate_back(container) -> Nil {
               audit_data.with_topic_data(
                 parent_topic,
                 fn(metadata, _source_text, _comments) {
-                  // Reset DOM elements for reuse (saves scroll position, clears content)
-                  let elements = case reset_active_view() {
-                    Ok(elements) -> elements
-                    Error(Nil) -> mount_topic_view(container)
-                  }
-
-                  set_active_topic_view(container, parent_view, metadata)
-
-                  // Update the fully qualified name display
-                  get_fully_qualified_name_parts(metadata)
-                  |> mount_breadcrumb_parts(to: get_history_container())
-
-                  // Populate topic panel with grouped sources
-                  populate_topic_panel(container, metadata, elements)
-
-                  // Load topic metadata and populate expanded references panel
-                  populate_expanded_references_panel(
-                    container,
-                    metadata,
-                    elements,
-                  )
-
-                  // Populate mentions panel
-                  populate_mentions_panel(container, metadata, elements)
-
-                  // Populate comments panel
-                  populate_comments_panel(
-                    container,
-                    parent_entry.topic_id,
-                    elements,
-                  )
+                  repopulate_view(container, parent_view, metadata)
                 },
               )
 
@@ -1720,43 +1686,54 @@ pub fn navigate_forward(container) -> Nil {
               audit_data.with_topic_data(
                 child_topic,
                 fn(metadata, _source_text, _comments) {
-                  // Reset DOM elements for reuse (saves scroll position, clears content)
-                  let elements = case reset_active_view() {
-                    Ok(elements) -> elements
-                    Error(Nil) -> mount_topic_view(container)
-                  }
-
-                  // Update the fully qualified name display
-                  get_fully_qualified_name_parts(metadata)
-                  |> mount_breadcrumb_parts(to: get_history_container())
-
-                  set_active_topic_view(container, child_view, metadata)
-
-                  // Populate topic panel with grouped sources
-                  populate_topic_panel(container, metadata, elements)
-
-                  // Load topic metadata and populate expanded references panel
-                  populate_expanded_references_panel(
-                    container,
-                    metadata,
-                    elements,
-                  )
-
-                  // Populate mentions panel
-                  populate_mentions_panel(container, metadata, elements)
-
-                  // Populate comments panel
-                  populate_comments_panel(
-                    container,
-                    child_entry.topic_id,
-                    elements,
-                  )
+                  repopulate_view(container, child_view, metadata)
                 },
               )
 
               Nil
             }
           }
+        }
+      }
+    }
+  }
+}
+
+pub fn reload_topic_on_screen(target_topic_id: String) -> Nil {
+  reload_topic_chain(target_topic_id, [])
+}
+
+fn reload_topic_chain(topic_id: String, visited: List(String)) -> Nil {
+  case list.contains(visited, topic_id) {
+    True -> Nil
+    False -> {
+      case dromel.query_document(elements.topic_selector(topic_id)) {
+        Ok(_) -> {
+          let container = topic_view_container()
+          case get_active_topic_view(container) {
+            Ok(active_view) -> {
+              audit_data.with_topic_data(
+                audit_data.Topic(id: active_view.topic_id),
+                fn(metadata, _source_text, _comments) {
+                  repopulate_view(container, active_view, metadata)
+                },
+              )
+            }
+            Error(_) -> Nil
+          }
+        }
+        Error(_) -> {
+          // Topic not on screen — check if it's a comment and walk up
+          audit_data.with_topic_metadata(
+            audit_data.Topic(id: topic_id),
+            fn(result) {
+              case result {
+                Ok(audit_data.CommentTopic(target_topic:, ..)) ->
+                  reload_topic_chain(target_topic, [topic_id, ..visited])
+                _ -> Nil
+              }
+            },
+          )
         }
       }
     }
