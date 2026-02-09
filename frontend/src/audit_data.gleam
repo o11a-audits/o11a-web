@@ -1617,6 +1617,7 @@ pub fn create_comment(
   content: String,
   author_id: Int,
   comment_type: CommentType,
+  callback: fn(Result(String, snag.Snag)) -> Nil,
 ) {
   let body =
     json.object([
@@ -1637,19 +1638,26 @@ pub fn create_comment(
     |> request.set_body(body)
     |> request.set_header("content-type", "application/json")
 
-  use resp <- promise.try_await(
-    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
-  )
-  use resp <- promise.try_await(
-    fetch.read_json_body(resp)
-    |> promise.map(snag.map_error(_, string.inspect)),
-  )
+  let request_promise = {
+    use resp <- promise.try_await(
+      fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+    )
+    use resp <- promise.try_await(
+      fetch.read_json_body(resp)
+      |> promise.map(snag.map_error(_, string.inspect)),
+    )
 
-  let result =
-    decode.run(resp.body, comment_created_response_decoder())
-    |> snag.map_error(string.inspect)
+    let result =
+      decode.run(resp.body, comment_created_response_decoder())
+      |> snag.map_error(string.inspect)
 
-  promise.resolve(result)
+    promise.resolve(result)
+  }
+
+  promise.await(request_promise, fn(result) {
+    callback(result)
+    promise.resolve(Nil)
+  })
 }
 
 fn fetch_mentions(topic_id: String) {

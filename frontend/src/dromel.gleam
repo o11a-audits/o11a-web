@@ -73,7 +73,7 @@ pub fn remove_data(elem: Element, key: DataKey) -> Element {
 }
 
 @external(javascript, "./dromel_ffi.mjs", "remove_attribute")
-fn remove_attribute(elem: Element, attribute: String) -> Element
+pub fn remove_attribute(elem: Element, attribute: String) -> Element
 
 // ============================================================================
 // Element Creation
@@ -235,8 +235,18 @@ pub fn value(elem: Element) -> Result(String, Nil) {
   element.value(elem)
 }
 
+pub fn set_value(elem: Element, value: String) -> Element {
+  element.set_value(elem, value)
+  elem
+}
+
 pub fn focus(elem: Element) -> Element {
   element.focus(elem)
+  elem
+}
+
+pub fn blur(elem: Element) -> Element {
+  element.blur(elem)
   elem
 }
 

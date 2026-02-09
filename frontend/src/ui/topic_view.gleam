@@ -534,19 +534,65 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
                   case get_active_topic_view(container) {
                     Ok(active_view) -> {
                       let _ =
-                        audit_data.create_comment(
-                          active_view.topic_id,
-                          content,
-                          0,
-                          audit_data.Note,
-                        )
-                      let _ = dromel.set_attribute(input_elem, "value", "")
+                        dromel.set_attribute(input_elem, "disabled", "true")
+                      audit_data.create_comment(
+                        active_view.topic_id,
+                        content,
+                        0,
+                        audit_data.Note,
+                        fn(result) {
+                          case result {
+                            Ok(_) -> {
+                              let _ = dromel.set_value(input_elem, "")
+                              let _ =
+                                dromel.remove_attribute(input_elem, "disabled")
+                              let _ = dromel.blur(input_elem)
+                              case get_active_panel(container) {
+                                history_graph.MentionsPanel ->
+                                  move_to_mention_child(container, 0)
+                                history_graph.CommentsPanel ->
+                                  move_to_comment_child(container, 0)
+                                history_graph.TopicPanel ->
+                                  move_to_topic_child(container, 0)
+                                history_graph.ReferencesPanel ->
+                                  move_to_reference_child(container, 0)
+                              }
+                            }
+                            Error(error) -> {
+                              let _ =
+                                dromel.remove_attribute(input_elem, "disabled")
+                              snag.layer(error, "Failed to create comment")
+                              |> snag.line_print
+                              |> io.println_error
+                            }
+                          }
+                        },
+                      )
                       Nil
                     }
                     Error(Nil) -> Nil
                   }
                 }
                 _ -> Nil
+              }
+            }
+            Error(_) -> Nil
+          }
+        }
+        "Escape" -> {
+          event.prevent_default(e)
+          event.stop_propagation(e)
+          case dromel.cast(event.target(e)) {
+            Ok(input_elem) -> {
+              let _ = dromel.blur(input_elem)
+              case get_active_panel(container) {
+                history_graph.MentionsPanel ->
+                  move_to_mention_child(container, 0)
+                history_graph.CommentsPanel ->
+                  move_to_comment_child(container, 0)
+                history_graph.TopicPanel -> move_to_topic_child(container, 0)
+                history_graph.ReferencesPanel ->
+                  move_to_reference_child(container, 0)
               }
             }
             Error(_) -> Nil
