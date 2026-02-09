@@ -9,6 +9,7 @@ export function ws_connect(url, on_message) {
   ws = new WebSocket(url);
 
   ws.onmessage = (event) => {
+    console.log("WebSocket event received:", event.data);
     on_message(event.data);
   };
 

@@ -13,14 +13,35 @@ import tempo/instant
 /// Which panel has focus in the topic view
 pub type ActivePanel {
   MentionsPanel
+  CommentsPanel
   TopicPanel
   ReferencesPanel
+}
+
+pub fn active_panel_to_string(active_panel: ActivePanel) -> String {
+  case active_panel {
+    MentionsPanel -> "mentions"
+    CommentsPanel -> "comments"
+    TopicPanel -> "topic"
+    ReferencesPanel -> "references"
+  }
+}
+
+pub fn active_panel_from_string(string: String) {
+  case string {
+    "mentions" -> Ok(MentionsPanel)
+    "comments" -> Ok(CommentsPanel)
+    "topic" -> Ok(TopicPanel)
+    "references" -> Ok(ReferencesPanel)
+    _ -> snag.error("Unknown panel: " <> string)
+  }
 }
 
 /// Focus state capturing the user's position in all three panels
 pub type FocusState {
   FocusState(
     mentions_index: Int,
+    comments_index: Int,
     topic_index: Int,
     references_index: Int,
     active_panel: ActivePanel,
@@ -31,6 +52,7 @@ pub type FocusState {
 pub fn default_focus_state() -> FocusState {
   FocusState(
     mentions_index: 0,
+    comments_index: 0,
     topic_index: 0,
     references_index: 0,
     active_panel: TopicPanel,

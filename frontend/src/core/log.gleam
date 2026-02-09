@@ -1,3 +1,4 @@
+import gleam/io
 import snag
 
 const source_error_style = "color: var(--color-body-text); padding: 1rem;"
@@ -11,4 +12,10 @@ pub fn render_source_error(error: snag.Snag) -> String {
   |> snag.layer("Unable to fetch source")
   |> snag.pretty_print
   <> "</div>"
+}
+
+pub fn print_error(error: snag.Snag) {
+  error
+  |> snag.line_print
+  |> io.println_error
 }

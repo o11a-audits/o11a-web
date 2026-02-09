@@ -80,6 +80,7 @@
 //// ```
 
 import audit_data
+import context
 import core/log
 import dromel
 import gleam/int
@@ -112,6 +113,7 @@ pub type ActivePanel =
 /// Identifies which token array field to update in ActiveViewElements
 type TokenField {
   MentionsPanelTokens
+  CommentsPanelTokens
   TopicPanelTokens
   ReferencesPanelTokens
 }
@@ -140,11 +142,15 @@ type ActiveViewElements {
   ActiveViewElements(
     mentions_panel: element.Element,
     mentions_container: element.Element,
+    comments_panel: element.Element,
+    comments_container: element.Element,
+    comments_input: element.Element,
     topic_panel: element.Element,
     topic_container: element.Element,
     expanded_references_panel: element.Element,
     expanded_references_container: element.Element,
     mentions_tokens: array.Array(element.Element),
+    comments_tokens: array.Array(element.Element),
     topic_children_tokens: array.Array(element.Element),
     expanded_references_tokens: array.Array(element.Element),
   )
@@ -339,6 +345,8 @@ const current_child_topic_index_key = dromel.DataKey(
   "current_child_topic_index",
 )
 
+const current_comments_index_key = dromel.DataKey("current_comments_index")
+
 const current_references_index_key = dromel.DataKey("current_references_index")
 
 const active_panel_key = dromel.DataKey("active_panel")
@@ -393,22 +401,38 @@ fn get_current_references_index(container: element.Element) -> Int {
   |> result.unwrap(0)
 }
 
+fn set_current_comments_index(container: element.Element, index: Int) -> Nil {
+  let _ =
+    dromel.set_data(container, current_comments_index_key, int.to_string(index))
+  Nil
+}
+
+fn get_current_comments_index(container: element.Element) -> Int {
+  dromel.get_data(container, current_comments_index_key)
+  |> result.try(int.parse)
+  |> result.unwrap(0)
+}
+
 fn set_active_panel(container: element.Element, panel: ActivePanel) -> Nil {
-  let panel_str = case panel {
-    history_graph.MentionsPanel -> "mentions"
-    history_graph.TopicPanel -> "topic"
-    history_graph.ReferencesPanel -> "references"
-  }
-  let _ = dromel.set_data(container, active_panel_key, panel_str)
+  dromel.set_data(
+    container,
+    active_panel_key,
+    history_graph.active_panel_to_string(panel),
+  )
   Nil
 }
 
 fn get_active_panel(container: element.Element) -> ActivePanel {
-  case dromel.get_data(container, active_panel_key) {
-    Ok("mentions") -> history_graph.MentionsPanel
-    Ok("references") -> history_graph.ReferencesPanel
-    _ -> history_graph.TopicPanel
+  use Ok(data) <- case dromel.get_data(container, active_panel_key) {
+    Error(Nil) -> history_graph.TopicPanel
   }
+  use Ok(panel) <- case history_graph.active_panel_from_string(data) {
+    Error(snag) -> {
+      log.print_error(snag)
+      history_graph.TopicPanel
+    }
+  }
+  panel
 }
 
 fn get_current_focus_state(
@@ -416,6 +440,7 @@ fn get_current_focus_state(
 ) -> history_graph.FocusState {
   history_graph.FocusState(
     mentions_index: get_current_mentions_index(container),
+    comments_index: get_current_comments_index(container),
     topic_index: get_current_child_topic_index(container),
     references_index: get_current_references_index(container),
     active_panel: get_active_panel(container),
@@ -427,6 +452,7 @@ fn set_focus_state(
   focus_state: history_graph.FocusState,
 ) -> Nil {
   set_current_mentions_index(container, focus_state.mentions_index)
+  set_current_comments_index(container, focus_state.comments_index)
   set_current_child_topic_index(container, focus_state.topic_index)
   set_current_references_index(container, focus_state.references_index)
   set_active_panel(container, focus_state.active_panel)
@@ -485,6 +511,71 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
     |> dromel.append_child(mentions_footer)
     |> dromel.append_child(mentions_panel)
 
+  // Create the comments panel element
+  let comments_panel =
+    dromel.new_div()
+    |> dromel.set_class(elements.source_container_class)
+    |> dromel.set_style(panel_style)
+
+  let comments_input =
+    dromel.new_input()
+    |> dromel.set_type("text")
+    |> dromel.set_placeholder("Add a comment...")
+    |> dromel.set_style(
+      "width: 100%; padding: 0.5rem; background: var(--color-body-bg); color: var(--color-body-text); border: none; border-bottom: 1px solid var(--color-body-border); font-size: 14px; box-sizing: border-box;",
+    )
+    |> dromel.add_event_listener("keydown", fn(e) {
+      case event.key(e) {
+        "Enter" -> {
+          event.prevent_default(e)
+          event.stop_propagation(e)
+          case dromel.cast(event.target(e)) {
+            Ok(input_elem) -> {
+              case dromel.value(input_elem) {
+                Ok(content) if content != "" -> {
+                  case get_active_topic_view(container) {
+                    Ok(active_view) -> {
+                      let _ =
+                        audit_data.create_comment(
+                          active_view.topic_id,
+                          content,
+                          0,
+                          audit_data.Note,
+                        )
+                      let _ = dromel.set_attribute(input_elem, "value", "")
+                      Nil
+                    }
+                    Error(Nil) -> Nil
+                  }
+                }
+                _ -> Nil
+              }
+            }
+            Error(_) -> Nil
+          }
+        }
+        _ -> Nil
+      }
+    })
+    |> dromel.add_event_listener("focus", fn(_e) {
+      context.add_context(context.Input)
+    })
+    |> dromel.add_event_listener("blur", fn(_e) {
+      context.remove_context(context.Input)
+    })
+
+  let comments_footer =
+    dromel.new_div()
+    |> dromel.set_inner_text("Comments")
+    |> dromel.set_style(footer_style)
+
+  let comments_container =
+    dromel.new_div()
+    |> dromel.set_style(container_style)
+    |> dromel.append_child(comments_footer)
+    |> dromel.append_child(comments_input)
+    |> dromel.append_child(comments_panel)
+
   // Create the topic panel element
   let topic_panel =
     dromel.new_div()
@@ -522,6 +613,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
     |> dromel.append_child(expanded_references_panel)
 
   let _ = container |> dromel.append_child(mentions_container)
+  let _ = container |> dromel.append_child(comments_container)
   let _ = container |> dromel.append_child(topic_container)
   let _ = container |> dromel.append_child(expanded_references_container)
 
@@ -529,11 +621,15 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
     ActiveViewElements(
       mentions_panel:,
       mentions_container:,
+      comments_panel:,
+      comments_container:,
+      comments_input:,
       topic_panel:,
       topic_container:,
       expanded_references_panel:,
       expanded_references_container:,
       mentions_tokens: array.from_list([]),
+      comments_tokens: array.from_list([]),
       topic_children_tokens: array.from_list([]),
       expanded_references_tokens: array.from_list([]),
     )
@@ -553,6 +649,9 @@ fn reset_active_view() -> Result(ActiveViewElements, Nil) {
       let _ = dromel.set_inner_html(elements.mentions_panel, "")
       dromel.set_scroll_top(elements.mentions_panel, 0.0)
 
+      let _ = dromel.set_inner_html(elements.comments_panel, "")
+      dromel.set_scroll_top(elements.comments_panel, 0.0)
+
       let _ = dromel.set_inner_html(elements.topic_panel, "")
       // Reset the topic panel style to default (removes out-of-scope border color)
       let _ = dromel.set_style(elements.topic_panel, panel_style)
@@ -570,6 +669,7 @@ fn reset_active_view() -> Result(ActiveViewElements, Nil) {
         ActiveViewElements(
           ..elements,
           mentions_tokens: array.from_list([]),
+          comments_tokens: array.from_list([]),
           topic_children_tokens: array.from_list([]),
           expanded_references_tokens: array.from_list([]),
         )
@@ -632,10 +732,9 @@ fn populate_reference_source(
 ) -> Nil {
   case source_text {
     Ok(source_text) -> {
-      let _ =
-        dromel.new_div()
-        |> dromel.set_inner_html(source_text)
-        |> dromel.append_as_child(to: reference_source)
+      dromel.new_div()
+      |> dromel.set_inner_html(source_text)
+      |> dromel.append_as_child(to: reference_source)
       Nil
     }
     Error(error) -> {
@@ -686,39 +785,42 @@ fn populate_grouped_source_panel(
           dromel.new_div()
           |> dromel.append_as_child(to: group_container)
 
-        audit_data.with_topic_data(ref_topic, fn(_metadata, source_text) {
-          let reference_source =
-            dromel.new_div()
-            |> dromel.add_class(elements.source_container_class)
-            |> dromel.set_data(topic_key, ref_topic.id)
-            |> dromel.set_data(contract_key, ref_group.scope.id)
-            |> dromel.set_style(combined_panel_style)
-            |> dromel.add_style("padding-left: 0.5rem;")
+        audit_data.with_topic_data(
+          ref_topic,
+          fn(_metadata, source_text, _comments) {
+            let reference_source =
+              dromel.new_div()
+              |> dromel.add_class(elements.source_container_class)
+              |> dromel.set_data(topic_key, ref_topic.id)
+              |> dromel.set_data(contract_key, ref_group.scope.id)
+              |> dromel.set_style(combined_panel_style)
+              |> dromel.add_style("padding-left: 0.5rem;")
 
-          // Apply out-of-scope border color if scope is not in scope
-          case ref_group.is_in_scope {
-            True -> Nil
-            False -> {
-              dromel.add_style(
-                reference_source,
-                "border-color: var(--color-body-out-of-scope-bg)",
-              )
-              Nil
+            // Apply out-of-scope border color if scope is not in scope
+            case ref_group.is_in_scope {
+              True -> Nil
+              False -> {
+                dromel.add_style(
+                  reference_source,
+                  "border-color: var(--color-body-out-of-scope-bg)",
+                )
+                Nil
+              }
             }
-          }
 
-          apply_first_last_style(reference_source, index, total_references)
-          populate_reference_source(reference_source, source_text)
+            apply_first_last_style(reference_source, index, total_references)
+            populate_reference_source(reference_source, source_text)
 
-          let _ =
-            source_placeholder
-            |> dromel.append_child(reference_source)
+            let _ =
+              source_placeholder
+              |> dromel.append_child(reference_source)
 
-          // Re-gather tokens after each source loads
-          gather_panel_tokens(config)
+            // Re-gather tokens after each source loads
+            gather_panel_tokens(config)
 
-          Nil
-        })
+            Nil
+          },
+        )
 
         index + 1
       })
@@ -738,74 +840,83 @@ fn populate_grouped_source_panel(
               dromel.new_div()
               |> dromel.append_as_child(to: group_container)
 
-            audit_data.with_topic_data(ref_topic, fn(_metadata, source_text) {
-              let reference_source =
-                dromel.new_div()
-                |> dromel.add_class(elements.source_container_class)
-                |> dromel.set_data(topic_key, ref_topic.id)
-                |> dromel.set_data(member_key, nested_group.subscope.id)
-                |> dromel.set_data(contract_key, ref_group.scope.id)
-                |> dromel.set_style(combined_panel_style)
-                |> dromel.add_style("padding-left: 0.5rem;")
+            audit_data.with_topic_data(
+              ref_topic,
+              fn(_metadata, source_text, _comments) {
+                let reference_source =
+                  dromel.new_div()
+                  |> dromel.add_class(elements.source_container_class)
+                  |> dromel.set_data(topic_key, ref_topic.id)
+                  |> dromel.set_data(member_key, nested_group.subscope.id)
+                  |> dromel.set_data(contract_key, ref_group.scope.id)
+                  |> dromel.set_style(combined_panel_style)
+                  |> dromel.add_style("padding-left: 0.5rem;")
 
-              // Apply out-of-scope border color if contract is not in scope
-              case ref_group.is_in_scope {
-                True -> Nil
-                False -> {
-                  dromel.add_style(
-                    reference_source,
-                    "border-color: var(--color-body-out-of-scope-bg)",
-                  )
-                  Nil
+                // Apply out-of-scope border color if contract is not in scope
+                case ref_group.is_in_scope {
+                  True -> Nil
+                  False -> {
+                    dromel.add_style(
+                      reference_source,
+                      "border-color: var(--color-body-out-of-scope-bg)",
+                    )
+                    Nil
+                  }
                 }
-              }
 
-              apply_first_last_style(reference_source, index, total_references)
+                apply_first_last_style(
+                  reference_source,
+                  index,
+                  total_references,
+                )
 
-              // Add subscope title only for the first reference in the nested group
-              case nested_ref_index {
-                0 -> {
-                  let subscope_title =
-                    dromel.new_div()
-                    |> dromel.set_style(combined_panel_member_title_style)
-                    |> dromel.set_inner_html("...")
-                    |> dromel.append_as_child(to: reference_source)
+                // Add subscope title only for the first reference in the nested group
+                case nested_ref_index {
+                  0 -> {
+                    let subscope_title =
+                      dromel.new_div()
+                      |> dromel.set_style(combined_panel_member_title_style)
+                      |> dromel.set_inner_html("...")
+                      |> dromel.append_as_child(to: reference_source)
 
-                  audit_data.with_topic_metadata(
-                    nested_group.subscope,
-                    fn(metadata: Result(audit_data.TopicMetadata, snag.Snag)) -> Nil {
-                      case metadata {
-                        Ok(metadata) -> {
-                          subscope_title
-                          |> dromel.set_inner_html(
-                            audit_data.topic_metadata_highlighted_name(metadata),
-                          )
-                          Nil
+                    audit_data.with_topic_metadata(
+                      nested_group.subscope,
+                      fn(metadata: Result(audit_data.TopicMetadata, snag.Snag)) -> Nil {
+                        case metadata {
+                          Ok(metadata) -> {
+                            subscope_title
+                            |> dromel.set_inner_html(
+                              audit_data.topic_metadata_highlighted_name(
+                                metadata,
+                              ),
+                            )
+                            Nil
+                          }
+                          Error(snag) -> {
+                            subscope_title
+                            |> dromel.set_inner_html(snag.line_print(snag))
+                            Nil
+                          }
                         }
-                        Error(snag) -> {
-                          subscope_title
-                          |> dromel.set_inner_html(snag.line_print(snag))
-                          Nil
-                        }
-                      }
-                    },
-                  )
-                  Nil
+                      },
+                    )
+                    Nil
+                  }
+                  _ -> Nil
                 }
-                _ -> Nil
-              }
 
-              populate_reference_source(reference_source, source_text)
+                populate_reference_source(reference_source, source_text)
 
-              let _ =
-                source_placeholder
-                |> dromel.append_child(reference_source)
+                let _ =
+                  source_placeholder
+                  |> dromel.append_child(reference_source)
 
-              // Re-gather tokens after each source loads
-              gather_panel_tokens(config)
+                // Re-gather tokens after each source loads
+                gather_panel_tokens(config)
 
-              Nil
-            })
+                Nil
+              },
+            )
 
             index + 1
           },
@@ -820,7 +931,7 @@ fn gather_panel_tokens(config: GroupedSourcePanelConfig) -> Nil {
   case get_active_view_elements() {
     Ok(active_elements) -> {
       let tokens =
-        dromel.query_element_all(config.panel, elements.source_topic_tokens)
+        dromel.query_element_all(config.panel, elements.topic_tokens_class)
       let active_panel = get_active_panel(config.container)
       case config.token_field {
         MentionsPanelTokens -> {
@@ -836,7 +947,26 @@ fn gather_panel_tokens(config: GroupedSourcePanelConfig) -> Nil {
                 Error(Nil) -> Nil
               }
             }
-            history_graph.TopicPanel | history_graph.ReferencesPanel -> Nil
+            history_graph.CommentsPanel
+            | history_graph.TopicPanel
+            | history_graph.ReferencesPanel -> Nil
+          }
+        }
+        CommentsPanelTokens -> {
+          set_active_view_elements(
+            ActiveViewElements(..active_elements, comments_tokens: tokens),
+          )
+          case active_panel {
+            history_graph.CommentsPanel -> {
+              let index = get_current_comments_index(config.container)
+              case array.get(tokens, index) {
+                Ok(el) -> focus_topic_token_and_prefetch(el)
+                Error(Nil) -> Nil
+              }
+            }
+            history_graph.MentionsPanel
+            | history_graph.TopicPanel
+            | history_graph.ReferencesPanel -> Nil
           }
         }
         TopicPanelTokens -> {
@@ -855,7 +985,9 @@ fn gather_panel_tokens(config: GroupedSourcePanelConfig) -> Nil {
                 Error(Nil) -> Nil
               }
             }
-            history_graph.MentionsPanel | history_graph.ReferencesPanel -> Nil
+            history_graph.MentionsPanel
+            | history_graph.CommentsPanel
+            | history_graph.ReferencesPanel -> Nil
           }
         }
         ReferencesPanelTokens -> {
@@ -874,7 +1006,9 @@ fn gather_panel_tokens(config: GroupedSourcePanelConfig) -> Nil {
                 Error(Nil) -> Nil
               }
             }
-            history_graph.MentionsPanel | history_graph.TopicPanel -> Nil
+            history_graph.MentionsPanel
+            | history_graph.CommentsPanel
+            | history_graph.TopicPanel -> Nil
           }
         }
       }
@@ -912,7 +1046,7 @@ fn populate_topic_panel(
           [TextPart(title)]
         }
         audit_data.NamedTopic(..) -> panic as "unreachable"
-        audit_data.CommentTopic(topic:, ..) -> [TextPart(topic.id)]
+        audit_data.CommentTopic(..) -> [TextPart("Comment")]
       }
 
       // For unnamed topics, directly render the topic's source text
@@ -1025,6 +1159,64 @@ fn populate_mentions_panel(
       Nil
     }
   }
+}
+
+/// Populate the comments panel with comments for the given topic
+fn populate_comments_panel(
+  container: element.Element,
+  topic_id: String,
+  elements: ActiveViewElements,
+) -> Nil {
+  let config =
+    GroupedSourcePanelConfig(
+      container:,
+      panel: elements.comments_panel,
+      token_field: CommentsPanelTokens,
+    )
+  audit_data.with_topic_comments(topic_id, fn(comments_result) {
+    case comments_result {
+      Ok(comment_ids) -> {
+        list.index_fold(comment_ids, 0, fn(index, comment_id, _) {
+          let comment_topic = audit_data.Topic(id: comment_id)
+          let source_placeholder =
+            dromel.new_div()
+            |> dromel.append_as_child(to: elements.comments_panel)
+
+          audit_data.with_topic_data(
+            comment_topic,
+            fn(_metadata, source_text, _comments) {
+              let comment_source =
+                dromel.new_div()
+                |> dromel.add_class(elements.source_container_class)
+                |> dromel.set_data(topic_key, comment_id)
+                |> dromel.set_style(single_panel_style)
+
+              populate_reference_source(comment_source, source_text)
+
+              let _ =
+                source_placeholder
+                |> dromel.append_child(comment_source)
+
+              gather_panel_tokens(config)
+
+              Nil
+            },
+          )
+
+          index + 1
+        })
+        Nil
+      }
+      Error(_snag) -> {
+        let _ =
+          elements.comments_panel
+          |> dromel.set_inner_html(
+            "<div style='color: var(--color-body-text); font-size: 0.9rem;'>Unable to load comments</div>",
+          )
+        Nil
+      }
+    }
+  })
 }
 
 // ============================================================================
@@ -1241,6 +1433,7 @@ pub fn navigate_to_new_entry(
         container,
         history_graph.FocusState(
           mentions_index: 0,
+          comments_index: 0,
           topic_index: 0,
           references_index: 0,
           active_panel: history_graph.TopicPanel,
@@ -1254,7 +1447,7 @@ pub fn navigate_to_new_entry(
       // but no new context to replace it with yet.
       audit_data.with_topic_data(
         audit_data.Topic(id: new_entry.topic_id),
-        fn(metadata, _source_text) {
+        fn(metadata, _source_text, _comments) {
           // Reset DOM elements for reuse (clears content)
           let elements = case reset_active_view() {
             Ok(elements) -> elements
@@ -1282,6 +1475,9 @@ pub fn navigate_to_new_entry(
 
           // Populate mentions panel
           populate_mentions_panel(container, metadata, elements)
+
+          // Populate comments panel
+          populate_comments_panel(container, new_entry.topic_id, elements)
         },
       )
     }
@@ -1333,7 +1529,7 @@ pub fn navigate_back(container) -> Nil {
               let parent_topic = audit_data.Topic(id: parent_entry.topic_id)
               audit_data.with_topic_data(
                 parent_topic,
-                fn(metadata, _source_text) {
+                fn(metadata, _source_text, _comments) {
                   // Reset DOM elements for reuse (saves scroll position, clears content)
                   let elements = case reset_active_view() {
                     Ok(elements) -> elements
@@ -1358,6 +1554,13 @@ pub fn navigate_back(container) -> Nil {
 
                   // Populate mentions panel
                   populate_mentions_panel(container, metadata, elements)
+
+                  // Populate comments panel
+                  populate_comments_panel(
+                    container,
+                    parent_entry.topic_id,
+                    elements,
+                  )
                 },
               )
 
@@ -1410,7 +1613,7 @@ pub fn navigate_forward(container) -> Nil {
               let child_topic = audit_data.Topic(id: child_entry.topic_id)
               audit_data.with_topic_data(
                 child_topic,
-                fn(metadata, _source_text) {
+                fn(metadata, _source_text, _comments) {
                   // Reset DOM elements for reuse (saves scroll position, clears content)
                   let elements = case reset_active_view() {
                     Ok(elements) -> elements
@@ -1435,6 +1638,13 @@ pub fn navigate_forward(container) -> Nil {
 
                   // Populate mentions panel
                   populate_mentions_panel(container, metadata, elements)
+
+                  // Populate comments panel
+                  populate_comments_panel(
+                    container,
+                    child_entry.topic_id,
+                    elements,
+                  )
                 },
               )
 
@@ -1471,6 +1681,7 @@ pub fn handle_topic_view_keydown(event) {
       event.prevent_default(event)
       case get_active_panel(container) {
         history_graph.MentionsPanel -> navigate_into_mention(container)
+        history_graph.CommentsPanel -> navigate_into_comment(container)
         history_graph.TopicPanel -> navigate_into_topic(container)
         history_graph.ReferencesPanel -> navigate_into_reference(container)
       }
@@ -1490,15 +1701,17 @@ pub fn handle_topic_view_keydown(event) {
       event.prevent_default(event)
       case get_active_panel(container) {
         history_graph.MentionsPanel -> {
+          gather_comments_tokens()
+          set_active_panel(container, history_graph.CommentsPanel)
+          move_to_comment_child(container, 0)
+        }
+        history_graph.CommentsPanel -> {
           set_active_panel(container, history_graph.TopicPanel)
-          // Refocus the current topic child
           move_to_topic_child(container, 0)
         }
         history_graph.TopicPanel -> {
-          // Gather reference tokens lazily when entering references panel
           gather_expanded_references_tokens()
           set_active_panel(container, history_graph.ReferencesPanel)
-          // Focus the first reference token if available
           move_to_reference_child(container, 0)
         }
         history_graph.ReferencesPanel -> Nil
@@ -1510,14 +1723,16 @@ pub fn handle_topic_view_keydown(event) {
       case get_active_panel(container) {
         history_graph.ReferencesPanel -> {
           set_active_panel(container, history_graph.TopicPanel)
-          // Refocus the current topic child
           move_to_topic_child(container, 0)
         }
         history_graph.TopicPanel -> {
-          // Gather mentions tokens lazily when entering mentions panel
+          gather_comments_tokens()
+          set_active_panel(container, history_graph.CommentsPanel)
+          move_to_comment_child(container, 0)
+        }
+        history_graph.CommentsPanel -> {
           gather_mentions_tokens()
           set_active_panel(container, history_graph.MentionsPanel)
-          // Focus the current mention token
           move_to_mention_child(container, 0)
         }
         history_graph.MentionsPanel -> Nil
@@ -1528,6 +1743,7 @@ pub fn handle_topic_view_keydown(event) {
       event.prevent_default(event)
       case get_active_panel(container) {
         history_graph.MentionsPanel -> move_to_mention_child(container, 1)
+        history_graph.CommentsPanel -> move_to_comment_child(container, 1)
         history_graph.TopicPanel -> move_to_topic_child(container, 1)
         history_graph.ReferencesPanel -> move_to_reference_child(container, 1)
       }
@@ -1536,6 +1752,7 @@ pub fn handle_topic_view_keydown(event) {
       event.prevent_default(event)
       case get_active_panel(container) {
         history_graph.MentionsPanel -> move_to_mention_child(container, 10)
+        history_graph.CommentsPanel -> move_to_comment_child(container, 10)
         history_graph.TopicPanel -> move_to_topic_child(container, 10)
         history_graph.ReferencesPanel -> move_to_reference_child(container, 10)
       }
@@ -1545,6 +1762,7 @@ pub fn handle_topic_view_keydown(event) {
       event.prevent_default(event)
       case get_active_panel(container) {
         history_graph.MentionsPanel -> move_to_mention_child(container, -1)
+        history_graph.CommentsPanel -> move_to_comment_child(container, -1)
         history_graph.TopicPanel -> move_to_topic_child(container, -1)
         history_graph.ReferencesPanel -> move_to_reference_child(container, -1)
       }
@@ -1553,6 +1771,7 @@ pub fn handle_topic_view_keydown(event) {
       event.prevent_default(event)
       case get_active_panel(container) {
         history_graph.MentionsPanel -> move_to_mention_child(container, -10)
+        history_graph.CommentsPanel -> move_to_comment_child(container, -10)
         history_graph.TopicPanel -> move_to_topic_child(container, -10)
         history_graph.ReferencesPanel -> move_to_reference_child(container, -10)
       }
@@ -1562,8 +1781,20 @@ pub fn handle_topic_view_keydown(event) {
       event.prevent_default(event)
       case get_active_panel(container) {
         history_graph.MentionsPanel -> navigate_scope_up_mention(container)
+        history_graph.CommentsPanel -> navigate_scope_up_comment(container)
         history_graph.TopicPanel -> navigate_scope_up_topic(container)
         history_graph.ReferencesPanel -> navigate_scope_up_reference(container)
+      }
+    }
+
+    False, False, "c" -> {
+      event.prevent_default(event)
+      case get_active_view_elements() {
+        Ok(elems) -> {
+          let _ = dromel.focus(elems.comments_input)
+          Nil
+        }
+        Error(Nil) -> Nil
       }
     }
 
@@ -1858,6 +2089,7 @@ fn restore_panel_focus(
 ) -> Nil {
   case panel {
     history_graph.MentionsPanel -> gather_mentions_tokens()
+    history_graph.CommentsPanel -> gather_comments_tokens()
     history_graph.TopicPanel -> gather_topic_panel_tokens()
     history_graph.ReferencesPanel -> gather_expanded_references_tokens()
   }
@@ -1867,6 +2099,7 @@ fn restore_panel_focus(
     Ok(elements) -> {
       let tokens = case panel {
         history_graph.MentionsPanel -> elements.mentions_tokens
+        history_graph.CommentsPanel -> elements.comments_tokens
         history_graph.TopicPanel -> elements.topic_children_tokens
         history_graph.ReferencesPanel -> elements.expanded_references_tokens
       }
@@ -1888,7 +2121,7 @@ fn gather_topic_panel_tokens() -> Nil {
       let tokens =
         dromel.query_element_all(
           active_elements.topic_panel,
-          elements.source_topic_tokens,
+          elements.topic_tokens_class,
         )
       set_active_view_elements(
         ActiveViewElements(..active_elements, topic_children_tokens: tokens),
@@ -2078,6 +2311,8 @@ fn find_and_focus_element_by_id(
           case panel {
             history_graph.MentionsPanel ->
               set_current_mentions_index(container, index)
+            history_graph.CommentsPanel ->
+              set_current_comments_index(container, index)
             history_graph.TopicPanel ->
               set_current_child_topic_index(container, index)
             history_graph.ReferencesPanel ->
@@ -2168,6 +2403,35 @@ fn move_to_reference_child(container, index_diff) {
   }
 }
 
+fn move_to_comment_child(container, index_diff) {
+  case get_active_view_elements() {
+    Ok(elements) -> {
+      let current_index = get_current_comments_index(container)
+      let new_index = case current_index + index_diff {
+        n if n <= 0 -> 0
+        n ->
+          case array.size(elements.comments_tokens) - 1 {
+            size if n > size -> size
+            _size -> n
+          }
+      }
+
+      case elements.comments_tokens |> array.get(new_index) {
+        Ok(el) -> {
+          focus_topic_token_and_prefetch(el)
+          set_current_comments_index(container, new_index)
+        }
+        Error(Nil) -> {
+          io.println("no comment index diff of " <> int.to_string(index_diff))
+        }
+      }
+    }
+    Error(Nil) -> {
+      io.println_error("no active view")
+    }
+  }
+}
+
 fn move_to_mention_child(container, index_diff) {
   case get_active_view_elements() {
     Ok(elements) -> {
@@ -2205,7 +2469,7 @@ fn gather_mentions_tokens() -> Nil {
       let tokens =
         dromel.query_element_all(
           active_elements.mentions_panel,
-          elements.source_topic_tokens,
+          elements.topic_tokens_class,
         )
       set_active_view_elements(
         ActiveViewElements(..active_elements, mentions_tokens: tokens),
@@ -2222,7 +2486,7 @@ fn gather_expanded_references_tokens() -> Nil {
       let tokens =
         dromel.query_element_all(
           active_elements.expanded_references_panel,
-          elements.source_topic_tokens,
+          elements.topic_tokens_class,
         )
       set_active_view_elements(
         ActiveViewElements(
@@ -2236,12 +2500,103 @@ fn gather_expanded_references_tokens() -> Nil {
   }
 }
 
+fn gather_comments_tokens() -> Nil {
+  case get_active_view_elements() {
+    Ok(active_elements) -> {
+      let tokens =
+        dromel.query_element_all(
+          active_elements.comments_panel,
+          elements.topic_tokens_class,
+        )
+      set_active_view_elements(
+        ActiveViewElements(..active_elements, comments_tokens: tokens),
+      )
+      Nil
+    }
+    Error(Nil) -> Nil
+  }
+}
+
+fn navigate_into_comment(container) {
+  case get_active_view_elements() {
+    Error(Nil) -> io.println_error("No active topic view")
+    Ok(elements) -> {
+      case
+        array.get(
+          elements.comments_tokens,
+          get_current_comments_index(container),
+        )
+        |> result.try(dromel.get_data(_, topic_key))
+        |> result.map(audit_data.Topic)
+      {
+        Error(Nil) -> io.println_error("Unable to read comment topic")
+        Ok(topic) -> {
+          navigate_to_new_entry(container, topic)
+        }
+      }
+    }
+  }
+}
+
+fn navigate_scope_up_comment(container) {
+  case get_active_view_elements() {
+    Error(Nil) -> io.println_error("No active view elements")
+    Ok(elements) -> {
+      case
+        array.get(
+          elements.comments_tokens,
+          get_current_comments_index(container),
+        )
+      {
+        Error(Nil) -> io.println_error("No comment element selected")
+        Ok(focused_element) -> {
+          let focused_element_id =
+            dromel.get_attribute(focused_element, "id") |> result.unwrap("")
+
+          case find_source_container(focused_element) {
+            Error(Nil) -> io.println_error("Unable to find source container")
+            Ok(source_container) -> {
+              case dromel.get_data(source_container, member_key) {
+                Ok(member_id) -> {
+                  collapse_member_group(
+                    source_container,
+                    member_id,
+                    focused_element_id,
+                    container,
+                    history_graph.CommentsPanel,
+                  )
+                }
+                Error(Nil) -> {
+                  case dromel.get_data(source_container, contract_key) {
+                    Ok(contract_id) -> {
+                      collapse_contract_group(
+                        source_container,
+                        contract_id,
+                        focused_element_id,
+                        container,
+                        history_graph.CommentsPanel,
+                      )
+                    }
+                    Error(Nil) -> {
+                      io.println("Already at top scope level")
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 fn focus_topic_token_and_prefetch(element) {
-  let _ = dromel.focus(element)
+  dromel.focus(element)
 
   case dromel.get_data(element, elements.token_topic_id_key) {
     Ok(topic_id) ->
-      audit_data.with_topic_data(audit_data.Topic(topic_id), fn(_, _) { Nil })
+      audit_data.with_topic_data(audit_data.Topic(topic_id), fn(_, _, _) { Nil })
     Error(Nil) -> io.println_error("No topic ID found for prefetch")
   }
 }

@@ -751,7 +751,7 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
         DocumentationInlineCode -> "<span>DocumentationInlineCode</span>"
         Other -> "<span>Other</span>"
       }
-    CommentTopic(topic:, ..) -> "<span>" <> topic.id <> "</span>"
+    CommentTopic(..) -> "<span>Comment</span>"
   }
 
   "<code>" <> highlighted_name <> "</code>"
@@ -1049,9 +1049,14 @@ pub fn with_topic_metadata(topic: Topic, callback) {
 
 // Fetches both metadata and source text for a topic
 pub fn with_topic_data(topic: Topic, callback) {
-  case read_topic_metadata(topic.id), read_source_text(topic.id) {
-    Ok(metadata), Ok(source_text) -> callback(Ok(metadata), Ok(source_text))
-    _, _ -> {
+  case
+    read_topic_metadata(topic.id),
+    read_source_text(topic.id),
+    read_topic_comments(topic.id)
+  {
+    Ok(metadata), Ok(source_text), Ok(comments) ->
+      callback(Ok(metadata), Ok(source_text), Ok(comments))
+    _, _, _ -> {
       let metadata_promise = case read_topic_metadata_promise(topic.id) {
         Ok(promise) -> promise
         Error(Nil) -> {
@@ -1066,6 +1071,15 @@ pub fn with_topic_data(topic: Topic, callback) {
         Error(Nil) -> {
           let promise = fetch_source_text(topic)
           set_source_text_promise(topic.id, promise)
+          promise
+        }
+      }
+
+      let comments_promise = case read_topic_comments_promise(topic.id) {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_topic_comments(topic.id)
+          set_topic_comments_promise(topic.id, promise)
           promise
         }
       }
@@ -1091,7 +1105,21 @@ pub fn with_topic_data(topic: Topic, callback) {
               |> io.println_error
           }
 
-          callback(metadata, source_text)
+          promise.await(comments_promise, fn(comments) {
+            case comments {
+              Ok(comments) -> set_topic_comments(topic.id, comments)
+              Error(error) ->
+                snag.layer(
+                  error,
+                  "Unable to fetch comments for topic " <> topic.id,
+                )
+                |> snag.line_print
+                |> io.println_error
+            }
+
+            callback(metadata, source_text, comments)
+            promise.resolve(Nil)
+          })
           promise.resolve(Nil)
         })
         promise.resolve(Nil)

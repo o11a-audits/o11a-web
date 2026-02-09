@@ -18,6 +18,4 @@ pub const source_container_class = dromel.Class(
 // Data keys
 pub const token_topic_id_key = dromel.DataKey(key: "topic")
 
-pub const source_topic_tokens = dromel.Selector(
-  selector: ".topic-token[data-topic]",
-)
+pub const topic_tokens_class = dromel.Class(class: "topic-token")
