@@ -241,15 +241,13 @@ fn flatten_expanded_references(
   list.flat_map(expanded_references, fn(group) {
     let scope_ids = [group.scope.id]
     let scope_ref_ids =
-      list.map(group.scope_references, fn(entry) {
-        audit_data.reference_entry_topic(entry).id
-      })
+      list.map(group.scope_references, fn(entry) { entry.reference_topic.id })
     let nested_ids =
       list.flat_map(group.nested_references, fn(nested_group) {
         [
           nested_group.subscope.id,
           ..list.map(nested_group.references, fn(entry) {
-            audit_data.reference_entry_topic(entry).id
+            entry.reference_topic.id
           })
         ]
       })
@@ -727,15 +725,62 @@ fn reapply_first_last_styles(group_container: element.Element) -> Nil {
 
 /// Helper to populate a reference source element with source text or error
 fn populate_reference_source(
+  ref_entry: audit_data.ReferenceEntry,
   reference_source: element.Element,
   source_text: Result(String, snag.Snag),
 ) -> Nil {
   case source_text {
     Ok(source_text) -> {
-      dromel.new_div()
-      |> dromel.set_inner_html(source_text)
-      |> dromel.append_as_child(to: reference_source)
-      Nil
+      case ref_entry {
+        audit_data.ProjectReference(..) -> {
+          dromel.new_div()
+          |> dromel.set_inner_html(source_text)
+          |> dromel.append_as_child(to: reference_source)
+          Nil
+        }
+        audit_data.ProjectReferenceWithMentions(mention_topics:, ..)
+        | audit_data.CommentMention(mention_topics:, ..) -> {
+          let comments = dromel.new_div()
+
+          list.each(mention_topics, fn(mention_topic) {
+            let comment_placeholder =
+              dromel.new_div()
+              |> dromel.set_style(
+                // "outline: 1px solid var(--color-body-border); border-radius: 4px; margin-bottom: 0.5rem; padding-left: 0.5rem;",
+                // "margin-bottom: 0.5rem;",
+                "",
+              )
+              |> dromel.set_class(dromel.Class("inline-comment"))
+              |> dromel.add_class(elements.code_style_class)
+              |> dromel.append_as_child(to: comments)
+
+            audit_data.with_source_text(mention_topic, fn(comment_source_text) {
+              case comment_source_text {
+                Ok(text) -> {
+                  dromel.new_div()
+                  |> dromel.set_inner_html(text)
+                  |> dromel.append_as_child(to: comment_placeholder)
+                  Nil
+                }
+                Error(error) -> {
+                  dromel.new_div()
+                  |> dromel.set_inner_html(log.render_source_error(error))
+                  |> dromel.append_as_child(to: comment_placeholder)
+                  Nil
+                }
+              }
+            })
+          })
+
+          comments
+          |> dromel.append_as_child(to: reference_source)
+
+          dromel.new_div()
+          |> dromel.set_inner_html(source_text)
+          |> dromel.append_as_child(to: reference_source)
+          Nil
+        }
+      }
     }
     Error(error) -> {
       let _ =
@@ -780,18 +825,17 @@ fn populate_grouped_source_panel(
     // Render scope-level references
     let index_after_scope =
       list.index_fold(ref_group.scope_references, 0, fn(index, ref_entry, _) {
-        let ref_topic = audit_data.reference_entry_topic(ref_entry)
         let source_placeholder =
           dromel.new_div()
           |> dromel.append_as_child(to: group_container)
 
         audit_data.with_topic_data(
-          ref_topic,
+          ref_entry.reference_topic,
           fn(_metadata, source_text, _comments) {
             let reference_source =
               dromel.new_div()
               |> dromel.add_class(elements.source_container_class)
-              |> dromel.set_data(topic_key, ref_topic.id)
+              |> dromel.set_data(topic_key, ref_entry.reference_topic.id)
               |> dromel.set_data(contract_key, ref_group.scope.id)
               |> dromel.set_style(combined_panel_style)
               |> dromel.add_style("padding-left: 0.5rem;")
@@ -809,7 +853,7 @@ fn populate_grouped_source_panel(
             }
 
             apply_first_last_style(reference_source, index, total_references)
-            populate_reference_source(reference_source, source_text)
+            populate_reference_source(ref_entry, reference_source, source_text)
 
             let _ =
               source_placeholder
@@ -835,18 +879,17 @@ fn populate_grouped_source_panel(
           nested_group.references,
           current_index,
           fn(index, ref_entry, nested_ref_index) {
-            let ref_topic = audit_data.reference_entry_topic(ref_entry)
             let source_placeholder =
               dromel.new_div()
               |> dromel.append_as_child(to: group_container)
 
             audit_data.with_topic_data(
-              ref_topic,
+              ref_entry.reference_topic,
               fn(_metadata, source_text, _comments) {
                 let reference_source =
                   dromel.new_div()
                   |> dromel.add_class(elements.source_container_class)
-                  |> dromel.set_data(topic_key, ref_topic.id)
+                  |> dromel.set_data(topic_key, ref_entry.reference_topic.id)
                   |> dromel.set_data(member_key, nested_group.subscope.id)
                   |> dromel.set_data(contract_key, ref_group.scope.id)
                   |> dromel.set_style(combined_panel_style)
@@ -905,7 +948,11 @@ fn populate_grouped_source_panel(
                   _ -> Nil
                 }
 
-                populate_reference_source(reference_source, source_text)
+                populate_reference_source(
+                  ref_entry,
+                  reference_source,
+                  source_text,
+                )
 
                 let _ =
                   source_placeholder
@@ -1191,7 +1238,20 @@ fn populate_comments_panel(
                 |> dromel.set_data(topic_key, comment_id)
                 |> dromel.set_style(single_panel_style)
 
-              populate_reference_source(comment_source, source_text)
+              case source_text {
+                Ok(source_text) -> {
+                  dromel.new_div()
+                  |> dromel.set_inner_html(source_text)
+                  |> dromel.append_as_child(to: comment_source)
+                  Nil
+                }
+                Error(error) -> {
+                  dromel.new_div()
+                  |> dromel.set_inner_html(log.render_source_error(error))
+                  |> dromel.append_as_child(to: comment_source)
+                  Nil
+                }
+              }
 
               let _ =
                 source_placeholder

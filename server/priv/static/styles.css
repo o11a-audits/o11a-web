@@ -31,7 +31,7 @@
   --color-state-variable: #e06c75;
   --color-string: #98c379;
   --color-number: #d19a66;
-  --color-comment: #5c6370;
+  --color-inline-comment: #6e737e;
   --color-brace: #abb2bf;
   --color-documentation-link: #61afef;
 }
@@ -71,10 +71,12 @@ body {
 }
 
 /* Base code block styling */
-pre {
+pre,
+.comment-root,
+.code-style {
   font-family: "Fira Code", "Consolas", "Monaco", "Courier New", monospace;
   font-size: 0.9rem;
-  line-height: 1.6;
+  line-height: 1.5;
   margin: 0;
 }
 
@@ -180,8 +182,10 @@ code,
 }
 
 /* Comments */
-.comment {
-  color: var(--color-comment);
+.comment-root,
+.comment,
+.inline-comment {
+  color: var(--color-inline-comment);
   font-style: italic;
 }
 

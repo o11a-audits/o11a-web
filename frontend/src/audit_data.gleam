@@ -1210,14 +1210,6 @@ pub fn with_is_in_scope(scope, callback) {
   }
 }
 
-pub fn reference_entry_topic(entry: ReferenceEntry) -> Topic {
-  case entry {
-    ProjectReference(reference_topic:) -> reference_topic
-    ProjectReferenceWithMentions(reference_topic:, ..) -> reference_topic
-    CommentMention(reference_topic:, ..) -> reference_topic
-  }
-}
-
 // --- Collaborator Types ---
 
 pub type CommentType {
