@@ -322,6 +322,7 @@ pub type UnnamedTopicKind {
   DocumentationList
   DocumentationBlockQuote
   DocumentationInlineCode
+  Literal
   Other
 }
 
@@ -488,6 +489,7 @@ fn unnamed_topic_kind_decoder() -> decode.Decoder(UnnamedTopicKind) {
     "DocumentationList" -> decode.success(DocumentationList)
     "DocumentationBlockQuote" -> decode.success(DocumentationBlockQuote)
     "DocumentationInlineCode" -> decode.success(DocumentationInlineCode)
+    "Literal" -> decode.success(Literal)
     "Other" -> decode.success(Other)
     _ -> decode.failure(Other, "UnnamedTopicKind")
   }
@@ -749,6 +751,7 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
         DocumentationList -> "<span>DocumentationList</span>"
         DocumentationBlockQuote -> "<span>DocumentationBlockQuote</span>"
         DocumentationInlineCode -> "<span>DocumentationInlineCode</span>"
+        Literal -> "<span class=\"literal\">Literal</span>"
         Other -> "<span>Other</span>"
       }
     CommentTopic(..) -> "<span>Comment</span>"
