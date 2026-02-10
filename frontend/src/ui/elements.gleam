@@ -21,7 +21,7 @@ pub const code_style_class = dromel.Class(class: "code-style")
 pub const token_topic_id_key = dromel.DataKey(key: "topic")
 
 pub fn topic_selector(topic_id: String) {
-  dromel.Selector(selector: "[data-topic-id=\"" <> topic_id <> "\"]")
+  dromel.Selector(selector: "[data-topic=\"" <> topic_id <> "\"]")
 }
 
 pub const topic_tokens_class = dromel.Class(class: "topic-token")

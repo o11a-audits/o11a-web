@@ -204,7 +204,7 @@ fn setup_view_container() {
     dromel.new_div()
     |> dromel.set_id(view_container_id)
     |> dromel.set_style(
-      "display: flex; flex: 1; min-height: 0; justify-content: center; gap: 0.5rem; background: var(--color-body-bg);",
+      "display: flex; flex: 1; min-height: 0; justify-content: center; gap: 0.25rem; background: var(--color-body-bg);",
     )
 
   let _ = audit_data.app_element() |> dromel.append_child(view_container)
@@ -491,6 +491,54 @@ const scope_overflow_gradient_style_visible = "position: absolute; left: 0; top:
 
 const footer_style = "position: absolute; bottom: 0.25rem; right: 0.5rem;"
 
+fn parse_comment_type(content: String) -> #(audit_data.CommentType, String) {
+  let #(type_, rest) = case string.trim_start(content) {
+    "/note " <> rest -> #(audit_data.Note, rest)
+    "/i " <> rest -> #(audit_data.Info, rest)
+    "/info " <> rest -> #(audit_data.Info, rest)
+    "/q " <> rest -> #(audit_data.Question, rest)
+    "/question " <> rest -> #(audit_data.Question, rest)
+    "/a " <> rest -> #(audit_data.Answer, rest)
+    "/answer " <> rest -> #(audit_data.Answer, rest)
+    "/t " <> rest -> #(audit_data.Todo, rest)
+    "/todo " <> rest -> #(audit_data.Todo, rest)
+    "/f " <> rest -> #(audit_data.FindingLead, rest)
+    "/finding " <> rest -> #(audit_data.FindingLead, rest)
+    _ -> #(audit_data.Note, content)
+  }
+  #(type_, string.trim_start(rest))
+}
+
+const label_visible_style = "position: absolute; top: 0; left: 0.5rem; font-size: 0.7rem; color: var(--color-body-text); background: var(--color-body-bg); padding: 0 0.25rem; z-index: 1;"
+
+fn update_comment_type_label(e: event.Event(a), label: element.Element) -> Nil {
+  case dromel.cast(event.target(e)) {
+    Ok(input_elem) -> {
+      case dromel.value(input_elem) {
+        Ok(content) -> {
+          let #(comment_type, _) = parse_comment_type(content)
+          case comment_type {
+            audit_data.Note -> {
+              dromel.set_style(label, "display: none;")
+              Nil
+            }
+            _ -> {
+              dromel.set_inner_text(
+                label,
+                audit_data.comment_type_to_string(comment_type),
+              )
+              dromel.set_style(label, label_visible_style)
+              Nil
+            }
+          }
+        }
+        _ -> Nil
+      }
+    }
+    Error(_) -> Nil
+  }
+}
+
 fn mount_topic_view(container: element.Element) -> ActiveViewElements {
   // Create the mentions panel element
   let mentions_panel =
@@ -515,6 +563,10 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
     |> dromel.set_class(elements.source_container_class)
     |> dromel.set_style(panel_style)
 
+  let comment_type_label =
+    dromel.new_span()
+    |> dromel.add_class(elements.code_style_class)
+
   let comments_input =
     dromel.new_input()
     |> dromel.set_type("text")
@@ -526,27 +578,31 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
       case event.key(e) {
         "Enter" -> {
           event.prevent_default(e)
-          event.stop_propagation(e)
           case dromel.cast(event.target(e)) {
             Ok(input_elem) -> {
               case dromel.value(input_elem) {
                 Ok(content) if content != "" -> {
                   case get_active_topic_view(container) {
                     Ok(active_view) -> {
+                      let #(comment_type, comment_content) =
+                        parse_comment_type(content)
                       let _ =
                         dromel.set_attribute(input_elem, "disabled", "true")
                       audit_data.create_comment(
                         active_view.topic_id,
-                        content,
+                        comment_content,
                         0,
-                        audit_data.Note,
+                        comment_type,
                         fn(result) {
                           case result {
                             Ok(_) -> {
-                              let _ = dromel.set_value(input_elem, "")
-                              let _ =
-                                dromel.remove_attribute(input_elem, "disabled")
-                              let _ = dromel.blur(input_elem)
+                              dromel.set_value(input_elem, "")
+                              dromel.remove_attribute(input_elem, "disabled")
+                              dromel.set_style(
+                                comment_type_label,
+                                "display: none;",
+                              )
+                              dromel.blur(input_elem)
                               case get_active_panel(container) {
                                 history_graph.MentionsPanel ->
                                   move_to_mention_child(container, 0)
@@ -581,10 +637,9 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
         }
         "Escape" -> {
           event.prevent_default(e)
-          event.stop_propagation(e)
           case dromel.cast(event.target(e)) {
             Ok(input_elem) -> {
-              let _ = dromel.blur(input_elem)
+              dromel.blur(input_elem)
               case get_active_panel(container) {
                 history_graph.MentionsPanel ->
                   move_to_mention_child(container, 0)
@@ -601,11 +656,17 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
         _ -> Nil
       }
     })
-    |> dromel.add_event_listener("focus", fn(_e) {
+    |> dromel.add_event_listener("focus", fn(e) {
       context.add_context(context.Input)
+      update_comment_type_label(e, comment_type_label)
     })
     |> dromel.add_event_listener("blur", fn(_e) {
       context.remove_context(context.Input)
+      dromel.set_style(comment_type_label, "display: none;")
+      Nil
+    })
+    |> dromel.add_event_listener("input", fn(e) {
+      update_comment_type_label(e, comment_type_label)
     })
 
   let comments_footer =
@@ -617,6 +678,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
     dromel.new_div()
     |> dromel.set_style(container_style)
     |> dromel.append_child(comments_footer)
+    |> dromel.append_child(comment_type_label)
     |> dromel.append_child(comments_input)
     |> dromel.append_child(comments_panel)
 
@@ -1759,8 +1821,14 @@ pub fn can_navigate_forward(container) -> Bool {
 pub fn handle_topic_view_keydown(event) {
   let container = topic_view_container()
 
-  case event.ctrl_key(event), event.shift_key(event), event.key(event) {
-    False, False, "h" -> {
+  case
+    context.get_current_context(),
+    event.ctrl_key(event),
+    event.shift_key(event),
+    event.key(event)
+  {
+    context.Input, _, _, _ -> Nil
+    _, False, False, "h" -> {
       event.prevent_default(event)
       case get_active_panel(container) {
         history_graph.MentionsPanel -> navigate_into_mention(container)
@@ -1770,17 +1838,17 @@ pub fn handle_topic_view_keydown(event) {
       }
     }
 
-    False, False, "p" -> {
+    _, False, False, "p" -> {
       event.prevent_default(event)
       navigate_back(container)
     }
 
-    True, False, "p" -> {
+    _, True, False, "p" -> {
       event.prevent_default(event)
       navigate_forward(container)
     }
 
-    False, False, "ArrowRight" -> {
+    _, False, False, "ArrowRight" -> {
       event.prevent_default(event)
       case get_active_panel(container) {
         history_graph.MentionsPanel -> {
@@ -1801,7 +1869,7 @@ pub fn handle_topic_view_keydown(event) {
       }
     }
 
-    False, False, "ArrowLeft" -> {
+    _, False, False, "ArrowLeft" -> {
       event.prevent_default(event)
       case get_active_panel(container) {
         history_graph.ReferencesPanel -> {
@@ -1822,7 +1890,7 @@ pub fn handle_topic_view_keydown(event) {
       }
     }
 
-    False, False, "ArrowDown" | False, False, "," -> {
+    _, False, False, "ArrowDown" | _, False, False, "," -> {
       event.prevent_default(event)
       case get_active_panel(container) {
         history_graph.MentionsPanel -> move_to_mention_child(container, 1)
@@ -1831,7 +1899,7 @@ pub fn handle_topic_view_keydown(event) {
         history_graph.ReferencesPanel -> move_to_reference_child(container, 1)
       }
     }
-    False, True, "ArrowDown" | False, True, "<" -> {
+    _, False, True, "ArrowDown" | _, False, True, "<" -> {
       event.prevent_default(event)
       case get_active_panel(container) {
         history_graph.MentionsPanel -> move_to_mention_child(container, 10)
@@ -1841,7 +1909,7 @@ pub fn handle_topic_view_keydown(event) {
       }
     }
 
-    False, False, "ArrowUp" | False, False, "e" -> {
+    _, False, False, "ArrowUp" | _, False, False, "e" -> {
       event.prevent_default(event)
       case get_active_panel(container) {
         history_graph.MentionsPanel -> move_to_mention_child(container, -1)
@@ -1850,7 +1918,7 @@ pub fn handle_topic_view_keydown(event) {
         history_graph.ReferencesPanel -> move_to_reference_child(container, -1)
       }
     }
-    False, True, "ArrowUp" | False, True, "E" -> {
+    _, False, True, "ArrowUp" | _, False, True, "E" -> {
       event.prevent_default(event)
       case get_active_panel(container) {
         history_graph.MentionsPanel -> move_to_mention_child(container, -10)
@@ -1860,7 +1928,7 @@ pub fn handle_topic_view_keydown(event) {
       }
     }
 
-    False, False, "u" -> {
+    _, False, False, "u" -> {
       event.prevent_default(event)
       case get_active_panel(container) {
         history_graph.MentionsPanel -> navigate_scope_up_mention(container)
@@ -1870,7 +1938,7 @@ pub fn handle_topic_view_keydown(event) {
       }
     }
 
-    False, False, "c" -> {
+    _, False, False, "c" -> {
       event.prevent_default(event)
       case get_active_view_elements() {
         Ok(elems) -> {
@@ -1881,7 +1949,7 @@ pub fn handle_topic_view_keydown(event) {
       }
     }
 
-    _, _, _ -> Nil
+    _, _, _, _ -> Nil
   }
 }
 
