@@ -1488,7 +1488,7 @@ fn get_fully_qualified_name_parts(
           TopicPart(metadata.topic),
         ]
         audit_data.Member(container:, component:, member:)
-        | audit_data.SemanticBlock(container:, component:, member:, ..) -> [
+        | audit_data.ContainingBlock(container:, component:, member:, ..) -> [
           TextPart(container),
           TopicPart(component),
           TopicPart(member),
@@ -1518,7 +1518,7 @@ fn get_unnamed_topic_scope_parts(
         audit_data.Container(container:) -> TextPart(container)
         audit_data.Component(component:, ..)
         | audit_data.Member(component:, ..)
-        | audit_data.SemanticBlock(component:, ..) -> TopicPart(component)
+        | audit_data.ContainingBlock(component:, ..) -> TopicPart(component)
       },
     ]
     _ ->
@@ -1527,7 +1527,7 @@ fn get_unnamed_topic_scope_parts(
         audit_data.Container(container:) -> [TextPart(container)]
         audit_data.Component(component:, ..)
         | audit_data.Member(component:, ..)
-        | audit_data.SemanticBlock(component:, ..) -> [
+        | audit_data.ContainingBlock(component:, ..) -> [
           TopicPart(component),
         ]
       }

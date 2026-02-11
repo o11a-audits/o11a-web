@@ -99,11 +99,11 @@ pub type Scope {
   Container(container: String)
   Component(container: String, component: Topic)
   Member(container: String, component: Topic, member: Topic)
-  SemanticBlock(
+  ContainingBlock(
     container: String,
     component: Topic,
     member: Topic,
-    semantic_block: Topic,
+    containing_block: Topic,
   )
 }
 
@@ -124,8 +124,8 @@ fn scope_decoder() -> decode.Decoder(Scope) {
     None,
     decode.optional(decode.string),
   )
-  use maybe_semantic_block <- decode.optional_field(
-    "semantic_block",
+  use maybe_containing_block <- decode.optional_field(
+    "containing_block",
     None,
     decode.optional(decode.string),
   )
@@ -135,7 +135,7 @@ fn scope_decoder() -> decode.Decoder(Scope) {
     maybe_container,
     maybe_component,
     maybe_member,
-    maybe_semantic_block
+    maybe_containing_block
   {
     "Global", None, None, None, None -> {
       decode.success(Global)
@@ -156,17 +156,17 @@ fn scope_decoder() -> decode.Decoder(Scope) {
         member: Topic(id: member),
       ))
     }
-    "SemanticBlock",
+    "ContainingBlock",
       Some(container),
       Some(component),
       Some(member),
-      Some(semantic_block)
+      Some(containing_block)
     -> {
-      decode.success(SemanticBlock(
+      decode.success(ContainingBlock(
         container: container,
         component: Topic(id: component),
         member: Topic(id: member),
-        semantic_block: Topic(id: semantic_block),
+        containing_block: Topic(id: containing_block),
       ))
     }
     _, _, _, _, _ -> decode.failure(Container(container: ""), "Scope")
@@ -179,7 +179,7 @@ pub fn is_in_scope(scope, in_scope_files in_scope_files) {
     Container(container)
     | Component(container:, ..)
     | Member(container:, ..)
-    | SemanticBlock(container:, ..) -> {
+    | ContainingBlock(container:, ..) -> {
       list.contains(in_scope_files, container)
     }
   }
@@ -192,7 +192,7 @@ pub fn parent_topic(scope: Scope) -> option.Option(Topic) {
     Container(_) -> None
     Component(component:, ..) -> Some(component)
     Member(member:, ..) -> Some(member)
-    SemanticBlock(semantic_block:, ..) -> Some(semantic_block)
+    ContainingBlock(containing_block:, ..) -> Some(containing_block)
   }
 }
 
@@ -208,18 +208,19 @@ pub fn child_scope_towards(
   case current_scope, target_scope {
     // From Component (Container scope), try to get the Member
     Container(..), Member(member:, ..)
-    | Container(..), SemanticBlock(member:, ..)
+    | Container(..), ContainingBlock(member:, ..)
     -> Some(member)
 
-    // From Member (Component scope), try to get the SemanticBlock
-    Component(..), SemanticBlock(semantic_block:, ..) -> Some(semantic_block)
+    // From Member (Component scope), try to get the ContainingBlock
+    Component(..), ContainingBlock(containing_block:, ..) ->
+      Some(containing_block)
 
-    // From first-level SemanticBlock (Member scope), try to get the next SemanticBlock
-    Member(..), SemanticBlock(semantic_block:, ..) -> Some(semantic_block)
+    // From first-level ContainingBlock (Member scope), try to get the next ContainingBlock
+    Member(..), ContainingBlock(containing_block:, ..) -> Some(containing_block)
 
-    // From SemanticBlock, try to get the next SemanticBlock
-    SemanticBlock(..), SemanticBlock(semantic_block:, ..) ->
-      Some(semantic_block)
+    // From ContainingBlock, try to get the next ContainingBlock
+    ContainingBlock(..), ContainingBlock(containing_block:, ..) ->
+      Some(containing_block)
 
     _, _ -> None
   }
@@ -297,7 +298,7 @@ pub type UnnamedTopicKind {
   TypeConversion
   StructConstruction
   NewExpression
-  UnnamedSemanticBlock
+  SemanticBlock
   Break
   Continue
   DoWhile
@@ -464,7 +465,7 @@ fn unnamed_topic_kind_decoder() -> decode.Decoder(UnnamedTopicKind) {
     "TypeConversion" -> decode.success(TypeConversion)
     "StructConstruction" -> decode.success(StructConstruction)
     "NewExpression" -> decode.success(NewExpression)
-    "SemanticBlock" -> decode.success(UnnamedSemanticBlock)
+    "ContainingBlock" -> decode.success(SemanticBlock)
     "Break" -> decode.success(Break)
     "Continue" -> decode.success(Continue)
     "DoWhile" -> decode.success(DoWhile)
@@ -726,7 +727,7 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
         TypeConversion -> "<span class=\"operator\">TypeConversion</span>"
         StructConstruction -> "<span class=\"struct\">StructConstruction</span>"
         NewExpression -> "<span class=\"keyword\">NewExpression</span>"
-        UnnamedSemanticBlock -> "<span class=\"block\">SemanticBlock</span>"
+        SemanticBlock -> "<span class=\"block\">ContainingBlock</span>"
         Break -> "<span class=\"keyword\">BreakStatement</span>"
         Continue -> "<span class=\"keyword\">ContinueStatement</span>"
         DoWhile -> "<span class=\"keyword\">DoWhileStatement</span>"
