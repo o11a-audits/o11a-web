@@ -94,6 +94,29 @@ pub type Topic {
   Topic(id: String)
 }
 
+pub type ControlFlowBranch {
+  TrueBranch
+  FalseBranch
+}
+
+pub type ControlFlowKind {
+  ControlFlowIf(branch: ControlFlowBranch)
+  ControlFlowFor
+  ControlFlowWhile
+  ControlFlowDoWhile
+}
+
+pub type ControlFlowInfo {
+  ControlFlowInfo(topic: Topic, kind: ControlFlowKind)
+}
+
+pub type ContainingBlockLayer {
+  ContainingBlockLayer(
+    block: Topic,
+    control_flow: option.Option(ControlFlowInfo),
+  )
+}
+
 pub type Scope {
   Global
   Container(container: String)
@@ -103,8 +126,39 @@ pub type Scope {
     container: String,
     component: Topic,
     member: Topic,
-    containing_block: Topic,
+    containing_blocks: List(ContainingBlockLayer),
   )
+}
+
+fn control_flow_kind_decoder() -> decode.Decoder(ControlFlowKind) {
+  use kind_str <- decode.then(decode.string)
+  case kind_str {
+    "if_true" -> decode.success(ControlFlowIf(branch: TrueBranch))
+    "if_false" -> decode.success(ControlFlowIf(branch: FalseBranch))
+    "for" -> decode.success(ControlFlowFor)
+    "while" -> decode.success(ControlFlowWhile)
+    "do_while" -> decode.success(ControlFlowDoWhile)
+    _ -> decode.failure(ControlFlowFor, "ControlFlowKind")
+  }
+}
+
+fn control_flow_info_decoder() -> decode.Decoder(ControlFlowInfo) {
+  use topic_id <- decode.field("topic", decode.string)
+  use kind <- decode.field("kind", control_flow_kind_decoder())
+  decode.success(ControlFlowInfo(topic: Topic(id: topic_id), kind: kind))
+}
+
+fn containing_block_layer_decoder() -> decode.Decoder(ContainingBlockLayer) {
+  use block_id <- decode.field("block", decode.string)
+  use control_flow <- decode.optional_field(
+    "control_flow",
+    None,
+    decode.optional(control_flow_info_decoder()),
+  )
+  decode.success(ContainingBlockLayer(
+    block: Topic(id: block_id),
+    control_flow: control_flow,
+  ))
 }
 
 fn scope_decoder() -> decode.Decoder(Scope) {
@@ -124,52 +178,41 @@ fn scope_decoder() -> decode.Decoder(Scope) {
     None,
     decode.optional(decode.string),
   )
-  use maybe_containing_block <- decode.optional_field(
-    "containing_block",
-    None,
-    decode.optional(decode.string),
+  use containing_blocks <- decode.optional_field(
+    "containing_blocks",
+    [],
+    decode.list(containing_block_layer_decoder()),
   )
 
-  case
-    scope_type,
-    maybe_container,
-    maybe_component,
-    maybe_member,
-    maybe_containing_block
-  {
-    "Global", None, None, None, None -> {
+  case scope_type, maybe_container, maybe_component, maybe_member {
+    "Global", None, None, None -> {
       decode.success(Global)
     }
-    "Container", Some(container), None, None, None -> {
+    "Container", Some(container), None, None -> {
       decode.success(Container(container: container))
     }
-    "Component", Some(container), Some(component), None, None -> {
+    "Component", Some(container), Some(component), None -> {
       decode.success(Component(
         container: container,
         component: Topic(id: component),
       ))
     }
-    "Member", Some(container), Some(component), Some(member), None -> {
+    "Member", Some(container), Some(component), Some(member) -> {
       decode.success(Member(
         container: container,
         component: Topic(id: component),
         member: Topic(id: member),
       ))
     }
-    "ContainingBlock",
-      Some(container),
-      Some(component),
-      Some(member),
-      Some(containing_block)
-    -> {
+    "ContainingBlock", Some(container), Some(component), Some(member) -> {
       decode.success(ContainingBlock(
         container: container,
         component: Topic(id: component),
         member: Topic(id: member),
-        containing_block: Topic(id: containing_block),
+        containing_blocks: containing_blocks,
       ))
     }
-    _, _, _, _, _ -> decode.failure(Container(container: ""), "Scope")
+    _, _, _, _ -> decode.failure(Container(container: ""), "Scope")
   }
 }
 
@@ -192,7 +235,11 @@ pub fn parent_topic(scope: Scope) -> option.Option(Topic) {
     Container(_) -> None
     Component(component:, ..) -> Some(component)
     Member(member:, ..) -> Some(member)
-    ContainingBlock(containing_block:, ..) -> Some(containing_block)
+    ContainingBlock(containing_blocks:, ..) ->
+      case list.last(containing_blocks) {
+        Ok(layer) -> Some(layer.block)
+        Error(_) -> None
+      }
   }
 }
 
@@ -211,16 +258,17 @@ pub fn child_scope_towards(
     | Container(..), ContainingBlock(member:, ..)
     -> Some(member)
 
-    // From Member (Component scope), try to get the ContainingBlock
-    Component(..), ContainingBlock(containing_block:, ..) ->
-      Some(containing_block)
-
-    // From first-level ContainingBlock (Member scope), try to get the next ContainingBlock
-    Member(..), ContainingBlock(containing_block:, ..) -> Some(containing_block)
-
-    // From ContainingBlock, try to get the next ContainingBlock
-    ContainingBlock(..), ContainingBlock(containing_block:, ..) ->
-      Some(containing_block)
+    // From Member or Component or ContainingBlock scope, try to get the
+    // last containing block from the target
+    Component(..), ContainingBlock(containing_blocks:, ..)
+    | Member(..), ContainingBlock(containing_blocks:, ..)
+    | ContainingBlock(..), ContainingBlock(containing_blocks:, ..)
+    -> {
+      case list.last(containing_blocks) {
+        Ok(layer) -> Some(layer.block)
+        Error(_) -> None
+      }
+    }
 
     _, _ -> None
   }
