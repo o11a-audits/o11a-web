@@ -726,7 +726,7 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
         TypeConversion -> "<span class=\"operator\">TypeConversion</span>"
         StructConstruction -> "<span class=\"struct\">StructConstruction</span>"
         NewExpression -> "<span class=\"keyword\">NewExpression</span>"
-        UnnamedSemanticBlock -> "<span class=\"block\">Block</span>"
+        UnnamedSemanticBlock -> "<span class=\"block\">SemanticBlock</span>"
         Break -> "<span class=\"keyword\">BreakStatement</span>"
         Continue -> "<span class=\"keyword\">ContinueStatement</span>"
         DoWhile -> "<span class=\"keyword\">DoWhileStatement</span>"
@@ -1255,11 +1255,16 @@ pub type CommentVoteSummary {
   )
 }
 
+pub type TopicCommentEntry {
+  TopicCommentEntry(comment_topic_id: String, comment_type: CommentType)
+}
+
 pub type CommentEvent {
   CommentCreated(
     audit_id: String,
     comment_topic_id: String,
     target_topic: String,
+    comment_type: CommentType,
   )
   StatusUpdated(
     audit_id: String,
@@ -1353,7 +1358,13 @@ fn comment_event_decoder() -> decode.Decoder(CommentEvent) {
     "Created" -> {
       use comment_topic_id <- decode.field("comment_topic_id", decode.string)
       use target_topic <- decode.field("target_topic", decode.string)
-      decode.success(CommentCreated(audit_id:, comment_topic_id:, target_topic:))
+      use comment_type <- decode.field("comment_type", comment_type_decoder())
+      decode.success(CommentCreated(
+        audit_id:,
+        comment_topic_id:,
+        target_topic:,
+        comment_type:,
+      ))
     }
     "StatusUpdated" -> {
       use comment_topic_id <- decode.field("comment_topic_id", decode.string)
@@ -1383,7 +1394,12 @@ fn comment_event_decoder() -> decode.Decoder(CommentEvent) {
     }
     _ ->
       decode.failure(
-        CommentCreated(audit_id: "", comment_topic_id: "", target_topic: ""),
+        CommentCreated(
+          audit_id: "",
+          comment_topic_id: "",
+          target_topic: "",
+          comment_type: Note,
+        ),
         "CommentEvent",
       )
   }
@@ -1424,6 +1440,20 @@ pub fn vote_value_to_string(vote: VoteValue) -> String {
 
 // --- Collaborator Response Decoders ---
 
+fn topic_comment_entry_decoder() -> decode.Decoder(TopicCommentEntry) {
+  use comment_topic_id <- decode.field("comment_topic_id", decode.string)
+  use comment_type <- decode.field("comment_type", comment_type_decoder())
+  decode.success(TopicCommentEntry(comment_topic_id:, comment_type:))
+}
+
+fn topic_comments_response_decoder() -> decode.Decoder(List(TopicCommentEntry)) {
+  use comments <- decode.field(
+    "comments",
+    decode.list(topic_comment_entry_decoder()),
+  )
+  decode.success(comments)
+}
+
 fn comment_list_response_decoder() -> decode.Decoder(List(String)) {
   use ids <- decode.field("comment_topic_ids", decode.list(decode.string))
   decode.success(ids)
@@ -1439,19 +1469,21 @@ fn comment_created_response_decoder() -> decode.Decoder(String) {
 @external(javascript, "./mem_ffi.mjs", "set_topic_comments_promise")
 fn set_topic_comments_promise(
   topic_id: String,
-  promise: promise.Promise(Result(List(String), snag.Snag)),
+  promise: promise.Promise(Result(List(TopicCommentEntry), snag.Snag)),
 ) -> Nil
 
 @external(javascript, "./mem_ffi.mjs", "get_topic_comments_promise")
 fn read_topic_comments_promise(
   topic_id: String,
-) -> Result(promise.Promise(Result(List(String), snag.Snag)), Nil)
+) -> Result(promise.Promise(Result(List(TopicCommentEntry), snag.Snag)), Nil)
 
 @external(javascript, "./mem_ffi.mjs", "get_topic_comments")
-fn read_topic_comments(topic_id: String) -> Result(List(String), snag.Snag)
+fn read_topic_comments(
+  topic_id: String,
+) -> Result(List(TopicCommentEntry), snag.Snag)
 
 @external(javascript, "./mem_ffi.mjs", "set_topic_comments")
-fn set_topic_comments(topic_id: String, val: List(String)) -> Nil
+fn set_topic_comments(topic_id: String, val: List(TopicCommentEntry)) -> Nil
 
 @external(javascript, "./mem_ffi.mjs", "set_comments_by_type_promise")
 fn set_comments_by_type_promise(
@@ -1510,7 +1542,7 @@ fn fetch_topic_comments(topic_id: String) {
   )
 
   let result =
-    decode.run(resp.body, comment_list_response_decoder())
+    decode.run(resp.body, topic_comments_response_decoder())
     |> snag.map_error(string.inspect)
 
   promise.resolve(result)
@@ -1542,6 +1574,80 @@ pub fn with_topic_comments(topic_id: String, callback) {
         }
         callback(comments)
 
+        promise.resolve(Nil)
+      })
+
+      Nil
+    }
+  }
+}
+
+// --- Info Comments: FFI Declarations ---
+
+@external(javascript, "./mem_ffi.mjs", "set_topic_info_comments_promise")
+fn set_topic_info_comments_promise(
+  topic_id: String,
+  promise: promise.Promise(Result(List(String), snag.Snag)),
+) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_topic_info_comments_promise")
+fn read_topic_info_comments_promise(
+  topic_id: String,
+) -> Result(promise.Promise(Result(List(String), snag.Snag)), Nil)
+
+@external(javascript, "./mem_ffi.mjs", "get_topic_info_comments")
+fn read_topic_info_comments(topic_id: String) -> Result(List(String), snag.Snag)
+
+@external(javascript, "./mem_ffi.mjs", "set_topic_info_comments")
+fn set_topic_info_comments(topic_id: String, val: List(String)) -> Nil
+
+// --- Info Comments: Fetch + Public API ---
+
+fn fetch_topic_info_comments(topic_id: String) {
+  promise.new(fn(resolve) {
+    with_topic_comments(topic_id, fn(comments_result) {
+      resolve(
+        result.map(comments_result, fn(entries) {
+          list.filter_map(entries, fn(entry) {
+            case entry.comment_type {
+              Info -> Ok(entry.comment_topic_id)
+              _ -> Error(Nil)
+            }
+          })
+        }),
+      )
+    })
+  })
+}
+
+pub fn with_topic_info_comments(topic_id: String, callback) {
+  case read_topic_info_comments(topic_id) {
+    Ok(info_comments) -> {
+      callback(Ok(info_comments))
+      Nil
+    }
+    Error(_) -> {
+      let promise = case read_topic_info_comments_promise(topic_id) {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_topic_info_comments(topic_id)
+          set_topic_info_comments_promise(topic_id, promise)
+          promise
+        }
+      }
+
+      promise.await(promise, fn(info_comments) {
+        case info_comments {
+          Ok(info_comments) -> set_topic_info_comments(topic_id, info_comments)
+          Error(error) ->
+            snag.layer(
+              error,
+              "Unable to fetch info comments for topic " <> topic_id,
+            )
+            |> snag.line_print
+            |> io.println_error
+        }
+        callback(info_comments)
         promise.resolve(Nil)
       })
 
@@ -2121,10 +2227,13 @@ fn process_comment_event(
   on_comment_created: fn(String) -> Nil,
 ) -> Nil {
   case event {
-    CommentCreated(audit_id:, comment_topic_id:, target_topic:) -> {
+    CommentCreated(audit_id:, comment_topic_id:, target_topic:, comment_type:) -> {
       case read_topic_comments(target_topic) {
         Ok(comments) ->
-          set_topic_comments(target_topic, [comment_topic_id, ..comments])
+          set_topic_comments(target_topic, [
+            TopicCommentEntry(comment_topic_id:, comment_type:),
+            ..comments
+          ])
         Error(_) -> Nil
       }
       case audit_id == audit_name() {

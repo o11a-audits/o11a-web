@@ -832,6 +832,71 @@ fn reapply_first_last_styles(group_container: element.Element) -> Nil {
 }
 
 /// Helper to populate a reference source element with source text or error
+fn inject_inline_info_comments(container: element.Element) -> Nil {
+  echo "injecting info comments"
+  let placeholders =
+    dromel.query_element_all(container, elements.placeholder_topic_sel)
+    |> array.to_list
+
+  list.each(placeholders, fn(placeholder) {
+    case
+      dromel.get_data(placeholder, elements.placeholder_topic_key)
+      |> echo as "topic id"
+    {
+      Ok(topic_id) -> {
+        audit_data.with_topic_info_comments(topic_id, fn(result) {
+          case result |> echo as "topic ids" {
+            Ok(info_comment_ids) ->
+              list.each(info_comment_ids, fn(comment_topic_id) {
+                audit_data.with_source_text(
+                  audit_data.Topic(id: comment_topic_id),
+                  fn(source_text_result) {
+                    case source_text_result {
+                      Ok(source_text) -> {
+                        echo "got source text for topic "
+                          <> comment_topic_id
+                          <> ": "
+                          <> source_text
+                        dromel.new_div()
+                        |> dromel.set_class(elements.inline_comment_class)
+                        |> dromel.add_class(elements.code_style_class)
+                        |> dromel.set_inner_html(source_text)
+                        |> dromel.append_as_child(to: placeholder)
+                        Nil
+                      }
+                      Error(error) -> {
+                        error
+                        |> snag.layer(
+                          "Unable to fetch inline info comment source text for "
+                          <> comment_topic_id,
+                        )
+                        |> log.print_error
+                        Nil
+                      }
+                    }
+                  },
+                )
+              })
+            Error(error) -> {
+              error
+              |> snag.layer(
+                "Unable to fetch info comments for topic " <> topic_id,
+              )
+              |> log.print_error
+              Nil
+            }
+          }
+        })
+      }
+      Error(Nil) -> {
+        snag.new("Missing data-placeholder-topic value on placeholder element")
+        |> log.print_error
+        Nil
+      }
+    }
+  })
+}
+
 fn populate_reference_source(
   ref_entry: audit_data.ReferenceEntry,
   reference_source: element.Element,
@@ -841,9 +906,11 @@ fn populate_reference_source(
     Ok(source_text) -> {
       case ref_entry {
         audit_data.ProjectReference(..) -> {
-          dromel.new_div()
-          |> dromel.set_inner_html(source_text)
-          |> dromel.append_as_child(to: reference_source)
+          let source_div =
+            dromel.new_div()
+            |> dromel.set_inner_html(source_text)
+            |> dromel.append_as_child(to: reference_source)
+          inject_inline_info_comments(source_div)
           Nil
         }
         audit_data.ProjectReferenceWithMentions(mention_topics:, ..)
@@ -858,7 +925,7 @@ fn populate_reference_source(
                 // "margin-bottom: 0.5rem;",
                 "",
               )
-              |> dromel.set_class(dromel.Class("inline-comment"))
+              |> dromel.set_class(elements.inline_comment_class)
               |> dromel.add_class(elements.code_style_class)
               |> dromel.append_as_child(to: comments)
 
@@ -1207,7 +1274,7 @@ fn populate_topic_panel(
       // For unnamed topics, directly render the topic's source text
       audit_data.with_source_text(metadata.topic, fn(source_text) {
         case source_text {
-          Ok(text) -> {
+          Ok(source_text) -> {
             let topic_title =
               dromel.new_div()
               |> dromel.set_style(
@@ -1219,7 +1286,9 @@ fn populate_topic_panel(
             let source_panel =
               dromel.new_div()
               |> dromel.set_style(single_panel_style)
-              |> dromel.set_inner_html(text)
+              |> dromel.set_inner_html(source_text)
+
+            inject_inline_info_comments(source_panel)
 
             elements.topic_panel
             |> dromel.append_child(topic_title)
@@ -1330,9 +1399,9 @@ fn populate_comments_panel(
     )
   audit_data.with_topic_comments(topic_id, fn(comments_result) {
     case comments_result {
-      Ok(comment_ids) -> {
-        list.index_fold(comment_ids, 0, fn(index, comment_id, _) {
-          let comment_topic = audit_data.Topic(id: comment_id)
+      Ok(comment_entries) -> {
+        list.index_fold(comment_entries, 0, fn(index, entry, _) {
+          let comment_topic = audit_data.Topic(id: entry.comment_topic_id)
           let source_placeholder =
             dromel.new_div()
             |> dromel.append_as_child(to: elements.comments_panel)
@@ -1343,7 +1412,7 @@ fn populate_comments_panel(
               let comment_source =
                 dromel.new_div()
                 |> dromel.add_class(elements.source_container_class)
-                |> dromel.set_data(topic_key, comment_id)
+                |> dromel.set_data(topic_key, entry.comment_topic_id)
                 |> dromel.set_style(single_panel_style)
 
               case source_text {
@@ -2323,22 +2392,22 @@ fn collapse_member_group(
           // Load the member's source text
           audit_data.with_source_text(member_topic, fn(source_text) {
             case source_text {
-              Ok(text) -> {
+              Ok(source_text) -> {
                 // Keep the member title (first child), replace the rest
                 case dromel.first_child(first_container) {
                   Ok(member_title) -> {
                     // Clear and rebuild content
-                    let _ = dromel.set_inner_html(first_container, "")
-                    let _ = dromel.append_child(first_container, member_title)
-                    let _ =
-                      dromel.new_div()
-                      |> dromel.set_inner_html(text)
-                      |> dromel.append_as_child(to: first_container)
+                    dromel.set_inner_html(first_container, "")
+                    dromel.append_child(first_container, member_title)
+
+                    dromel.new_div()
+                    |> dromel.set_inner_html(source_text)
+                    |> dromel.append_as_child(to: first_container)
                     Nil
                   }
                   Error(Nil) -> {
                     // No member title, just set the content
-                    let _ = dromel.set_inner_html(first_container, text)
+                    dromel.set_inner_html(first_container, source_text)
                     Nil
                   }
                 }

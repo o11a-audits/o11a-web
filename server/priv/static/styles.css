@@ -79,6 +79,11 @@ pre,
   line-height: 1.5;
   margin: 0;
 }
+.comment-root {
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
 
 .o11a-brand-text {
   font-family: "Fira Code", "Consolas", "Monaco", "Courier New", monospace;

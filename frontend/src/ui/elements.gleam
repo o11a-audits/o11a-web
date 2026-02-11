@@ -25,3 +25,12 @@ pub fn topic_selector(topic_id: String) {
 }
 
 pub const topic_tokens_class = dromel.Class(class: "topic-token")
+
+// Inline info comments
+pub const inline_comment_class = dromel.Class(class: "inline-comment")
+
+pub const placeholder_topic_key = dromel.DataKey(key: "placeholderTopic")
+
+pub const placeholder_topic_sel = dromel.Selector(
+  selector: "[data-placeholder-topic]",
+)
