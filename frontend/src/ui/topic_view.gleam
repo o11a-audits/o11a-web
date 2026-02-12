@@ -87,6 +87,7 @@ import gleam/int
 import gleam/io
 import gleam/javascript/array
 import gleam/list
+import gleam/option
 import gleam/result
 import gleam/string
 import history_graph
@@ -897,6 +898,38 @@ fn inject_inline_info_comments(container: element.Element) -> Nil {
   })
 }
 
+fn mount_subscope_title(
+  topic: audit_data.Topic,
+  to parent: element.Element,
+) -> Nil {
+  let subscope_title =
+    dromel.new_div()
+    |> dromel.set_style(combined_panel_member_title_style)
+    |> dromel.set_inner_html("...")
+    |> dromel.append_as_child(to: parent)
+
+  audit_data.with_topic_metadata(
+    topic,
+    fn(metadata: Result(audit_data.TopicMetadata, snag.Snag)) -> Nil {
+      case metadata {
+        Ok(metadata) -> {
+          subscope_title
+          |> dromel.set_inner_html(audit_data.topic_metadata_highlighted_name(
+            metadata,
+          ))
+          Nil
+        }
+        Error(snag) -> {
+          subscope_title
+          |> dromel.set_inner_html(snag.line_print(snag))
+          Nil
+        }
+      }
+    },
+  )
+  Nil
+}
+
 fn populate_reference_source(
   ref_entry: audit_data.ReferenceEntry,
   reference_source: element.Element,
@@ -1091,32 +1124,9 @@ fn populate_grouped_source_panel(
                 // Add subscope title only for the first reference in the nested group
                 case nested_ref_index {
                   0 -> {
-                    let subscope_title =
-                      dromel.new_div()
-                      |> dromel.set_style(combined_panel_member_title_style)
-                      |> dromel.set_inner_html("...")
-                      |> dromel.append_as_child(to: reference_source)
-
-                    audit_data.with_topic_metadata(
+                    mount_subscope_title(
                       nested_group.subscope,
-                      fn(metadata: Result(audit_data.TopicMetadata, snag.Snag)) -> Nil {
-                        case metadata {
-                          Ok(metadata) -> {
-                            subscope_title
-                            |> dromel.set_inner_html(
-                              audit_data.topic_metadata_highlighted_name(
-                                metadata,
-                              ),
-                            )
-                            Nil
-                          }
-                          Error(snag) -> {
-                            subscope_title
-                            |> dromel.set_inner_html(snag.line_print(snag))
-                            Nil
-                          }
-                        }
-                      },
+                      to: reference_source,
                     )
                     Nil
                   }
@@ -1270,6 +1280,21 @@ fn populate_topic_panel(
         audit_data.CommentTopic(..) -> [TextPart("Comment")]
       }
 
+      // Get the member topic from scope (if any) for subscope title
+      let subscope_topic = case metadata {
+        audit_data.UnnamedTopic(scope: audit_data.Member(member:, ..), ..)
+        | audit_data.UnnamedTopic(
+            scope: audit_data.ContainingBlock(member:, ..),
+            ..,
+          )
+        | audit_data.ControlFlow(scope: audit_data.Member(member:, ..), ..)
+        | audit_data.ControlFlow(
+            scope: audit_data.ContainingBlock(member:, ..),
+            ..,
+          ) -> option.Some(member)
+        _ -> option.None
+      }
+
       // For unnamed topics, directly render the topic's source text
       audit_data.with_source_text(metadata.topic, fn(source_text) {
         case source_text {
@@ -1285,9 +1310,20 @@ fn populate_topic_panel(
             let source_panel =
               dromel.new_div()
               |> dromel.set_style(single_panel_style)
-              |> dromel.set_inner_html(source_text)
 
-            inject_inline_info_comments(source_panel)
+            // Render subscope (member) title inside source panel if present
+            case subscope_topic {
+              option.Some(member_topic) ->
+                mount_subscope_title(member_topic, to: source_panel)
+              option.None -> Nil
+            }
+
+            let source_content =
+              dromel.new_div()
+              |> dromel.set_inner_html(source_text)
+              |> dromel.append_as_child(to: source_panel)
+
+            inject_inline_info_comments(source_content)
 
             elements.topic_panel
             |> dromel.append_child(topic_title)

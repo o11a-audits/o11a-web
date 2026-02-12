@@ -561,7 +561,7 @@ fn unnamed_topic_kind_decoder() -> decode.Decoder(UnnamedTopicKind) {
     "TypeConversion" -> decode.success(TypeConversion)
     "StructConstruction" -> decode.success(StructConstruction)
     "NewExpression" -> decode.success(NewExpression)
-    "ContainingBlock" -> decode.success(SemanticBlock)
+    "SemanticBlock" -> decode.success(SemanticBlock)
     "Break" -> decode.success(Break)
     "Continue" -> decode.success(Continue)
     "Emit" -> decode.success(Emit)
@@ -690,8 +690,9 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         decode.list(decode.string),
       )
       use relative_ids <- decode.field("relatives", decode.list(decode.string))
-      use mentions <- decode.field(
+      use mentions <- decode.optional_field(
         "mentions",
+        [],
         decode.list(reference_group_decoder()),
       )
       decode.success(NamedTopic(
@@ -714,8 +715,9 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
     "titled" -> {
       use title <- decode.field("title", decode.string)
       use kind <- decode.then(titled_topic_kind_decoder())
-      use mentions <- decode.field(
+      use mentions <- decode.optional_field(
         "mentions",
+        [],
         decode.list(reference_group_decoder()),
       )
       decode.success(TitledTopic(topic:, scope:, kind:, title:, mentions:))
@@ -723,8 +725,9 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
     "control_flow" -> {
       use kind <- decode.then(control_flow_statement_kind_decoder())
       use condition_id <- decode.field("condition", decode.string)
-      use mentions <- decode.field(
+      use mentions <- decode.optional_field(
         "mentions",
+        [],
         decode.list(reference_group_decoder()),
       )
       decode.success(ControlFlow(
@@ -744,8 +747,9 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         "mentioned_topics",
         decode.list(decode.string),
       )
-      use mentions <- decode.field(
+      use mentions <- decode.optional_field(
         "mentions",
+        [],
         decode.list(reference_group_decoder()),
       )
       decode.success(CommentTopic(
@@ -761,8 +765,9 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
     }
     _ -> {
       use kind <- decode.then(unnamed_topic_kind_decoder())
-      use mentions <- decode.field(
+      use mentions <- decode.optional_field(
         "mentions",
+        [],
         decode.list(reference_group_decoder()),
       )
       decode.success(UnnamedTopic(topic:, scope:, kind:, mentions:))
