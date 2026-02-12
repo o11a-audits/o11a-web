@@ -165,7 +165,8 @@ fn get_document_name(document: audit_data.TopicMetadata) -> String {
         audit_data.Container(container:) -> container
         _ -> audit_data.topic_metadata_name(document)
       }
-    audit_data.CommentTopic(topic:, ..) -> topic.id
+    audit_data.ControlFlow(topic:, ..) | audit_data.CommentTopic(topic:, ..) ->
+      topic.id
   }
 }
 
@@ -248,15 +249,6 @@ fn render_document_list(
 // Preview Loading with Race Condition Protection
 // ============================================================================
 
-fn get_document_topic(document: audit_data.TopicMetadata) -> audit_data.Topic {
-  case document {
-    audit_data.NamedTopic(topic:, ..)
-    | audit_data.TitledTopic(topic:, ..)
-    | audit_data.UnnamedTopic(topic:, ..)
-    | audit_data.CommentTopic(topic:, ..) -> topic
-  }
-}
-
 fn load_preview(topic: audit_data.Topic) -> Nil {
   // Update state to track current preview
   case get_documents_modal_state() {
@@ -326,7 +318,7 @@ fn handle_search_input(query: String, state: DocumentsModalState) -> Nil {
 
   // Load preview for first item if any
   case list.first(filtered) {
-    Ok(document) -> load_preview(get_document_topic(document))
+    Ok(document) -> load_preview(document.topic)
     Error(_) -> Nil
   }
 }
@@ -367,7 +359,7 @@ fn handle_keydown(
       )
 
       case get_at(state.filtered_documents, new_index) {
-        Ok(document) -> load_preview(get_document_topic(document))
+        Ok(document) -> load_preview(document.topic)
         Error(_) -> Nil
       }
     }
@@ -391,7 +383,7 @@ fn handle_keydown(
       )
 
       case get_at(state.filtered_documents, new_index) {
-        Ok(document) -> load_preview(get_document_topic(document))
+        Ok(document) -> load_preview(document.topic)
         Error(_) -> Nil
       }
     }
@@ -405,10 +397,7 @@ fn handle_keydown(
           let container = topic_view.topic_view_container()
 
           // Navigate to the entry (creates and displays the view)
-          topic_view.navigate_to_new_entry(
-            container,
-            get_document_topic(document),
-          )
+          topic_view.navigate_to_new_entry(container, document.topic)
 
           // Close the modal after successfully navigating
           modal.close_modal(overlay)
@@ -500,7 +489,7 @@ fn on_documents_loaded(
 
               // Load preview for first document
               case list.first(documents) {
-                Ok(document) -> load_preview(get_document_topic(document))
+                Ok(document) -> load_preview(document.topic)
                 Error(_) -> Nil
               }
             }

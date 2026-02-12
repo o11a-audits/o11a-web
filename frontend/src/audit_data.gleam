@@ -318,8 +318,21 @@ pub type ReferenceEntry {
   CommentMention(reference_topic: Topic, mention_topics: List(Topic))
 }
 
+pub type ControlFlowReferenceGroup {
+  ControlFlowReferenceGroup(
+    control_flow: ControlFlowInfo,
+    references: List(ReferenceEntry),
+    nested: List(ControlFlowReferenceGroup),
+    has_sibling_branch: Bool,
+  )
+}
+
 pub type NestedReferenceGroup {
-  NestedReferenceGroup(subscope: Topic, references: List(ReferenceEntry))
+  NestedReferenceGroup(
+    subscope: Topic,
+    references: List(ReferenceEntry),
+    control_flow_groups: List(ControlFlowReferenceGroup),
+  )
 }
 
 pub type ReferenceGroup {
@@ -349,17 +362,13 @@ pub type UnnamedTopicKind {
   SemanticBlock
   Break
   Continue
-  DoWhile
   Emit
-  For
-  If
   InlineAssembly
   Placeholder
   Return
   Revert
   Try
   UncheckedBlock
-  While
   Reference
   MutableReference
   Signature
@@ -373,6 +382,13 @@ pub type UnnamedTopicKind {
   DocumentationInlineCode
   Literal
   Other
+}
+
+pub type ControlFlowStatementKind {
+  ControlFlowStatementIf
+  ControlFlowStatementFor
+  ControlFlowStatementWhile
+  ControlFlowStatementDoWhile
 }
 
 fn named_topic_kind_decoder() -> decode.Decoder(NamedTopicKind) {
@@ -468,15 +484,47 @@ fn reference_entry_decoder() -> decode.Decoder(ReferenceEntry) {
   }
 }
 
+fn control_flow_reference_group_decoder() -> decode.Decoder(
+  ControlFlowReferenceGroup,
+) {
+  use control_flow <- decode.field("control_flow", control_flow_info_decoder())
+  use references <- decode.field(
+    "references",
+    decode.list(reference_entry_decoder()),
+  )
+  use nested <- decode.optional_field(
+    "nested",
+    [],
+    decode.list(control_flow_reference_group_decoder()),
+  )
+  use has_sibling_branch <- decode.optional_field(
+    "has_sibling_branch",
+    False,
+    decode.bool,
+  )
+  decode.success(ControlFlowReferenceGroup(
+    control_flow:,
+    references:,
+    nested:,
+    has_sibling_branch:,
+  ))
+}
+
 fn nested_reference_group_decoder() -> decode.Decoder(NestedReferenceGroup) {
   use subscope_id <- decode.field("subscope", decode.string)
   use references <- decode.field(
     "references",
     decode.list(reference_entry_decoder()),
   )
+  use control_flow_groups <- decode.optional_field(
+    "control_flow_groups",
+    [],
+    decode.list(control_flow_reference_group_decoder()),
+  )
   decode.success(NestedReferenceGroup(
     subscope: Topic(id: subscope_id),
     references:,
+    control_flow_groups:,
   ))
 }
 
@@ -516,17 +564,13 @@ fn unnamed_topic_kind_decoder() -> decode.Decoder(UnnamedTopicKind) {
     "ContainingBlock" -> decode.success(SemanticBlock)
     "Break" -> decode.success(Break)
     "Continue" -> decode.success(Continue)
-    "DoWhile" -> decode.success(DoWhile)
     "Emit" -> decode.success(Emit)
-    "For" -> decode.success(For)
-    "If" -> decode.success(If)
     "InlineAssembly" -> decode.success(InlineAssembly)
     "Placeholder" -> decode.success(Placeholder)
     "Return" -> decode.success(Return)
     "Revert" -> decode.success(Revert)
     "Try" -> decode.success(Try)
     "UncheckedBlock" -> decode.success(UncheckedBlock)
-    "While" -> decode.success(While)
     "Reference" -> decode.success(Reference)
     "MutableReference" -> decode.success(MutableReference)
     "Signature" -> decode.success(Signature)
@@ -541,6 +585,20 @@ fn unnamed_topic_kind_decoder() -> decode.Decoder(UnnamedTopicKind) {
     "Literal" -> decode.success(Literal)
     "Other" -> decode.success(Other)
     _ -> decode.failure(Other, "UnnamedTopicKind")
+  }
+}
+
+fn control_flow_statement_kind_decoder() -> decode.Decoder(
+  ControlFlowStatementKind,
+) {
+  use kind_str <- decode.field("kind", decode.string)
+
+  case kind_str {
+    "If" -> decode.success(ControlFlowStatementIf)
+    "For" -> decode.success(ControlFlowStatementFor)
+    "While" -> decode.success(ControlFlowStatementWhile)
+    "DoWhile" -> decode.success(ControlFlowStatementDoWhile)
+    _ -> decode.failure(ControlFlowStatementIf, "ControlFlowStatementKind")
   }
 }
 
@@ -561,16 +619,34 @@ pub type TopicMetadata {
     relatives: List(Topic),
     mentions: List(ReferenceGroup),
   )
-  TitledTopic(topic: Topic, scope: Scope, kind: TitledTopicKind, title: String)
-  UnnamedTopic(topic: Topic, scope: Scope, kind: UnnamedTopicKind)
+  UnnamedTopic(
+    topic: Topic,
+    scope: Scope,
+    kind: UnnamedTopicKind,
+    mentions: List(ReferenceGroup),
+  )
+  ControlFlow(
+    topic: Topic,
+    scope: Scope,
+    kind: ControlFlowStatementKind,
+    condition: Topic,
+    mentions: List(ReferenceGroup),
+  )
+  TitledTopic(
+    topic: Topic,
+    scope: Scope,
+    kind: TitledTopicKind,
+    title: String,
+    mentions: List(ReferenceGroup),
+  )
   CommentTopic(
     topic: Topic,
     scope: Scope,
     author_id: Int,
     comment_type: CommentType,
-    target_topic: String,
+    target_topic: Topic,
     created_at: String,
-    mentioned_topics: List(String),
+    mentioned_topics: List(Topic),
     mentions: List(ReferenceGroup),
   )
 }
@@ -638,14 +714,33 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
     "titled" -> {
       use title <- decode.field("title", decode.string)
       use kind <- decode.then(titled_topic_kind_decoder())
-      decode.success(TitledTopic(topic:, scope:, kind:, title:))
+      use mentions <- decode.field(
+        "mentions",
+        decode.list(reference_group_decoder()),
+      )
+      decode.success(TitledTopic(topic:, scope:, kind:, title:, mentions:))
+    }
+    "control_flow" -> {
+      use kind <- decode.then(control_flow_statement_kind_decoder())
+      use condition_id <- decode.field("condition", decode.string)
+      use mentions <- decode.field(
+        "mentions",
+        decode.list(reference_group_decoder()),
+      )
+      decode.success(ControlFlow(
+        topic:,
+        scope:,
+        kind:,
+        condition: Topic(id: condition_id),
+        mentions:,
+      ))
     }
     "CommentTopic" -> {
       use author_id <- decode.field("author_id", decode.int)
       use comment_type <- decode.field("comment_type", comment_type_decoder())
-      use target_topic <- decode.field("target_topic", decode.string)
+      use target_topic_id <- decode.field("target_topic", decode.string)
       use created_at <- decode.field("created_at", decode.string)
-      use mentioned_topics <- decode.field(
+      use mentioned_topic_ids <- decode.field(
         "mentioned_topics",
         decode.list(decode.string),
       )
@@ -655,18 +750,22 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
       )
       decode.success(CommentTopic(
         topic:,
+        scope:,
         author_id:,
         comment_type:,
-        target_topic:,
+        target_topic: Topic(id: target_topic_id),
         created_at:,
-        scope:,
-        mentioned_topics:,
+        mentioned_topics: list.map(mentioned_topic_ids, Topic),
         mentions:,
       ))
     }
     _ -> {
       use kind <- decode.then(unnamed_topic_kind_decoder())
-      decode.success(UnnamedTopic(topic:, scope:, kind:))
+      use mentions <- decode.field(
+        "mentions",
+        decode.list(reference_group_decoder()),
+      )
+      decode.success(UnnamedTopic(topic:, scope:, kind:, mentions:))
     }
   }
 }
@@ -676,6 +775,7 @@ pub fn topic_metadata_name(metadata: TopicMetadata) -> String {
     NamedTopic(name:, ..) -> name
     TitledTopic(title:, ..) -> title
     UnnamedTopic(topic:, ..) -> topic.id
+    ControlFlow(topic:, ..) -> topic.id
     CommentTopic(topic:, ..) -> topic.id
   }
 }
@@ -778,17 +878,13 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
         SemanticBlock -> "<span class=\"block\">ContainingBlock</span>"
         Break -> "<span class=\"keyword\">BreakStatement</span>"
         Continue -> "<span class=\"keyword\">ContinueStatement</span>"
-        DoWhile -> "<span class=\"keyword\">DoWhileStatement</span>"
         Emit -> "<span class=\"keyword\">EmitStatement</span>"
-        For -> "<span class=\"keyword\">ForStatement</span>"
-        If -> "<span class=\"keyword\">IfStatement</span>"
         InlineAssembly -> "<span class=\"keyword\">InlineAssembly</span>"
         Placeholder -> "<span class=\"keyword\">PlaceholderStatement</span>"
         Return -> "<span class=\"keyword\">ReturnStatement</span>"
         Revert -> "<span class=\"keyword\">RevertStatement</span>"
         Try -> "<span class=\"keyword\">TryStatement</span>"
         UncheckedBlock -> "<span class=\"keyword\">UncheckedBlock</span>"
-        While -> "<span class=\"keyword\">WhileStatement</span>"
         Reference -> "<span class=\"identifier\">Reference</span>"
         MutableReference -> "<span class=\"identifier\">MutableReference</span>"
         Signature -> "<span class=\"identifier\">Signature</span>"
@@ -802,6 +898,15 @@ pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
         DocumentationInlineCode -> "<span>DocumentationInlineCode</span>"
         Literal -> "<span class=\"literal\">Literal</span>"
         Other -> "<span>Other</span>"
+      }
+    ControlFlow(kind:, ..) ->
+      case kind {
+        ControlFlowStatementIf -> "<span class=\"keyword\">IfStatement</span>"
+        ControlFlowStatementFor -> "<span class=\"keyword\">ForStatement</span>"
+        ControlFlowStatementWhile ->
+          "<span class=\"keyword\">WhileStatement</span>"
+        ControlFlowStatementDoWhile ->
+          "<span class=\"keyword\">DoWhileStatement</span>"
       }
     CommentTopic(..) -> "<span>Comment</span>"
   }

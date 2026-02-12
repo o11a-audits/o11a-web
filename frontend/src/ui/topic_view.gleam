@@ -1262,11 +1262,10 @@ fn populate_topic_panel(
     }
     Ok(metadata) -> {
       let parts = case metadata {
-        audit_data.UnnamedTopic(kind:, scope:, ..) ->
-          get_unnamed_topic_scope_parts(scope, kind)
-        audit_data.TitledTopic(title:, ..) -> {
-          [TextPart(title)]
-        }
+        audit_data.UnnamedTopic(scope:, ..) | audit_data.ControlFlow(scope:, ..) ->
+          get_unnamed_topic_scope_parts(scope)
+        audit_data.TitledTopic(title:, ..) -> [TextPart(title)]
+
         audit_data.NamedTopic(..) -> panic as "unreachable"
         audit_data.CommentTopic(..) -> [TextPart("Comment")]
       }
@@ -1499,38 +1498,13 @@ fn get_fully_qualified_name_parts(
   }
 }
 
-fn get_unnamed_topic_scope_parts(
-  scope: audit_data.Scope,
-  kind: audit_data.UnnamedTopicKind,
-) {
-  case kind {
-    // For documentation unnamed topics with Container scope, show the
-    // container path as the scope
-    audit_data.DocumentationBlockQuote
-    | audit_data.DocumentationCodeBlock
-    | audit_data.DocumentationHeading
-    | audit_data.DocumentationList
-    | audit_data.DocumentationParagraph
-    | audit_data.DocumentationRoot
-    | audit_data.DocumentationSentence -> [
-      case scope {
-        audit_data.Global -> TextPart("global")
-        audit_data.Container(container:) -> TextPart(container)
-        audit_data.Component(component:, ..)
-        | audit_data.Member(component:, ..)
-        | audit_data.ContainingBlock(component:, ..) -> TopicPart(component)
-      },
-    ]
-    _ ->
-      case scope {
-        audit_data.Global -> [TextPart("global")]
-        audit_data.Container(container:) -> [TextPart(container)]
-        audit_data.Component(component:, ..)
-        | audit_data.Member(component:, ..)
-        | audit_data.ContainingBlock(component:, ..) -> [
-          TopicPart(component),
-        ]
-      }
+fn get_unnamed_topic_scope_parts(scope: audit_data.Scope) {
+  case scope {
+    audit_data.Global -> [TextPart("global")]
+    audit_data.Container(container:) -> [TextPart(container)]
+    audit_data.Component(component:, ..)
+    | audit_data.Member(component:, ..)
+    | audit_data.ContainingBlock(component:, ..) -> [TopicPart(component)]
   }
 }
 
@@ -1860,7 +1834,7 @@ fn reload_topic_chain(topic_id: String, visited: List(String)) -> Nil {
             fn(result) {
               case result {
                 Ok(audit_data.CommentTopic(target_topic:, ..)) ->
-                  reload_topic_chain(target_topic, [topic_id, ..visited])
+                  reload_topic_chain(target_topic.id, [topic_id, ..visited])
                 _ -> Nil
               }
             },
