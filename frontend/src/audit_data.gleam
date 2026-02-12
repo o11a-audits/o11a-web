@@ -606,6 +606,7 @@ pub type TopicMetadata {
   NamedTopic(
     topic: Topic,
     scope: Scope,
+    mentions: List(ReferenceGroup),
     kind: NamedTopicKind,
     name: String,
     visibility: NamedTopicVisibility,
@@ -617,37 +618,36 @@ pub type TopicMetadata {
     ancestors: List(Topic),
     descendants: List(Topic),
     relatives: List(Topic),
-    mentions: List(ReferenceGroup),
   )
   UnnamedTopic(
     topic: Topic,
     scope: Scope,
-    kind: UnnamedTopicKind,
     mentions: List(ReferenceGroup),
+    kind: UnnamedTopicKind,
   )
   ControlFlow(
     topic: Topic,
     scope: Scope,
+    mentions: List(ReferenceGroup),
     kind: ControlFlowStatementKind,
     condition: Topic,
-    mentions: List(ReferenceGroup),
   )
   TitledTopic(
     topic: Topic,
     scope: Scope,
+    mentions: List(ReferenceGroup),
     kind: TitledTopicKind,
     title: String,
-    mentions: List(ReferenceGroup),
   )
   CommentTopic(
     topic: Topic,
     scope: Scope,
+    mentions: List(ReferenceGroup),
     author_id: Int,
     comment_type: CommentType,
     target_topic: Topic,
     created_at: String,
     mentioned_topics: List(Topic),
-    mentions: List(ReferenceGroup),
   )
 }
 

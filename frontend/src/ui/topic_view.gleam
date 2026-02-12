@@ -930,6 +930,343 @@ fn mount_subscope_title(
   Nil
 }
 
+/// Mounts a control flow opening syntax element (e.g., "if (cond) {", "for (...) {").
+/// Fetches the condition source text asynchronously. The condition is indented.
+fn mount_control_flow_opening(
+  control_flow: audit_data.ControlFlowInfo,
+  to parent: element.Element,
+  config config: option.Option(GroupedSourcePanelConfig),
+) -> Nil {
+  let kw = fn(text) { "<span class=\"keyword\">" <> text <> "</span>" }
+
+  // For do-while, the opening is just "do {" with no condition
+  case control_flow.kind {
+    audit_data.ControlFlowDoWhile -> {
+      let _ =
+        dromel.new_div()
+        |> dromel.set_inner_html("<code>" <> kw("do") <> " {</code>")
+        |> dromel.append_as_child(to: parent)
+      Nil
+    }
+    _ -> {
+      let keyword = case control_flow.kind {
+        audit_data.ControlFlowIf(_) -> "if"
+        audit_data.ControlFlowFor -> "for"
+        audit_data.ControlFlowWhile -> "while"
+        audit_data.ControlFlowDoWhile -> "do"
+      }
+
+      // Render keyword
+      let _ =
+        dromel.new_div()
+        |> dromel.set_inner_html("<code>" <> kw(keyword) <> " (</code>")
+        |> dromel.append_as_child(to: parent)
+
+      // Render condition in an indent div
+      let condition_indent =
+        dromel.new_div()
+        |> dromel.add_class(dromel.Class("indent"))
+        |> dromel.append_as_child(to: parent)
+
+      let condition_el =
+        dromel.new_div()
+        |> dromel.set_inner_html("<code>...</code>")
+        |> dromel.append_as_child(to: condition_indent)
+
+      audit_data.with_topic_metadata(
+        control_flow.topic,
+        fn(metadata: Result(audit_data.TopicMetadata, snag.Snag)) -> Nil {
+          case metadata {
+            Ok(audit_data.ControlFlow(condition:, ..)) -> {
+              audit_data.with_source_text(condition, fn(source_text) {
+                let cond_html = case source_text {
+                  Ok(text) -> text
+                  Error(_) -> "..."
+                }
+                dromel.set_inner_html(condition_el, cond_html)
+                case config {
+                  option.Some(cfg) -> gather_panel_tokens(cfg)
+                  option.None -> Nil
+                }
+              })
+              Nil
+            }
+            _ -> Nil
+          }
+        },
+      )
+
+      // Render closing paren and brace
+      let _ =
+        dromel.new_div()
+        |> dromel.set_inner_html("<code>) {</code>")
+        |> dromel.append_as_child(to: parent)
+      Nil
+    }
+  }
+}
+
+/// Mounts a static control flow syntax element (no async fetching needed).
+fn mount_control_flow_static(html: String, to parent: element.Element) -> Nil {
+  let _ =
+    dromel.new_div()
+    |> dromel.set_inner_html("<code>" <> html <> "</code>")
+    |> dromel.append_as_child(to: parent)
+  Nil
+}
+
+/// Mounts a do-while closing: "} while (\n  cond\n)". Fetches condition asynchronously.
+fn mount_do_while_closing(
+  control_flow: audit_data.ControlFlowInfo,
+  to parent: element.Element,
+  config config: option.Option(GroupedSourcePanelConfig),
+) -> Nil {
+  let kw = fn(text) { "<span class=\"keyword\">" <> text <> "</span>" }
+
+  // Render "} while ("
+  let _ =
+    dromel.new_div()
+    |> dromel.set_inner_html("<code>} " <> kw("while") <> " (</code>")
+    |> dromel.append_as_child(to: parent)
+
+  // Render condition in an indent div
+  let condition_indent =
+    dromel.new_div()
+    |> dromel.add_class(dromel.Class("indent"))
+    |> dromel.append_as_child(to: parent)
+
+  let condition_el =
+    dromel.new_div()
+    |> dromel.set_inner_html("<code>...</code>")
+    |> dromel.append_as_child(to: condition_indent)
+
+  audit_data.with_topic_metadata(
+    control_flow.topic,
+    fn(metadata: Result(audit_data.TopicMetadata, snag.Snag)) -> Nil {
+      case metadata {
+        Ok(audit_data.ControlFlow(condition:, ..)) -> {
+          audit_data.with_source_text(condition, fn(source_text) {
+            let cond_html = case source_text {
+              Ok(text) -> text
+              Error(_) -> "..."
+            }
+            dromel.set_inner_html(condition_el, cond_html)
+            // TODO: really the config should be required and this should always
+            // gather panel tokens. Some logic between the main panel and 
+            // the references panel needs to be unified.
+            case config {
+              option.Some(cfg) -> gather_panel_tokens(cfg)
+              option.None -> Nil
+            }
+          })
+          Nil
+        }
+        _ -> Nil
+      }
+    },
+  )
+
+  // Render closing paren
+  let _ =
+    dromel.new_div()
+    |> dromel.set_inner_html("<code>)</code>")
+    |> dromel.append_as_child(to: parent)
+
+  Nil
+}
+
+/// Renders a control flow syntax block as part of the dashed-border chain.
+fn render_control_flow_syntax_block(
+  parent: element.Element,
+  ref_group: audit_data.ReferenceGroup,
+  index: Int,
+  total_references: Int,
+) -> element.Element {
+  let syntax_source =
+    dromel.new_div()
+    |> dromel.set_style(combined_panel_style)
+
+  case ref_group.is_in_scope {
+    True -> Nil
+    False -> {
+      dromel.add_style(
+        syntax_source,
+        "border-color: var(--color-body-out-of-scope-bg)",
+      )
+      Nil
+    }
+  }
+
+  apply_first_last_style(syntax_source, index, total_references)
+  let _ = dromel.append_as_child(syntax_source, to: parent)
+  syntax_source
+}
+
+/// Recursively renders a control flow reference group with opening/closing syntax
+/// and indented references, all within the dashed-border chain.
+fn render_control_flow_group(
+  cf_group: audit_data.ControlFlowReferenceGroup,
+  parent: element.Element,
+  config: GroupedSourcePanelConfig,
+  ref_group: audit_data.ReferenceGroup,
+  current_index: Int,
+  total_references: Int,
+  subscope_title: option.Option(audit_data.Topic),
+) -> Int {
+  let kw = fn(text) { "<span class=\"keyword\">" <> text <> "</span>" }
+  let control_flow = cf_group.control_flow
+
+  // Render opening syntax as a block in the dashed-border chain
+  let opening_block =
+    render_control_flow_syntax_block(
+      parent,
+      ref_group,
+      current_index,
+      total_references,
+    )
+
+  // Mount subscope title if provided (first control flow group in a nested group)
+  case subscope_title {
+    option.Some(topic) -> {
+      mount_subscope_title(topic, to: opening_block)
+      Nil
+    }
+    option.None -> Nil
+  }
+
+  case control_flow.kind {
+    audit_data.ControlFlowIf(audit_data.FalseBranch)
+      if !cf_group.has_sibling_branch
+    -> {
+      // False branch without sibling: render "if (cond) {" then "} else {"
+      mount_control_flow_opening(
+        control_flow,
+        to: opening_block,
+        config: option.Some(config),
+      )
+      mount_control_flow_static("} " <> kw("else") <> " {", to: opening_block)
+    }
+    audit_data.ControlFlowIf(audit_data.FalseBranch) -> {
+      // False branch with sibling: just render "} else {"
+      mount_control_flow_static("} " <> kw("else") <> " {", to: opening_block)
+    }
+    audit_data.ControlFlowDoWhile -> {
+      // Do-while: render "do {"
+      mount_control_flow_static(kw("do") <> " {", to: opening_block)
+    }
+    _ -> {
+      // For, while, if true branch: render "keyword (cond) {"
+      mount_control_flow_opening(
+        control_flow,
+        to: opening_block,
+        config: option.Some(config),
+      )
+    }
+  }
+
+  // Render references — each gets its own block in the chain,
+  // with source content wrapped in an indent div
+  let index_after_refs =
+    list.index_fold(
+      cf_group.references,
+      current_index + 1,
+      fn(index, ref_entry, _ref_index) {
+        let source_placeholder =
+          dromel.new_div()
+          |> dromel.append_as_child(to: parent)
+
+        audit_data.with_topic_data(
+          ref_entry.reference_topic,
+          fn(_metadata, source_text, _comments) {
+            let reference_source =
+              dromel.new_div()
+              |> dromel.add_class(elements.source_container_class)
+              |> dromel.set_data(topic_key, ref_entry.reference_topic.id)
+              |> dromel.set_data(contract_key, ref_group.scope.id)
+              |> dromel.set_style(combined_panel_style)
+              |> dromel.add_style("padding-left: 0.5rem;")
+
+            case ref_group.is_in_scope {
+              True -> Nil
+              False -> {
+                dromel.add_style(
+                  reference_source,
+                  "border-color: var(--color-body-out-of-scope-bg)",
+                )
+                Nil
+              }
+            }
+
+            apply_first_last_style(reference_source, index, total_references)
+
+            // Wrap source content in indent div
+            let indent_div =
+              dromel.new_div()
+              |> dromel.add_class(dromel.Class("indent"))
+              |> dromel.append_as_child(to: reference_source)
+
+            populate_reference_source(ref_entry, indent_div, source_text)
+
+            let _ =
+              source_placeholder
+              |> dromel.append_child(reference_source)
+
+            gather_panel_tokens(config)
+
+            Nil
+          },
+        )
+
+        index + 1
+      },
+    )
+
+  // Recursively render nested control flow groups
+  let index_after_nested =
+    list.fold(cf_group.nested, index_after_refs, fn(idx, nested_cf) {
+      render_control_flow_group(
+        nested_cf,
+        parent,
+        config,
+        ref_group,
+        idx,
+        total_references,
+        option.None,
+      )
+    })
+
+  // Render closing syntax as a block in the dashed-border chain
+  let closing_block =
+    render_control_flow_syntax_block(
+      parent,
+      ref_group,
+      index_after_nested,
+      total_references,
+    )
+  case control_flow.kind, cf_group.has_sibling_branch {
+    audit_data.ControlFlowIf(audit_data.TrueBranch), True ->
+      mount_control_flow_static("} " <> kw("else") <> " {", to: closing_block)
+    audit_data.ControlFlowDoWhile, _ ->
+      mount_do_while_closing(
+        control_flow,
+        to: closing_block,
+        config: option.Some(config),
+      )
+    _, _ -> mount_control_flow_static("}", to: closing_block)
+  }
+
+  index_after_nested + 1
+}
+
+fn count_control_flow_blocks(group: audit_data.ControlFlowReferenceGroup) -> Int {
+  // Each group contributes: 1 opening block + references + nested groups + 1 closing block
+  2
+  + list.length(group.references)
+  + list.fold(group.nested, 0, fn(acc, nested) {
+    acc + count_control_flow_blocks(nested)
+  })
+}
+
 fn populate_reference_source(
   ref_entry: audit_data.ReferenceEntry,
   reference_source: element.Element,
@@ -1027,7 +1364,11 @@ fn populate_grouped_source_panel(
     let total_references =
       list.length(ref_group.scope_references)
       + list.fold(ref_group.nested_references, 0, fn(acc, nested_group) {
-        acc + list.length(nested_group.references)
+        acc
+        + list.length(nested_group.references)
+        + list.fold(nested_group.control_flow_groups, 0, fn(cf_acc, cf_group) {
+          cf_acc + count_control_flow_blocks(cf_group)
+        })
       })
 
     // Render scope-level references
@@ -1082,75 +1423,100 @@ fn populate_grouped_source_panel(
       ref_group.nested_references,
       index_after_scope,
       fn(current_index, nested_group) {
-        // Track whether this is the first reference in the nested group
+        // Render nested group references
+        let index_after_refs =
+          list.index_fold(
+            nested_group.references,
+            current_index,
+            fn(index, ref_entry, nested_ref_index) {
+              let source_placeholder =
+                dromel.new_div()
+                |> dromel.append_as_child(to: group_container)
+
+              audit_data.with_topic_data(
+                ref_entry.reference_topic,
+                fn(_metadata, source_text, _comments) {
+                  let reference_source =
+                    dromel.new_div()
+                    |> dromel.add_class(elements.source_container_class)
+                    |> dromel.set_data(topic_key, ref_entry.reference_topic.id)
+                    |> dromel.set_data(member_key, nested_group.subscope.id)
+                    |> dromel.set_data(contract_key, ref_group.scope.id)
+                    |> dromel.set_style(combined_panel_style)
+                    |> dromel.add_style("padding-left: 0.5rem;")
+
+                  // Apply out-of-scope border color if contract is not in scope
+                  case ref_group.is_in_scope {
+                    True -> Nil
+                    False -> {
+                      dromel.add_style(
+                        reference_source,
+                        "border-color: var(--color-body-out-of-scope-bg)",
+                      )
+                      Nil
+                    }
+                  }
+
+                  apply_first_last_style(
+                    reference_source,
+                    index,
+                    total_references,
+                  )
+
+                  // Add subscope title only for the first reference in the nested group
+                  case nested_ref_index {
+                    0 -> {
+                      mount_subscope_title(
+                        nested_group.subscope,
+                        to: reference_source,
+                      )
+                      Nil
+                    }
+                    _ -> Nil
+                  }
+
+                  populate_reference_source(
+                    ref_entry,
+                    reference_source,
+                    source_text,
+                  )
+
+                  let _ =
+                    source_placeholder
+                    |> dromel.append_child(reference_source)
+
+                  // Re-gather tokens after each source loads
+                  gather_panel_tokens(config)
+
+                  Nil
+                },
+              )
+
+              index + 1
+            },
+          )
+
+        // Render control flow groups for this nested group.
+        // If no direct references were rendered, pass the subscope title
+        // to the first control flow group so it gets rendered there.
+        let needs_subscope_title = list.is_empty(nested_group.references)
         list.index_fold(
-          nested_group.references,
-          current_index,
-          fn(index, ref_entry, nested_ref_index) {
-            let source_placeholder =
-              dromel.new_div()
-              |> dromel.append_as_child(to: group_container)
-
-            audit_data.with_topic_data(
-              ref_entry.reference_topic,
-              fn(_metadata, source_text, _comments) {
-                let reference_source =
-                  dromel.new_div()
-                  |> dromel.add_class(elements.source_container_class)
-                  |> dromel.set_data(topic_key, ref_entry.reference_topic.id)
-                  |> dromel.set_data(member_key, nested_group.subscope.id)
-                  |> dromel.set_data(contract_key, ref_group.scope.id)
-                  |> dromel.set_style(combined_panel_style)
-                  |> dromel.add_style("padding-left: 0.5rem;")
-
-                // Apply out-of-scope border color if contract is not in scope
-                case ref_group.is_in_scope {
-                  True -> Nil
-                  False -> {
-                    dromel.add_style(
-                      reference_source,
-                      "border-color: var(--color-body-out-of-scope-bg)",
-                    )
-                    Nil
-                  }
-                }
-
-                apply_first_last_style(
-                  reference_source,
-                  index,
-                  total_references,
-                )
-
-                // Add subscope title only for the first reference in the nested group
-                case nested_ref_index {
-                  0 -> {
-                    mount_subscope_title(
-                      nested_group.subscope,
-                      to: reference_source,
-                    )
-                    Nil
-                  }
-                  _ -> Nil
-                }
-
-                populate_reference_source(
-                  ref_entry,
-                  reference_source,
-                  source_text,
-                )
-
-                let _ =
-                  source_placeholder
-                  |> dromel.append_child(reference_source)
-
-                // Re-gather tokens after each source loads
-                gather_panel_tokens(config)
-
-                Nil
-              },
+          nested_group.control_flow_groups,
+          index_after_refs,
+          fn(cf_index, cf_group, cf_group_index) {
+            let subscope_title = case needs_subscope_title, cf_group_index {
+              True, 0 -> option.Some(nested_group.subscope)
+              _, _ -> option.None
+            }
+            render_control_flow_group(
+              cf_group,
+              group_container,
+              config,
+              ref_group,
+              cf_index,
+              total_references,
+              subscope_title,
             )
-
-            index + 1
           },
         )
       },
@@ -1295,6 +1661,25 @@ fn populate_topic_panel(
         _ -> option.None
       }
 
+      // Extract containing block layers from scope (if any)
+      let containing_blocks = case metadata {
+        audit_data.UnnamedTopic(
+          scope: audit_data.ContainingBlock(containing_blocks:, ..),
+          ..,
+        )
+        | audit_data.ControlFlow(
+            scope: audit_data.ContainingBlock(containing_blocks:, ..),
+            ..,
+          ) -> containing_blocks
+        _ -> []
+      }
+
+      // Filter to only layers with control flow info
+      let control_flow_layers =
+        list.filter(containing_blocks, fn(layer) {
+          option.is_some(layer.control_flow)
+        })
+
       // For unnamed topics, directly render the topic's source text
       audit_data.with_source_text(metadata.topic, fn(source_text) {
         case source_text {
@@ -1307,27 +1692,119 @@ fn populate_topic_panel(
 
             mount_breadcrumb_parts(parts, to: topic_title)
 
-            let source_panel =
-              dromel.new_div()
-              |> dromel.set_style(single_panel_style)
+            let group_container = dromel.new_div()
 
-            // Render subscope (member) title inside source panel if present
-            case subscope_topic {
-              option.Some(member_topic) ->
-                mount_subscope_title(member_topic, to: source_panel)
-              option.None -> Nil
+            case control_flow_layers {
+              [] -> {
+                // No control flow context — render as a single panel
+                let source_panel =
+                  dromel.new_div()
+                  |> dromel.set_style(single_panel_style)
+                  |> dromel.append_as_child(to: group_container)
+
+                // Render subscope title inside the panel
+                case subscope_topic {
+                  option.Some(member_topic) ->
+                    mount_subscope_title(member_topic, to: source_panel)
+                  option.None -> Nil
+                }
+
+                let source_content =
+                  dromel.new_div()
+                  |> dromel.set_inner_html(source_text)
+                  |> dromel.append_as_child(to: source_panel)
+
+                inject_inline_info_comments(source_content)
+              }
+              _ -> {
+                // With control flow context — render as dashed-border chain.
+                // Total blocks: 1 opening + 1 closing per layer + 1 source block
+                let total_blocks = list.length(control_flow_layers) * 2 + 1
+
+                // Render opening blocks for each layer
+                let #(current_index, _) =
+                  list.index_fold(
+                    control_flow_layers,
+                    #(0, Nil),
+                    fn(acc, layer, layer_index) {
+                      let #(idx, _) = acc
+                      let assert option.Some(cf) = layer.control_flow
+                      let opening =
+                        dromel.new_div()
+                        |> dromel.set_style(combined_panel_style)
+                        |> dromel.append_as_child(to: group_container)
+                      apply_first_last_style(opening, idx, total_blocks)
+
+                      // Render subscope title inside the first opening block
+                      case subscope_topic, layer_index {
+                        option.Some(member_topic), 0 ->
+                          mount_subscope_title(member_topic, to: opening)
+                        _, _ -> Nil
+                      }
+
+                      mount_control_flow_opening(
+                        cf,
+                        to: opening,
+                        config: option.None,
+                      )
+                      #(idx + 1, Nil)
+                    },
+                  )
+
+                // Render source content block with indent
+                let source_block =
+                  dromel.new_div()
+                  |> dromel.set_style(combined_panel_style)
+                  |> dromel.append_as_child(to: group_container)
+                apply_first_last_style(
+                  source_block,
+                  current_index,
+                  total_blocks,
+                )
+
+                let indent_div =
+                  dromel.new_div()
+                  |> dromel.add_class(dromel.Class("indent"))
+                  |> dromel.append_as_child(to: source_block)
+
+                let source_content =
+                  dromel.new_div()
+                  |> dromel.set_inner_html(source_text)
+                  |> dromel.append_as_child(to: indent_div)
+
+                inject_inline_info_comments(source_content)
+
+                // Render closing blocks (in reverse order)
+                list.index_fold(
+                  list.reverse(control_flow_layers),
+                  current_index + 1,
+                  fn(idx, layer, _) {
+                    let assert option.Some(cf) = layer.control_flow
+                    let closing =
+                      dromel.new_div()
+                      |> dromel.set_style(combined_panel_style)
+                      |> dromel.append_as_child(to: group_container)
+                    apply_first_last_style(closing, idx, total_blocks)
+                    case cf.kind {
+                      audit_data.ControlFlowDoWhile ->
+                        mount_do_while_closing(
+                          cf,
+                          to: closing,
+                          config: option.None,
+                        )
+                      _ -> mount_control_flow_static("}", to: closing)
+                    }
+                    idx + 1
+                  },
+                )
+
+                Nil
+              }
             }
-
-            let source_content =
-              dromel.new_div()
-              |> dromel.set_inner_html(source_text)
-              |> dromel.append_as_child(to: source_panel)
-
-            inject_inline_info_comments(source_content)
 
             elements.topic_panel
             |> dromel.append_child(topic_title)
-            |> dromel.append_child(source_panel)
+            |> dromel.append_child(group_container)
 
             // Gather tokens after source loads
             gather_panel_tokens(GroupedSourcePanelConfig(
@@ -1395,18 +1872,13 @@ fn populate_mentions_panel(
 ) -> Nil {
   case metadata {
     Ok(metadata) -> {
-      let mentions = case metadata {
-        audit_data.NamedTopic(mentions:, ..) -> mentions
-        _ -> []
-      }
-
       populate_grouped_source_panel(
         GroupedSourcePanelConfig(
           container:,
           panel: elements.mentions_panel,
           token_field: MentionsPanelTokens,
         ),
-        mentions,
+        metadata.mentions,
       )
     }
     Error(_snag) -> {
