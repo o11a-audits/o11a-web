@@ -338,16 +338,6 @@ fn get_active_topic_view(container: element.Element) -> Result(TopicView, Nil) {
   |> result.try(get_topic_view)
 }
 
-const current_mentions_index_key = dromel.DataKey("current_mentions_index")
-
-const current_child_topic_index_key = dromel.DataKey(
-  "current_child_topic_index",
-)
-
-const current_comments_index_key = dromel.DataKey("current_comments_index")
-
-const current_references_index_key = dromel.DataKey("current_references_index")
-
 const active_panel_key = dromel.DataKey("active_panel")
 
 const topic_key = dromel.DataKey("topic")
@@ -356,60 +346,70 @@ const member_key = dromel.DataKey("member")
 
 const contract_key = dromel.DataKey("contract")
 
-fn set_current_mentions_index(container: element.Element, index: Int) -> Nil {
-  let _ =
-    dromel.set_data(container, current_mentions_index_key, int.to_string(index))
-  Nil
+fn panel_index_key(panel: ActivePanel) -> dromel.DataKey {
+  case panel {
+    history_graph.MentionsPanel -> dromel.DataKey("current_mentions_index")
+    history_graph.CommentsPanel -> dromel.DataKey("current_comments_index")
+    history_graph.TopicPanel -> dromel.DataKey("current_child_topic_index")
+    history_graph.ReferencesPanel -> dromel.DataKey("current_references_index")
+  }
 }
 
-fn get_current_mentions_index(container: element.Element) -> Int {
-  dromel.get_data(container, current_mentions_index_key)
+fn get_panel_index(container: element.Element, panel: ActivePanel) -> Int {
+  dromel.get_data(container, panel_index_key(panel))
   |> result.try(int.parse)
   |> result.unwrap(0)
 }
 
-fn set_current_child_topic_index(container: element.Element, index: Int) -> Nil {
+fn set_panel_index(
+  container: element.Element,
+  panel: ActivePanel,
+  index: Int,
+) -> Nil {
   let _ =
-    dromel.set_data(
-      container,
-      current_child_topic_index_key,
-      int.to_string(index),
-    )
+    dromel.set_data(container, panel_index_key(panel), int.to_string(index))
   Nil
 }
 
-fn get_current_child_topic_index(container: element.Element) -> Int {
-  dromel.get_data(container, current_child_topic_index_key)
-  |> result.try(int.parse)
-  |> result.unwrap(0)
+fn get_panel_tokens(
+  elements: ActiveViewElements,
+  panel: ActivePanel,
+) -> array.Array(element.Element) {
+  case panel {
+    history_graph.MentionsPanel -> elements.mentions_tokens
+    history_graph.CommentsPanel -> elements.comments_tokens
+    history_graph.TopicPanel -> elements.topic_children_tokens
+    history_graph.ReferencesPanel -> elements.expanded_references_tokens
+  }
 }
 
-fn set_current_references_index(container: element.Element, index: Int) -> Nil {
-  let _ =
-    dromel.set_data(
-      container,
-      current_references_index_key,
-      int.to_string(index),
-    )
-  Nil
+fn set_panel_tokens(
+  elements: ActiveViewElements,
+  panel: ActivePanel,
+  tokens: array.Array(element.Element),
+) -> ActiveViewElements {
+  case panel {
+    history_graph.MentionsPanel ->
+      ActiveViewElements(..elements, mentions_tokens: tokens)
+    history_graph.CommentsPanel ->
+      ActiveViewElements(..elements, comments_tokens: tokens)
+    history_graph.TopicPanel ->
+      ActiveViewElements(..elements, topic_children_tokens: tokens)
+    history_graph.ReferencesPanel ->
+      ActiveViewElements(..elements, expanded_references_tokens: tokens)
+  }
 }
 
-fn get_current_references_index(container: element.Element) -> Int {
-  dromel.get_data(container, current_references_index_key)
-  |> result.try(int.parse)
-  |> result.unwrap(0)
-}
-
-fn set_current_comments_index(container: element.Element, index: Int) -> Nil {
-  let _ =
-    dromel.set_data(container, current_comments_index_key, int.to_string(index))
-  Nil
-}
-
-fn get_current_comments_index(container: element.Element) -> Int {
-  dromel.get_data(container, current_comments_index_key)
-  |> result.try(int.parse)
-  |> result.unwrap(0)
+fn get_panel_element(
+  elements: ActiveViewElements,
+  panel: ActivePanel,
+) -> element.Element {
+  case panel {
+    history_graph.MentionsPanel -> elements.mentions_panel
+    history_graph.CommentsPanel -> elements.comments_panel
+    history_graph.TopicPanel -> elements.topic_panel
+    history_graph.ReferencesPanel -> elements.expanded_references_panel
+  }
 }
 
 fn set_active_panel(container: element.Element, panel: ActivePanel) -> Nil {
@@ -438,10 +438,10 @@ fn get_current_focus_state(
   container: element.Element,
 ) -> history_graph.FocusState {
   history_graph.FocusState(
-    mentions_index: get_current_mentions_index(container),
-    comments_index: get_current_comments_index(container),
-    topic_index: get_current_child_topic_index(container),
-    references_index: get_current_references_index(container),
+    mentions_index: get_panel_index(container, history_graph.MentionsPanel),
+    comments_index: get_panel_index(container, history_graph.CommentsPanel),
+    topic_index: get_panel_index(container, history_graph.TopicPanel),
+    references_index: get_panel_index(container, history_graph.ReferencesPanel),
     active_panel: get_active_panel(container),
   )
 }
@@ -450,10 +450,22 @@ fn set_focus_state(
   container: element.Element,
   focus_state: history_graph.FocusState,
 ) -> Nil {
-  set_current_mentions_index(container, focus_state.mentions_index)
-  set_current_comments_index(container, focus_state.comments_index)
-  set_current_child_topic_index(container, focus_state.topic_index)
-  set_current_references_index(container, focus_state.references_index)
+  set_panel_index(
+    container,
+    history_graph.MentionsPanel,
+    focus_state.mentions_index,
+  )
+  set_panel_index(
+    container,
+    history_graph.CommentsPanel,
+    focus_state.comments_index,
+  )
+  set_panel_index(container, history_graph.TopicPanel, focus_state.topic_index)
+  set_panel_index(
+    container,
+    history_graph.ReferencesPanel,
+    focus_state.references_index,
+  )
   set_active_panel(container, focus_state.active_panel)
 }
 
@@ -465,8 +477,6 @@ fn set_focus_state(
 const container_style = "position: relative; padding-top: 0.5rem; width: calc(40ch + 1rem + 2px);"
 
 const panel_style = "min-height: 0; height: 100%; width: unset;"
-
-const single_panel_style = "border-radius: 8px; border: 1px solid var(--color-body-border); padding: 0.5rem; background: var(--color-code-bg); margin-bottom: 0.5rem;"
 
 // Note: These styles use border-width and border-style separately from border-color
 // so that the out-of-scope border-color (--color-body-out-of-scope-bg) is not overridden
@@ -604,16 +614,11 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
                                 "display: none;",
                               )
                               dromel.blur(input_elem)
-                              case get_active_panel(container) {
-                                history_graph.MentionsPanel ->
-                                  move_to_mention_child(container, 0)
-                                history_graph.CommentsPanel ->
-                                  move_to_comment_child(container, 0)
-                                history_graph.TopicPanel ->
-                                  move_to_topic_child(container, 0)
-                                history_graph.ReferencesPanel ->
-                                  move_to_reference_child(container, 0)
-                              }
+                              move_focus_in_panel(
+                                container,
+                                get_active_panel(container),
+                                0,
+                              )
                             }
                             Error(error) -> {
                               let _ =
@@ -641,15 +646,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
           case dromel.cast(event.target(e)) {
             Ok(input_elem) -> {
               dromel.blur(input_elem)
-              case get_active_panel(container) {
-                history_graph.MentionsPanel ->
-                  move_to_mention_child(container, 0)
-                history_graph.CommentsPanel ->
-                  move_to_comment_child(container, 0)
-                history_graph.TopicPanel -> move_to_topic_child(container, 0)
-                history_graph.ReferencesPanel ->
-                  move_to_reference_child(container, 0)
-              }
+              move_focus_in_panel(container, get_active_panel(container), 0)
             }
             Error(_) -> Nil
           }
@@ -1524,443 +1521,40 @@ fn populate_grouped_source_panel(
   })
 }
 
-/// Gather topic tokens for a panel based on its configuration
+/// Gather topic tokens for a panel based on its configuration.
+/// Only focuses the token if this panel is the currently active panel.
 fn gather_panel_tokens(config: GroupedSourcePanelConfig) -> Nil {
   case get_active_view_elements() {
     Ok(active_elements) -> {
       let tokens =
         dromel.query_element_all(config.panel, elements.topic_tokens_class)
-      let active_panel = get_active_panel(config.container)
-      case config.token_field {
-        MentionsPanelTokens -> {
-          set_active_view_elements(
-            ActiveViewElements(..active_elements, mentions_tokens: tokens),
-          )
-          // Only focus if this is the active panel
-          case active_panel {
-            history_graph.MentionsPanel -> {
-              let index = get_current_mentions_index(config.container)
-              case array.get(tokens, index) {
-                Ok(el) -> focus_topic_token_and_prefetch(el)
-                Error(Nil) -> Nil
-              }
-            }
-            history_graph.CommentsPanel
-            | history_graph.TopicPanel
-            | history_graph.ReferencesPanel -> Nil
+      let panel = case config.token_field {
+        MentionsPanelTokens -> history_graph.MentionsPanel
+        CommentsPanelTokens -> history_graph.CommentsPanel
+        TopicPanelTokens -> history_graph.TopicPanel
+        ReferencesPanelTokens -> history_graph.ReferencesPanel
+      }
+      let updated = set_panel_tokens(active_elements, panel, tokens)
+      set_active_view_elements(updated)
+
+      // Only focus if this is the active panel. Without this check,
+      // navigating back to a topic where the user was in the references
+      // panel would incorrectly focus the topic panel, because
+      // populate_topic_panel runs before populate_expanded_references_panel.
+      case get_active_panel(config.container) == panel {
+        True -> {
+          let index = get_panel_index(config.container, panel)
+          case array.get(tokens, index) {
+            Ok(el) -> focus_topic_token_and_prefetch(el)
+            Error(Nil) -> Nil
           }
         }
-        CommentsPanelTokens -> {
-          set_active_view_elements(
-            ActiveViewElements(..active_elements, comments_tokens: tokens),
-          )
-          case active_panel {
-            history_graph.CommentsPanel -> {
-              let index = get_current_comments_index(config.container)
-              case array.get(tokens, index) {
-                Ok(el) -> focus_topic_token_and_prefetch(el)
-                Error(Nil) -> Nil
-              }
-            }
-            history_graph.MentionsPanel
-            | history_graph.TopicPanel
-            | history_graph.ReferencesPanel -> Nil
-          }
-        }
-        TopicPanelTokens -> {
-          set_active_view_elements(
-            ActiveViewElements(..active_elements, topic_children_tokens: tokens),
-          )
-          // Only focus if this is the active panel. Without this check,
-          // navigating back to a topic where the user was in the references
-          // panel would incorrectly focus the topic panel, because
-          // populate_topic_panel runs before populate_expanded_references_panel.
-          case active_panel {
-            history_graph.TopicPanel -> {
-              let index = get_current_child_topic_index(config.container)
-              case array.get(tokens, index) {
-                Ok(el) -> focus_topic_token_and_prefetch(el)
-                Error(Nil) -> Nil
-              }
-            }
-            history_graph.MentionsPanel
-            | history_graph.CommentsPanel
-            | history_graph.ReferencesPanel -> Nil
-          }
-        }
-        ReferencesPanelTokens -> {
-          set_active_view_elements(
-            ActiveViewElements(
-              ..active_elements,
-              expanded_references_tokens: tokens,
-            ),
-          )
-          // Only focus if this is the active panel (see comment above)
-          case active_panel {
-            history_graph.ReferencesPanel -> {
-              let index = get_current_references_index(config.container)
-              case array.get(tokens, index) {
-                Ok(el) -> focus_topic_token_and_prefetch(el)
-                Error(Nil) -> Nil
-              }
-            }
-            history_graph.MentionsPanel
-            | history_graph.CommentsPanel
-            | history_graph.TopicPanel -> Nil
-          }
-        }
+        False -> Nil
       }
       Nil
     }
     Error(Nil) -> Nil
   }
-}
-
-/// Callback for loading topic metadata and populating the topic panel
-fn populate_topic_panel(
-  container: element.Element,
-  metadata: Result(audit_data.TopicMetadata, snag.Snag),
-  elements: ActiveViewElements,
-) -> Nil {
-  case metadata {
-    Ok(audit_data.NamedTopic(context:, ..)) -> {
-      // Clear the topic panel and use grouped source panel rendering
-      let _ = dromel.set_inner_html(elements.topic_panel, "")
-
-      populate_grouped_source_panel(
-        GroupedSourcePanelConfig(
-          container:,
-          panel: elements.topic_panel,
-          token_field: TopicPanelTokens,
-        ),
-        context,
-      )
-    }
-    Ok(metadata) -> {
-      let parts = case metadata {
-        audit_data.UnnamedTopic(scope:, ..) | audit_data.ControlFlow(scope:, ..) ->
-          get_unnamed_topic_scope_parts(scope)
-        audit_data.TitledTopic(title:, ..) -> [TextPart(title)]
-
-        audit_data.NamedTopic(..) -> panic as "unreachable"
-        audit_data.CommentTopic(..) -> [TextPart("Comment")]
-      }
-
-      // Get the member topic from scope (if any) for subscope title
-      let subscope_topic = case metadata {
-        audit_data.UnnamedTopic(scope: audit_data.Member(member:, ..), ..)
-        | audit_data.UnnamedTopic(
-            scope: audit_data.ContainingBlock(member:, ..),
-            ..,
-          )
-        | audit_data.ControlFlow(scope: audit_data.Member(member:, ..), ..)
-        | audit_data.ControlFlow(
-            scope: audit_data.ContainingBlock(member:, ..),
-            ..,
-          ) -> option.Some(member)
-        _ -> option.None
-      }
-
-      // Extract containing block layers from scope (if any)
-      let containing_blocks = case metadata {
-        audit_data.UnnamedTopic(
-          scope: audit_data.ContainingBlock(containing_blocks:, ..),
-          ..,
-        )
-        | audit_data.ControlFlow(
-            scope: audit_data.ContainingBlock(containing_blocks:, ..),
-            ..,
-          ) -> containing_blocks
-        _ -> []
-      }
-
-      // Filter to only layers with control flow info
-      let control_flow_layers =
-        list.filter(containing_blocks, fn(layer) {
-          option.is_some(layer.control_flow)
-        })
-
-      // For unnamed topics, directly render the topic's source text
-      audit_data.with_source_text(metadata.topic, fn(source_text) {
-        case source_text {
-          Ok(source_text) -> {
-            let topic_title =
-              dromel.new_div()
-              |> dromel.set_style(
-                "padding-left: 0.5rem; margin-bottom: 0.5rem;",
-              )
-
-            mount_breadcrumb_parts(parts, to: topic_title)
-
-            let group_container = dromel.new_div()
-
-            case control_flow_layers {
-              [] -> {
-                // No control flow context — render as a single panel
-                let source_panel =
-                  dromel.new_div()
-                  |> dromel.set_style(single_panel_style)
-                  |> dromel.append_as_child(to: group_container)
-
-                // Render subscope title inside the panel
-                case subscope_topic {
-                  option.Some(member_topic) ->
-                    mount_subscope_title(member_topic, to: source_panel)
-                  option.None -> Nil
-                }
-
-                let source_content =
-                  dromel.new_div()
-                  |> dromel.set_inner_html(source_text)
-                  |> dromel.append_as_child(to: source_panel)
-
-                inject_inline_info_comments(source_content)
-              }
-              _ -> {
-                // With control flow context — render as dashed-border chain.
-                // Total blocks: 1 opening + 1 closing per layer + 1 source block
-                let total_blocks = list.length(control_flow_layers) * 2 + 1
-
-                // Render opening blocks for each layer
-                let #(current_index, _) =
-                  list.index_fold(
-                    control_flow_layers,
-                    #(0, Nil),
-                    fn(acc, layer, layer_index) {
-                      let #(idx, _) = acc
-                      let assert option.Some(cf) = layer.control_flow
-                      let opening =
-                        dromel.new_div()
-                        |> dromel.set_style(combined_panel_style)
-                        |> dromel.append_as_child(to: group_container)
-                      apply_first_last_style(opening, idx, total_blocks)
-
-                      // Render subscope title inside the first opening block
-                      case subscope_topic, layer_index {
-                        option.Some(member_topic), 0 ->
-                          mount_subscope_title(member_topic, to: opening)
-                        _, _ -> Nil
-                      }
-
-                      mount_control_flow_opening(
-                        cf,
-                        to: opening,
-                        config: option.None,
-                      )
-                      #(idx + 1, Nil)
-                    },
-                  )
-
-                // Render source content block with indent
-                let source_block =
-                  dromel.new_div()
-                  |> dromel.set_style(combined_panel_style)
-                  |> dromel.append_as_child(to: group_container)
-                apply_first_last_style(
-                  source_block,
-                  current_index,
-                  total_blocks,
-                )
-
-                let indent_div =
-                  dromel.new_div()
-                  |> dromel.add_class(dromel.Class("indent"))
-                  |> dromel.append_as_child(to: source_block)
-
-                let source_content =
-                  dromel.new_div()
-                  |> dromel.set_inner_html(source_text)
-                  |> dromel.append_as_child(to: indent_div)
-
-                inject_inline_info_comments(source_content)
-
-                // Render closing blocks (in reverse order)
-                list.index_fold(
-                  list.reverse(control_flow_layers),
-                  current_index + 1,
-                  fn(idx, layer, _) {
-                    let assert option.Some(cf) = layer.control_flow
-                    let closing =
-                      dromel.new_div()
-                      |> dromel.set_style(combined_panel_style)
-                      |> dromel.append_as_child(to: group_container)
-                    apply_first_last_style(closing, idx, total_blocks)
-                    case cf.kind {
-                      audit_data.ControlFlowDoWhile ->
-                        mount_do_while_closing(
-                          cf,
-                          to: closing,
-                          config: option.None,
-                        )
-                      _ -> mount_control_flow_static("}", to: closing)
-                    }
-                    idx + 1
-                  },
-                )
-
-                Nil
-              }
-            }
-
-            elements.topic_panel
-            |> dromel.append_child(topic_title)
-            |> dromel.append_child(group_container)
-
-            // Gather tokens after source loads
-            gather_panel_tokens(GroupedSourcePanelConfig(
-              container:,
-              panel: elements.topic_panel,
-              token_field: TopicPanelTokens,
-            ))
-
-            Nil
-          }
-          Error(error) -> {
-            elements.topic_panel
-            |> dromel.set_inner_html(log.render_source_error(error))
-            Nil
-          }
-        }
-      })
-    }
-    Error(snag) -> {
-      elements.topic_panel
-      |> dromel.set_inner_html(log.render_source_error(snag))
-      Nil
-    }
-  }
-}
-
-/// Callback for loading topic metadata and populating the expanded references panel
-fn populate_expanded_references_panel(
-  container: element.Element,
-  metadata: Result(audit_data.TopicMetadata, snag.Snag),
-  elements: ActiveViewElements,
-) -> Nil {
-  case metadata {
-    Ok(metadata) -> {
-      let expanded_context = case metadata {
-        audit_data.NamedTopic(expanded_context:, ..) -> expanded_context
-        _ -> []
-      }
-
-      populate_grouped_source_panel(
-        GroupedSourcePanelConfig(
-          container:,
-          panel: elements.expanded_references_panel,
-          token_field: ReferencesPanelTokens,
-        ),
-        expanded_context,
-      )
-    }
-    Error(_snag) -> {
-      let _ =
-        elements.expanded_references_panel
-        |> dromel.set_inner_html(
-          "<div style='color: var(--color-body-text); font-size: 0.9rem;'>Unable to load expanded references</div>",
-        )
-      Nil
-    }
-  }
-}
-
-/// Callback for loading topic metadata and populating the mentions panel
-fn populate_mentions_panel(
-  container: element.Element,
-  metadata: Result(audit_data.TopicMetadata, snag.Snag),
-  elements: ActiveViewElements,
-) -> Nil {
-  case metadata {
-    Ok(metadata) -> {
-      populate_grouped_source_panel(
-        GroupedSourcePanelConfig(
-          container:,
-          panel: elements.mentions_panel,
-          token_field: MentionsPanelTokens,
-        ),
-        metadata.mentions,
-      )
-    }
-    Error(_snag) -> {
-      let _ =
-        elements.mentions_panel
-        |> dromel.set_inner_html(
-          "<div style='color: var(--color-body-text); font-size: 0.9rem;'>Unable to load mentions</div>",
-        )
-      Nil
-    }
-  }
-}
-
-/// Populate the comments panel with comments for the given topic
-fn populate_comments_panel(
-  container: element.Element,
-  topic_id: String,
-  elements: ActiveViewElements,
-) -> Nil {
-  let config =
-    GroupedSourcePanelConfig(
-      container:,
-      panel: elements.comments_panel,
-      token_field: CommentsPanelTokens,
-    )
-  audit_data.with_topic_comments(topic_id, fn(comments_result) {
-    case comments_result {
-      Ok(comment_entries) -> {
-        list.index_fold(comment_entries, 0, fn(index, entry, _) {
-          let comment_topic = audit_data.Topic(id: entry.comment_topic_id)
-          let source_placeholder =
-            dromel.new_div()
-            |> dromel.append_as_child(to: elements.comments_panel)
-
-          audit_data.with_topic_data(
-            comment_topic,
-            fn(_metadata, source_text, _comments) {
-              let comment_source =
-                dromel.new_div()
-                |> dromel.add_class(elements.source_container_class)
-                |> dromel.set_data(topic_key, entry.comment_topic_id)
-                |> dromel.set_style(single_panel_style)
-
-              case source_text {
-                Ok(source_text) -> {
-                  dromel.new_div()
-                  |> dromel.set_inner_html(source_text)
-                  |> dromel.append_as_child(to: comment_source)
-                  Nil
-                }
-                Error(error) -> {
-                  dromel.new_div()
-                  |> dromel.set_inner_html(log.render_source_error(error))
-                  |> dromel.append_as_child(to: comment_source)
-                  Nil
-                }
-              }
-
-              let _ =
-                source_placeholder
-                |> dromel.append_child(comment_source)
-
-              gather_panel_tokens(config)
-
-              Nil
-            },
-          )
-
-          index + 1
-        })
-        Nil
-      }
-      Error(_snag) -> {
-        let _ =
-          elements.comments_panel
-          |> dromel.set_inner_html(
-            "<div style='color: var(--color-body-text); font-size: 0.9rem;'>Unable to load comments</div>",
-          )
-        Nil
-      }
-    }
-  })
 }
 
 // ============================================================================
@@ -2003,16 +1597,6 @@ fn get_fully_qualified_name_parts(
         ]
       }
     Error(_snag) -> [TextPart("Unknown")]
-  }
-}
-
-fn get_unnamed_topic_scope_parts(scope: audit_data.Scope) {
-  case scope {
-    audit_data.Global -> [TextPart("global")]
-    audit_data.Container(container:) -> [TextPart(container)]
-    audit_data.Component(component:, ..)
-    | audit_data.Member(component:, ..)
-    | audit_data.ContainingBlock(component:, ..) -> [TopicPart(component)]
   }
 }
 
@@ -2123,10 +1707,66 @@ fn repopulate_view(
   get_fully_qualified_name_parts(metadata)
   |> mount_breadcrumb_parts(to: get_history_container())
 
-  populate_topic_panel(container, metadata, elements)
-  populate_expanded_references_panel(container, metadata, elements)
-  populate_mentions_panel(container, metadata, elements)
-  populate_comments_panel(container, view.topic_id, elements)
+  case metadata {
+    Ok(metadata) -> {
+      // Topic panel: all variants now have context
+      populate_grouped_source_panel(
+        GroupedSourcePanelConfig(
+          container:,
+          panel: elements.topic_panel,
+          token_field: TopicPanelTokens,
+        ),
+        metadata.context,
+      )
+
+      // Expanded references panel: only NamedTopic has expanded_context
+      let expanded_context = case metadata {
+        audit_data.NamedTopic(expanded_context:, ..) -> expanded_context
+        _ -> []
+      }
+      populate_grouped_source_panel(
+        GroupedSourcePanelConfig(
+          container:,
+          panel: elements.expanded_references_panel,
+          token_field: ReferencesPanelTokens,
+        ),
+        expanded_context,
+      )
+
+      // Mentions panel: all variants have mentions
+      populate_grouped_source_panel(
+        GroupedSourcePanelConfig(
+          container:,
+          panel: elements.mentions_panel,
+          token_field: MentionsPanelTokens,
+        ),
+        metadata.mentions,
+      )
+    }
+    Error(snag) -> {
+      elements.topic_panel
+      |> dromel.set_inner_html(log.render_source_error(snag))
+      Nil
+    }
+  }
+
+  // Comments panel: fetch comments and flat-map their context fields
+  let comments_config =
+    GroupedSourcePanelConfig(
+      container:,
+      panel: elements.comments_panel,
+      token_field: CommentsPanelTokens,
+    )
+  audit_data.with_topic_comments(view.topic_id, fn(comments_result) {
+    case comments_result {
+      Ok(comment_entries) -> {
+        let comment_contexts =
+          list.flat_map(comment_entries, fn(entry) { entry.context })
+        populate_grouped_source_panel(comments_config, comment_contexts)
+      }
+      Error(_) -> Nil
+    }
+  })
 }
 
 /// Create or get a view for a navigation entry
@@ -2371,6 +2011,7 @@ pub fn can_navigate_forward(container) -> Bool {
 
 pub fn handle_topic_view_keydown(event) {
   let container = topic_view_container()
+  let panel = get_active_panel(container)
 
   case
     context.get_current_context(),
@@ -2381,12 +2022,7 @@ pub fn handle_topic_view_keydown(event) {
     context.Input, _, _, _ -> Nil
     _, False, False, "h" -> {
       event.prevent_default(event)
-      case get_active_panel(container) {
-        history_graph.MentionsPanel -> navigate_into_mention(container)
-        history_graph.CommentsPanel -> navigate_into_comment(container)
-        history_graph.TopicPanel -> navigate_into_topic(container)
-        history_graph.ReferencesPanel -> navigate_into_reference(container)
-      }
+      navigate_into_panel(container, panel)
     }
 
     _, False, False, "p" -> {
@@ -2401,20 +2037,23 @@ pub fn handle_topic_view_keydown(event) {
 
     _, False, False, "ArrowRight" -> {
       event.prevent_default(event)
-      case get_active_panel(container) {
+      case panel {
         history_graph.MentionsPanel -> {
-          gather_comments_tokens()
-          set_active_panel(container, history_graph.CommentsPanel)
-          move_to_comment_child(container, 0)
+          let next = history_graph.CommentsPanel
+          gather_tokens_for_panel(container, next)
+          set_active_panel(container, next)
+          move_focus_in_panel(container, next, 0)
         }
         history_graph.CommentsPanel -> {
-          set_active_panel(container, history_graph.TopicPanel)
-          move_to_topic_child(container, 0)
+          let next = history_graph.TopicPanel
+          set_active_panel(container, next)
+          move_focus_in_panel(container, next, 0)
         }
         history_graph.TopicPanel -> {
-          gather_expanded_references_tokens()
-          set_active_panel(container, history_graph.ReferencesPanel)
-          move_to_reference_child(container, 0)
+          let next = history_graph.ReferencesPanel
+          gather_tokens_for_panel(container, next)
+          set_active_panel(container, next)
+          move_focus_in_panel(container, next, 0)
         }
         history_graph.ReferencesPanel -> Nil
       }
@@ -2422,20 +2061,23 @@ pub fn handle_topic_view_keydown(event) {
 
     _, False, False, "ArrowLeft" -> {
       event.prevent_default(event)
-      case get_active_panel(container) {
+      case panel {
         history_graph.ReferencesPanel -> {
-          set_active_panel(container, history_graph.TopicPanel)
-          move_to_topic_child(container, 0)
+          let next = history_graph.TopicPanel
+          set_active_panel(container, next)
+          move_focus_in_panel(container, next, 0)
         }
         history_graph.TopicPanel -> {
-          gather_comments_tokens()
-          set_active_panel(container, history_graph.CommentsPanel)
-          move_to_comment_child(container, 0)
+          let next = history_graph.CommentsPanel
+          gather_tokens_for_panel(container, next)
+          set_active_panel(container, next)
+          move_focus_in_panel(container, next, 0)
         }
         history_graph.CommentsPanel -> {
-          gather_mentions_tokens()
-          set_active_panel(container, history_graph.MentionsPanel)
-          move_to_mention_child(container, 0)
+          let next = history_graph.MentionsPanel
+          gather_tokens_for_panel(container, next)
+          set_active_panel(container, next)
+          move_focus_in_panel(container, next, 0)
         }
         history_graph.MentionsPanel -> Nil
       }
@@ -2443,50 +2085,25 @@ pub fn handle_topic_view_keydown(event) {
 
     _, False, False, "ArrowDown" | _, False, False, "," -> {
       event.prevent_default(event)
-      case get_active_panel(container) {
-        history_graph.MentionsPanel -> move_to_mention_child(container, 1)
-        history_graph.CommentsPanel -> move_to_comment_child(container, 1)
-        history_graph.TopicPanel -> move_to_topic_child(container, 1)
-        history_graph.ReferencesPanel -> move_to_reference_child(container, 1)
-      }
+      move_focus_in_panel(container, panel, 1)
     }
     _, False, True, "ArrowDown" | _, False, True, "<" -> {
       event.prevent_default(event)
-      case get_active_panel(container) {
-        history_graph.MentionsPanel -> move_to_mention_child(container, 10)
-        history_graph.CommentsPanel -> move_to_comment_child(container, 10)
-        history_graph.TopicPanel -> move_to_topic_child(container, 10)
-        history_graph.ReferencesPanel -> move_to_reference_child(container, 10)
-      }
+      move_focus_in_panel(container, panel, 10)
     }
 
     _, False, False, "ArrowUp" | _, False, False, "e" -> {
       event.prevent_default(event)
-      case get_active_panel(container) {
-        history_graph.MentionsPanel -> move_to_mention_child(container, -1)
-        history_graph.CommentsPanel -> move_to_comment_child(container, -1)
-        history_graph.TopicPanel -> move_to_topic_child(container, -1)
-        history_graph.ReferencesPanel -> move_to_reference_child(container, -1)
-      }
+      move_focus_in_panel(container, panel, -1)
     }
     _, False, True, "ArrowUp" | _, False, True, "E" -> {
       event.prevent_default(event)
-      case get_active_panel(container) {
-        history_graph.MentionsPanel -> move_to_mention_child(container, -10)
-        history_graph.CommentsPanel -> move_to_comment_child(container, -10)
-        history_graph.TopicPanel -> move_to_topic_child(container, -10)
-        history_graph.ReferencesPanel -> move_to_reference_child(container, -10)
-      }
+      move_focus_in_panel(container, panel, -10)
     }
 
     _, False, False, "u" -> {
       event.prevent_default(event)
-      case get_active_panel(container) {
-        history_graph.MentionsPanel -> navigate_scope_up_mention(container)
-        history_graph.CommentsPanel -> navigate_scope_up_comment(container)
-        history_graph.TopicPanel -> navigate_scope_up_topic(container)
-        history_graph.ReferencesPanel -> navigate_scope_up_reference(container)
-      }
+      navigate_scope_up(container, panel)
     }
 
     _, False, False, "c" -> {
@@ -2504,245 +2121,67 @@ pub fn handle_topic_view_keydown(event) {
   }
 }
 
-fn navigate_into_topic(container) {
+fn navigate_into_panel(container: element.Element, panel: ActivePanel) -> Nil {
   case get_active_view_elements() {
     Error(Nil) -> io.println_error("No active topic view")
     Ok(elements) -> {
       case
         array.get(
-          elements.topic_children_tokens,
-          get_current_child_topic_index(container),
+          get_panel_tokens(elements, panel),
+          get_panel_index(container, panel),
         )
         |> result.try(dromel.get_data(_, topic_key))
         |> result.map(audit_data.Topic)
       {
-        Error(Nil) -> io.println_error("Unable to read child topic")
-        Ok(topic) -> {
-          navigate_to_new_entry(container, topic)
-        }
+        Error(Nil) -> io.println_error("Unable to read topic")
+        Ok(topic) -> navigate_to_new_entry(container, topic)
       }
     }
   }
 }
 
-fn navigate_into_reference(container) {
-  case get_active_view_elements() {
-    Error(Nil) -> io.println_error("No active topic view")
-    Ok(elements) -> {
-      case
-        array.get(
-          elements.expanded_references_tokens,
-          get_current_references_index(container),
-        )
-        |> result.try(dromel.get_data(_, topic_key))
-        |> result.map(audit_data.Topic)
-      {
-        Error(Nil) -> io.println_error("Unable to read reference topic")
-        Ok(topic) -> {
-          navigate_to_new_entry(container, topic)
-        }
-      }
-    }
-  }
-}
-
-fn navigate_into_mention(container) {
-  case get_active_view_elements() {
-    Error(Nil) -> io.println_error("No active topic view")
-    Ok(elements) -> {
-      case
-        array.get(
-          elements.mentions_tokens,
-          get_current_mentions_index(container),
-        )
-        |> result.try(dromel.get_data(_, topic_key))
-        |> result.map(audit_data.Topic)
-      {
-        Error(Nil) -> io.println_error("Unable to read mention topic")
-        Ok(topic) -> {
-          navigate_to_new_entry(container, topic)
-        }
-      }
-    }
-  }
-}
-
-/// Navigate up one scope level in the topic panel
-/// For member-grouped topics, collapses all topics in the group into a single member view
-fn navigate_scope_up_topic(container) {
+/// Navigate up one scope level in the given panel.
+/// For member-grouped items, collapses all items in the group into a single member view.
+fn navigate_scope_up(container: element.Element, panel: ActivePanel) -> Nil {
   case get_active_view_elements() {
     Error(Nil) -> io.println_error("No active view elements")
     Ok(elements) -> {
-      // Get the currently focused topic element
       case
         array.get(
-          elements.topic_children_tokens,
-          get_current_child_topic_index(container),
+          get_panel_tokens(elements, panel),
+          get_panel_index(container, panel),
         )
       {
-        Error(Nil) -> io.println_error("No topic element selected")
+        Error(Nil) -> io.println_error("No element selected")
         Ok(focused_element) -> {
-          // Get the element's id to restore focus after reload
           let focused_element_id =
             dromel.get_attribute(focused_element, "id") |> result.unwrap("")
 
-          // Find the source container by traversing up from the focused element
           case find_source_container(focused_element) {
             Error(Nil) -> io.println_error("Unable to find source container")
             Ok(source_container) -> {
-              // Check if this source container belongs to a member group
               case dromel.get_data(source_container, member_key) {
                 Ok(member_id) -> {
-                  // This is a member-grouped topic - collapse the group
                   collapse_member_group(
                     source_container,
                     member_id,
                     focused_element_id,
                     container,
-                    history_graph.TopicPanel,
+                    panel,
                   )
                 }
                 Error(Nil) -> {
-                  // No member group - check for contract group
                   case dromel.get_data(source_container, contract_key) {
                     Ok(contract_id) -> {
-                      // This is a contract-grouped topic - collapse to contract
                       collapse_contract_group(
                         source_container,
                         contract_id,
                         focused_element_id,
                         container,
-                        history_graph.TopicPanel,
+                        panel,
                       )
                     }
                     Error(Nil) -> {
-                      // No contract group - already at top scope level
-                      io.println("Already at top scope level")
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-/// Navigate up one scope level in the references panel (only affects the current reference preview)
-/// For member-grouped references, collapses all references in the group into a single member view
-fn navigate_scope_up_reference(container) {
-  case get_active_view_elements() {
-    Error(Nil) -> io.println_error("No active view elements")
-    Ok(elements) -> {
-      // Get the currently focused reference element
-      case
-        array.get(
-          elements.expanded_references_tokens,
-          get_current_references_index(container),
-        )
-      {
-        Error(Nil) -> io.println_error("No reference element selected")
-        Ok(focused_element) -> {
-          // Get the element's id to restore focus after reload
-          let focused_element_id =
-            dromel.get_attribute(focused_element, "id") |> result.unwrap("")
-
-          // Find the source container by traversing up from the focused element
-          case find_source_container(focused_element) {
-            Error(Nil) -> io.println_error("Unable to find source container")
-            Ok(source_container) -> {
-              // Check if this source container belongs to a member group
-              case dromel.get_data(source_container, member_key) {
-                Ok(member_id) -> {
-                  // This is a member-grouped reference - collapse the group
-                  collapse_member_group(
-                    source_container,
-                    member_id,
-                    focused_element_id,
-                    container,
-                    history_graph.ReferencesPanel,
-                  )
-                }
-                Error(Nil) -> {
-                  // No member group - check for contract group
-                  case dromel.get_data(source_container, contract_key) {
-                    Ok(contract_id) -> {
-                      // This is a contract-grouped reference - collapse to contract
-                      collapse_contract_group(
-                        source_container,
-                        contract_id,
-                        focused_element_id,
-                        container,
-                        history_graph.ReferencesPanel,
-                      )
-                    }
-                    Error(Nil) -> {
-                      // No contract group - already at top scope level
-                      io.println("Already at top scope level")
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-/// Navigate up one scope level in the mentions panel
-/// For member-grouped mentions, collapses all mentions in the group into a single member view
-fn navigate_scope_up_mention(container) {
-  case get_active_view_elements() {
-    Error(Nil) -> io.println_error("No active view elements")
-    Ok(elements) -> {
-      // Get the currently focused mention element
-      case
-        array.get(
-          elements.mentions_tokens,
-          get_current_mentions_index(container),
-        )
-      {
-        Error(Nil) -> io.println_error("No mention element selected")
-        Ok(focused_element) -> {
-          // Get the element's id to restore focus after reload
-          let focused_element_id =
-            dromel.get_attribute(focused_element, "id") |> result.unwrap("")
-
-          // Find the source container by traversing up from the focused element
-          case find_source_container(focused_element) {
-            Error(Nil) -> io.println_error("Unable to find source container")
-            Ok(source_container) -> {
-              // Check if this source container belongs to a member group
-              case dromel.get_data(source_container, member_key) {
-                Ok(member_id) -> {
-                  // This is a member-grouped mention - collapse the group
-                  collapse_member_group(
-                    source_container,
-                    member_id,
-                    focused_element_id,
-                    container,
-                    history_graph.MentionsPanel,
-                  )
-                }
-                Error(Nil) -> {
-                  // No member group - check for contract group
-                  case dromel.get_data(source_container, contract_key) {
-                    Ok(contract_id) -> {
-                      // This is a contract-grouped mention - collapse to contract
-                      collapse_contract_group(
-                        source_container,
-                        contract_id,
-                        focused_element_id,
-                        container,
-                        history_graph.MentionsPanel,
-                      )
-                    }
-                    Error(Nil) -> {
-                      // No contract group - already at top scope level
                       io.println("Already at top scope level")
                     }
                   }
@@ -2789,48 +2228,19 @@ fn restore_panel_focus(
   focused_element_id: String,
   panel: ActivePanel,
 ) -> Nil {
-  case panel {
-    history_graph.MentionsPanel -> gather_mentions_tokens()
-    history_graph.CommentsPanel -> gather_comments_tokens()
-    history_graph.TopicPanel -> gather_topic_panel_tokens()
-    history_graph.ReferencesPanel -> gather_expanded_references_tokens()
-  }
+  gather_tokens_for_panel(container, panel)
 
   case get_active_view_elements() {
     Error(Nil) -> Nil
     Ok(elements) -> {
-      let tokens = case panel {
-        history_graph.MentionsPanel -> elements.mentions_tokens
-        history_graph.CommentsPanel -> elements.comments_tokens
-        history_graph.TopicPanel -> elements.topic_children_tokens
-        history_graph.ReferencesPanel -> elements.expanded_references_tokens
-      }
       find_and_focus_element_by_id(
         container,
         panel,
-        tokens,
+        get_panel_tokens(elements, panel),
         focused_element_id,
         0,
       )
     }
-  }
-}
-
-/// Gather topic tokens for the topic panel
-fn gather_topic_panel_tokens() -> Nil {
-  case get_active_view_elements() {
-    Ok(active_elements) -> {
-      let tokens =
-        dromel.query_element_all(
-          active_elements.topic_panel,
-          elements.topic_tokens_class,
-        )
-      set_active_view_elements(
-        ActiveViewElements(..active_elements, topic_children_tokens: tokens),
-      )
-      Nil
-    }
-    Error(Nil) -> Nil
   }
 }
 
@@ -3010,16 +2420,7 @@ fn find_and_focus_element_by_id(
       case dromel.get_attribute(el, "id") {
         Ok(id) if id == target_id -> {
           focus_topic_token_and_prefetch(el)
-          case panel {
-            history_graph.MentionsPanel ->
-              set_current_mentions_index(container, index)
-            history_graph.CommentsPanel ->
-              set_current_comments_index(container, index)
-            history_graph.TopicPanel ->
-              set_current_child_topic_index(container, index)
-            history_graph.ReferencesPanel ->
-              set_current_references_index(container, index)
-          }
+          set_panel_index(container, panel, index)
           Nil
         }
         _ ->
@@ -3046,250 +2447,53 @@ fn find_source_container(elem: element.Element) -> Result(element.Element, Nil) 
   }
 }
 
-fn move_to_topic_child(container, index_diff) {
+fn move_focus_in_panel(
+  container: element.Element,
+  panel: ActivePanel,
+  index_diff: Int,
+) -> Nil {
   case get_active_view_elements() {
     Ok(elements) -> {
-      let new_index = case
-        get_current_child_topic_index(container) + index_diff
-      {
-        n if n <= 0 -> 0
-        n ->
-          case array.size(elements.topic_children_tokens) - 1 {
-            size if n > size -> size
-            _size -> n
-          }
-      }
-
-      case elements.topic_children_tokens |> array.get(new_index) {
-        Ok(el) -> {
-          focus_topic_token_and_prefetch(el)
-          set_current_child_topic_index(container, new_index)
-        }
-        Error(Nil) -> {
-          io.println("no child index diff of " <> int.to_string(index_diff))
-        }
-      }
-    }
-    Error(Nil) -> {
-      io.println_error("no active view")
-    }
-  }
-}
-
-fn move_to_reference_child(container, index_diff) {
-  case get_active_view_elements() {
-    Ok(elements) -> {
-      let current_index = get_current_references_index(container)
+      let tokens = get_panel_tokens(elements, panel)
+      let current_index = get_panel_index(container, panel)
       let new_index = case current_index + index_diff {
         n if n <= 0 -> 0
         n ->
-          case array.size(elements.expanded_references_tokens) - 1 {
+          case array.size(tokens) - 1 {
             size if n > size -> size
             _size -> n
           }
       }
 
-      case elements.expanded_references_tokens |> array.get(new_index) {
+      case array.get(tokens, new_index) {
         Ok(el) -> {
           focus_topic_token_and_prefetch(el)
-          set_current_references_index(container, new_index)
+          set_panel_index(container, panel, new_index)
         }
-        Error(Nil) -> {
-          io.println("no reference index diff of " <> int.to_string(index_diff))
-        }
+        Error(Nil) -> Nil
       }
     }
-    Error(Nil) -> {
-      io.println_error("no active view")
-    }
-  }
-}
-
-fn move_to_comment_child(container, index_diff) {
-  case get_active_view_elements() {
-    Ok(elements) -> {
-      let current_index = get_current_comments_index(container)
-      let new_index = case current_index + index_diff {
-        n if n <= 0 -> 0
-        n ->
-          case array.size(elements.comments_tokens) - 1 {
-            size if n > size -> size
-            _size -> n
-          }
-      }
-
-      case elements.comments_tokens |> array.get(new_index) {
-        Ok(el) -> {
-          focus_topic_token_and_prefetch(el)
-          set_current_comments_index(container, new_index)
-        }
-        Error(Nil) -> {
-          io.println("no comment index diff of " <> int.to_string(index_diff))
-        }
-      }
-    }
-    Error(Nil) -> {
-      io.println_error("no active view")
-    }
-  }
-}
-
-fn move_to_mention_child(container, index_diff) {
-  case get_active_view_elements() {
-    Ok(elements) -> {
-      let current_index = get_current_mentions_index(container)
-      let new_index = case current_index + index_diff {
-        n if n <= 0 -> 0
-        n ->
-          case array.size(elements.mentions_tokens) - 1 {
-            size if n > size -> size
-            _size -> n
-          }
-      }
-
-      case elements.mentions_tokens |> array.get(new_index) {
-        Ok(el) -> {
-          focus_topic_token_and_prefetch(el)
-          set_current_mentions_index(container, new_index)
-        }
-        Error(Nil) -> {
-          io.println("no mention index diff of " <> int.to_string(index_diff))
-        }
-      }
-    }
-    Error(Nil) -> {
-      io.println_error("no active view")
-    }
+    Error(Nil) -> io.println_error("no active view")
   }
 }
 
 const reference_title_class = dromel.Class("topic-reference-title")
 
-fn gather_mentions_tokens() -> Nil {
+/// Gather tokens for a panel standalone (without a pre-built config)
+fn gather_tokens_for_panel(
+  _container: element.Element,
+  panel: ActivePanel,
+) -> Nil {
   case get_active_view_elements() {
     Ok(active_elements) -> {
+      let panel_el = get_panel_element(active_elements, panel)
       let tokens =
-        dromel.query_element_all(
-          active_elements.mentions_panel,
-          elements.topic_tokens_class,
-        )
-      set_active_view_elements(
-        ActiveViewElements(..active_elements, mentions_tokens: tokens),
-      )
+        dromel.query_element_all(panel_el, elements.topic_tokens_class)
+      let updated = set_panel_tokens(active_elements, panel, tokens)
+      set_active_view_elements(updated)
       Nil
     }
     Error(Nil) -> Nil
-  }
-}
-
-fn gather_expanded_references_tokens() -> Nil {
-  case get_active_view_elements() {
-    Ok(active_elements) -> {
-      let tokens =
-        dromel.query_element_all(
-          active_elements.expanded_references_panel,
-          elements.topic_tokens_class,
-        )
-      set_active_view_elements(
-        ActiveViewElements(
-          ..active_elements,
-          expanded_references_tokens: tokens,
-        ),
-      )
-      Nil
-    }
-    Error(Nil) -> Nil
-  }
-}
-
-fn gather_comments_tokens() -> Nil {
-  case get_active_view_elements() {
-    Ok(active_elements) -> {
-      let tokens =
-        dromel.query_element_all(
-          active_elements.comments_panel,
-          elements.topic_tokens_class,
-        )
-      set_active_view_elements(
-        ActiveViewElements(..active_elements, comments_tokens: tokens),
-      )
-      Nil
-    }
-    Error(Nil) -> Nil
-  }
-}
-
-fn navigate_into_comment(container) {
-  case get_active_view_elements() {
-    Error(Nil) -> io.println_error("No active topic view")
-    Ok(elements) -> {
-      case
-        array.get(
-          elements.comments_tokens,
-          get_current_comments_index(container),
-        )
-        |> result.try(dromel.get_data(_, topic_key))
-        |> result.map(audit_data.Topic)
-      {
-        Error(Nil) -> io.println_error("Unable to read comment topic")
-        Ok(topic) -> {
-          navigate_to_new_entry(container, topic)
-        }
-      }
-    }
-  }
-}
-
-fn navigate_scope_up_comment(container) {
-  case get_active_view_elements() {
-    Error(Nil) -> io.println_error("No active view elements")
-    Ok(elements) -> {
-      case
-        array.get(
-          elements.comments_tokens,
-          get_current_comments_index(container),
-        )
-      {
-        Error(Nil) -> io.println_error("No comment element selected")
-        Ok(focused_element) -> {
-          let focused_element_id =
-            dromel.get_attribute(focused_element, "id") |> result.unwrap("")
-
-          case find_source_container(focused_element) {
-            Error(Nil) -> io.println_error("Unable to find source container")
-            Ok(source_container) -> {
-              case dromel.get_data(source_container, member_key) {
-                Ok(member_id) -> {
-                  collapse_member_group(
-                    source_container,
-                    member_id,
-                    focused_element_id,
-                    container,
-                    history_graph.CommentsPanel,
-                  )
-                }
-                Error(Nil) -> {
-                  case dromel.get_data(source_container, contract_key) {
-                    Ok(contract_id) -> {
-                      collapse_contract_group(
-                        source_container,
-                        contract_id,
-                        focused_element_id,
-                        container,
-                        history_graph.CommentsPanel,
-                      )
-                    }
-                    Error(Nil) -> {
-                      io.println("Already at top scope level")
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
   }
 }
 
