@@ -318,29 +318,29 @@ pub type ReferenceEntry {
   CommentMention(reference_topic: Topic, mention_topics: List(Topic))
 }
 
-pub type ControlFlowReferenceGroup {
-  ControlFlowReferenceGroup(
+pub type ControlFlowSourceContext {
+  ControlFlowSourceContext(
     control_flow: ControlFlowInfo,
     references: List(ReferenceEntry),
-    nested: List(ControlFlowReferenceGroup),
+    nested: List(ControlFlowSourceContext),
     has_sibling_branch: Bool,
   )
 }
 
-pub type NestedReferenceGroup {
-  NestedReferenceGroup(
+pub type NestedSourceContext {
+  NestedSourceContext(
     subscope: Topic,
     references: List(ReferenceEntry),
-    control_flow_groups: List(ControlFlowReferenceGroup),
+    control_flow_groups: List(ControlFlowSourceContext),
   )
 }
 
-pub type ReferenceGroup {
-  ReferenceGroup(
+pub type SourceContext {
+  SourceContext(
     scope: Topic,
     is_in_scope: Bool,
     scope_references: List(ReferenceEntry),
-    nested_references: List(NestedReferenceGroup),
+    nested_references: List(NestedSourceContext),
   )
 }
 
@@ -484,8 +484,8 @@ fn reference_entry_decoder() -> decode.Decoder(ReferenceEntry) {
   }
 }
 
-fn control_flow_reference_group_decoder() -> decode.Decoder(
-  ControlFlowReferenceGroup,
+fn control_flow_source_context_decoder() -> decode.Decoder(
+  ControlFlowSourceContext,
 ) {
   use control_flow <- decode.field("control_flow", control_flow_info_decoder())
   use references <- decode.field(
@@ -495,14 +495,14 @@ fn control_flow_reference_group_decoder() -> decode.Decoder(
   use nested <- decode.optional_field(
     "nested",
     [],
-    decode.list(control_flow_reference_group_decoder()),
+    decode.list(control_flow_source_context_decoder()),
   )
   use has_sibling_branch <- decode.optional_field(
     "has_sibling_branch",
     False,
     decode.bool,
   )
-  decode.success(ControlFlowReferenceGroup(
+  decode.success(ControlFlowSourceContext(
     control_flow:,
     references:,
     nested:,
@@ -510,7 +510,7 @@ fn control_flow_reference_group_decoder() -> decode.Decoder(
   ))
 }
 
-fn nested_reference_group_decoder() -> decode.Decoder(NestedReferenceGroup) {
+fn nested_source_context_decoder() -> decode.Decoder(NestedSourceContext) {
   use subscope_id <- decode.field("subscope", decode.string)
   use references <- decode.field(
     "references",
@@ -519,16 +519,16 @@ fn nested_reference_group_decoder() -> decode.Decoder(NestedReferenceGroup) {
   use control_flow_groups <- decode.optional_field(
     "control_flow_groups",
     [],
-    decode.list(control_flow_reference_group_decoder()),
+    decode.list(control_flow_source_context_decoder()),
   )
-  decode.success(NestedReferenceGroup(
+  decode.success(NestedSourceContext(
     subscope: Topic(id: subscope_id),
     references:,
     control_flow_groups:,
   ))
 }
 
-fn reference_group_decoder() -> decode.Decoder(ReferenceGroup) {
+fn source_context_decoder() -> decode.Decoder(SourceContext) {
   use scope_id <- decode.field("scope", decode.string)
   use is_in_scope <- decode.field("is_in_scope", decode.bool)
   use scope_references <- decode.field(
@@ -537,9 +537,9 @@ fn reference_group_decoder() -> decode.Decoder(ReferenceGroup) {
   )
   use nested_references <- decode.field(
     "nested_references",
-    decode.list(nested_reference_group_decoder()),
+    decode.list(nested_source_context_decoder()),
   )
-  decode.success(ReferenceGroup(
+  decode.success(SourceContext(
     scope: Topic(id: scope_id),
     is_in_scope:,
     scope_references:,
@@ -606,13 +606,13 @@ pub type TopicMetadata {
   NamedTopic(
     topic: Topic,
     scope: Scope,
-    mentions: List(ReferenceGroup),
+    context: List(SourceContext),
+    mentions: List(SourceContext),
     kind: NamedTopicKind,
     name: String,
     visibility: NamedTopicVisibility,
-    references: List(ReferenceGroup),
-    expanded_references: List(ReferenceGroup),
-    ancestry: List(ReferenceGroup),
+    expanded_context: List(SourceContext),
+    ancestry: List(SourceContext),
     is_mutable: Bool,
     mutations: List(Topic),
     ancestors: List(Topic),
@@ -622,27 +622,31 @@ pub type TopicMetadata {
   UnnamedTopic(
     topic: Topic,
     scope: Scope,
-    mentions: List(ReferenceGroup),
+    context: List(SourceContext),
+    mentions: List(SourceContext),
     kind: UnnamedTopicKind,
   )
   ControlFlow(
     topic: Topic,
     scope: Scope,
-    mentions: List(ReferenceGroup),
+    context: List(SourceContext),
+    mentions: List(SourceContext),
     kind: ControlFlowStatementKind,
     condition: Topic,
   )
   TitledTopic(
     topic: Topic,
     scope: Scope,
-    mentions: List(ReferenceGroup),
+    context: List(SourceContext),
+    mentions: List(SourceContext),
     kind: TitledTopicKind,
     title: String,
   )
   CommentTopic(
     topic: Topic,
     scope: Scope,
-    mentions: List(ReferenceGroup),
+    context: List(SourceContext),
+    mentions: List(SourceContext),
     author_id: Int,
     comment_type: CommentType,
     target_topic: Topic,
@@ -663,17 +667,17 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
       use name <- decode.field("name", decode.string)
       use kind <- decode.then(named_topic_kind_decoder())
       use visibility <- decode.then(named_topic_visibility_decoder())
-      use references <- decode.field(
-        "references",
-        decode.list(reference_group_decoder()),
+      use context <- decode.field(
+        "context",
+        decode.list(source_context_decoder()),
       )
-      use expanded_references <- decode.field(
-        "expanded_references",
-        decode.list(reference_group_decoder()),
+      use expanded_context <- decode.field(
+        "expanded_context",
+        decode.list(source_context_decoder()),
       )
       use ancestry <- decode.field(
         "ancestry",
-        decode.list(reference_group_decoder()),
+        decode.list(source_context_decoder()),
       )
       use mutation_ids <- decode.optional_field(
         "mutations",
@@ -693,7 +697,7 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
       use mentions <- decode.optional_field(
         "mentions",
         [],
-        decode.list(reference_group_decoder()),
+        decode.list(source_context_decoder()),
       )
       decode.success(NamedTopic(
         topic:,
@@ -701,8 +705,8 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         kind:,
         name:,
         visibility:,
-        references:,
-        expanded_references:,
+        context:,
+        expanded_context:,
         ancestry:,
         is_mutable:,
         mutations: list.map(mutation_ids, Topic),
@@ -715,24 +719,42 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
     "titled" -> {
       use title <- decode.field("title", decode.string)
       use kind <- decode.then(titled_topic_kind_decoder())
+      use context <- decode.optional_field(
+        "context",
+        [],
+        decode.list(source_context_decoder()),
+      )
       use mentions <- decode.optional_field(
         "mentions",
         [],
-        decode.list(reference_group_decoder()),
+        decode.list(source_context_decoder()),
       )
-      decode.success(TitledTopic(topic:, scope:, kind:, title:, mentions:))
+      decode.success(TitledTopic(
+        topic:,
+        scope:,
+        context:,
+        kind:,
+        title:,
+        mentions:,
+      ))
     }
     "control_flow" -> {
       use kind <- decode.then(control_flow_statement_kind_decoder())
       use condition_id <- decode.field("condition", decode.string)
+      use context <- decode.optional_field(
+        "context",
+        [],
+        decode.list(source_context_decoder()),
+      )
       use mentions <- decode.optional_field(
         "mentions",
         [],
-        decode.list(reference_group_decoder()),
+        decode.list(source_context_decoder()),
       )
       decode.success(ControlFlow(
         topic:,
         scope:,
+        context:,
         kind:,
         condition: Topic(id: condition_id),
         mentions:,
@@ -747,14 +769,20 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         "mentioned_topics",
         decode.list(decode.string),
       )
+      use context <- decode.optional_field(
+        "context",
+        [],
+        decode.list(source_context_decoder()),
+      )
       use mentions <- decode.optional_field(
         "mentions",
         [],
-        decode.list(reference_group_decoder()),
+        decode.list(source_context_decoder()),
       )
       decode.success(CommentTopic(
         topic:,
         scope:,
+        context:,
         author_id:,
         comment_type:,
         target_topic: Topic(id: target_topic_id),
@@ -765,12 +793,17 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
     }
     _ -> {
       use kind <- decode.then(unnamed_topic_kind_decoder())
+      use context <- decode.optional_field(
+        "context",
+        [],
+        decode.list(source_context_decoder()),
+      )
       use mentions <- decode.optional_field(
         "mentions",
         [],
-        decode.list(reference_group_decoder()),
+        decode.list(source_context_decoder()),
       )
-      decode.success(UnnamedTopic(topic:, scope:, kind:, mentions:))
+      decode.success(UnnamedTopic(topic:, scope:, context:, kind:, mentions:))
     }
   }
 }
@@ -1440,7 +1473,7 @@ pub type CommentEvent {
   MentionsUpdated(
     audit_id: String,
     topic_id: String,
-    mentions: List(ReferenceGroup),
+    mentions: List(SourceContext),
   )
 }
 
@@ -1547,7 +1580,7 @@ fn comment_event_decoder() -> decode.Decoder(CommentEvent) {
       use topic_id <- decode.field("topic_id", decode.string)
       use mentions <- decode.field(
         "mentions",
-        decode.list(reference_group_decoder()),
+        decode.list(source_context_decoder()),
       )
       decode.success(MentionsUpdated(audit_id:, topic_id:, mentions:))
     }
@@ -2427,8 +2460,8 @@ fn process_comment_event(
           kind:,
           name:,
           visibility:,
-          references:,
-          expanded_references:,
+          context:,
+          expanded_context:,
           ancestry:,
           is_mutable:,
           mutations:,
@@ -2445,8 +2478,8 @@ fn process_comment_event(
               kind:,
               name:,
               visibility:,
-              references:,
-              expanded_references:,
+              context:,
+              expanded_context:,
               ancestry:,
               is_mutable:,
               mutations:,

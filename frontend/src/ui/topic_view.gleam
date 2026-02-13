@@ -235,11 +235,11 @@ fn set_active_topic_view(
   Nil
 }
 
-/// Flatten expanded_references into a list of topic IDs
-fn flatten_expanded_references(
-  expanded_references: List(audit_data.ReferenceGroup),
+/// Flatten expanded_context into a list of topic IDs
+fn flatten_expanded_context(
+  expanded_context: List(audit_data.SourceContext),
 ) -> List(String) {
-  list.flat_map(expanded_references, fn(group) {
+  list.flat_map(expanded_context, fn(group) {
     let scope_ids = [group.scope.id]
     let scope_ref_ids =
       list.map(group.scope_references, fn(entry) { entry.reference_topic.id })
@@ -267,10 +267,10 @@ fn set_active_topic_highlight_style(
 
   // Extract ancestors and descendants from metadata
   let #(ancestor_ids, descendant_ids, relative_ids) = case metadata {
-    Ok(audit_data.NamedTopic(ancestors:, descendants:, expanded_references:, ..)) -> {
+    Ok(audit_data.NamedTopic(ancestors:, descendants:, expanded_context:, ..)) -> {
       let ancestor_id_list = list.map(ancestors, fn(t) { t.id })
       let descendant_id_list = list.map(descendants, fn(t) { t.id })
-      let relative_id_list = flatten_expanded_references(expanded_references)
+      let relative_id_list = flatten_expanded_context(expanded_context)
       #(ancestor_id_list, descendant_id_list, relative_id_list)
     }
     _ -> #([], [], [])
@@ -1052,7 +1052,7 @@ fn mount_do_while_closing(
             }
             dromel.set_inner_html(condition_el, cond_html)
             // TODO: really the config should be required and this should always
-            // gather panel tokens. Some logic between the main panel and 
+            // gather panel tokens. Some logic between the main panel and
             // the references panel needs to be unified.
             case config {
               option.Some(cfg) -> gather_panel_tokens(cfg)
@@ -1078,7 +1078,7 @@ fn mount_do_while_closing(
 /// Renders a control flow syntax block as part of the dashed-border chain.
 fn render_control_flow_syntax_block(
   parent: element.Element,
-  ref_group: audit_data.ReferenceGroup,
+  source_context: audit_data.SourceContext,
   index: Int,
   total_references: Int,
 ) -> element.Element {
@@ -1086,7 +1086,7 @@ fn render_control_flow_syntax_block(
     dromel.new_div()
     |> dromel.set_style(combined_panel_style)
 
-  case ref_group.is_in_scope {
+  case source_context.is_in_scope {
     True -> Nil
     False -> {
       dromel.add_style(
@@ -1105,10 +1105,10 @@ fn render_control_flow_syntax_block(
 /// Recursively renders a control flow reference group with opening/closing syntax
 /// and indented references, all within the dashed-border chain.
 fn render_control_flow_group(
-  cf_group: audit_data.ControlFlowReferenceGroup,
+  cf_group: audit_data.ControlFlowSourceContext,
   parent: element.Element,
   config: GroupedSourcePanelConfig,
-  ref_group: audit_data.ReferenceGroup,
+  source_context: audit_data.SourceContext,
   current_index: Int,
   total_references: Int,
   subscope_title: option.Option(audit_data.Topic),
@@ -1120,7 +1120,7 @@ fn render_control_flow_group(
   let opening_block =
     render_control_flow_syntax_block(
       parent,
-      ref_group,
+      source_context,
       current_index,
       total_references,
     )
@@ -1182,11 +1182,11 @@ fn render_control_flow_group(
               dromel.new_div()
               |> dromel.add_class(elements.source_container_class)
               |> dromel.set_data(topic_key, ref_entry.reference_topic.id)
-              |> dromel.set_data(contract_key, ref_group.scope.id)
+              |> dromel.set_data(contract_key, source_context.scope.id)
               |> dromel.set_style(combined_panel_style)
               |> dromel.add_style("padding-left: 0.5rem;")
 
-            case ref_group.is_in_scope {
+            case source_context.is_in_scope {
               True -> Nil
               False -> {
                 dromel.add_style(
@@ -1228,7 +1228,7 @@ fn render_control_flow_group(
         nested_cf,
         parent,
         config,
-        ref_group,
+        source_context,
         idx,
         total_references,
         option.None,
@@ -1239,7 +1239,7 @@ fn render_control_flow_group(
   let closing_block =
     render_control_flow_syntax_block(
       parent,
-      ref_group,
+      source_context,
       index_after_nested,
       total_references,
     )
@@ -1258,7 +1258,7 @@ fn render_control_flow_group(
   index_after_nested + 1
 }
 
-fn count_control_flow_blocks(group: audit_data.ControlFlowReferenceGroup) -> Int {
+fn count_control_flow_blocks(group: audit_data.ControlFlowSourceContext) -> Int {
   // Each group contributes: 1 opening block + references + nested groups + 1 closing block
   2
   + list.length(group.references)
@@ -1341,7 +1341,7 @@ fn populate_reference_source(
 /// Generic function to populate a panel with grouped source containers
 fn populate_grouped_source_panel(
   config: GroupedSourcePanelConfig,
-  groups: List(audit_data.ReferenceGroup),
+  groups: List(audit_data.SourceContext),
 ) -> Nil {
   list.each(groups, fn(ref_group) {
     let group_container =
@@ -1623,7 +1623,7 @@ fn populate_topic_panel(
   elements: ActiveViewElements,
 ) -> Nil {
   case metadata {
-    Ok(audit_data.NamedTopic(references:, ..)) -> {
+    Ok(audit_data.NamedTopic(context:, ..)) -> {
       // Clear the topic panel and use grouped source panel rendering
       let _ = dromel.set_inner_html(elements.topic_panel, "")
 
@@ -1633,7 +1633,7 @@ fn populate_topic_panel(
           panel: elements.topic_panel,
           token_field: TopicPanelTokens,
         ),
-        references,
+        context,
       )
     }
     Ok(metadata) -> {
@@ -1839,8 +1839,8 @@ fn populate_expanded_references_panel(
 ) -> Nil {
   case metadata {
     Ok(metadata) -> {
-      let expanded_references = case metadata {
-        audit_data.NamedTopic(expanded_references:, ..) -> expanded_references
+      let expanded_context = case metadata {
+        audit_data.NamedTopic(expanded_context:, ..) -> expanded_context
         _ -> []
       }
 
@@ -1850,7 +1850,7 @@ fn populate_expanded_references_panel(
           panel: elements.expanded_references_panel,
           token_field: ReferencesPanelTokens,
         ),
-        expanded_references,
+        expanded_context,
       )
     }
     Error(_snag) -> {
