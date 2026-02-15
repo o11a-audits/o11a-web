@@ -123,7 +123,12 @@ pub type Scope {
   Global
   Container(container: String)
   Component(container: String, component: Topic)
-  Member(container: String, component: Topic, member: Topic)
+  Member(
+    container: String,
+    component: Topic,
+    member: Topic,
+    signature_container: option.Option(Topic),
+  )
   ContainingBlock(
     container: String,
     component: Topic,
@@ -187,6 +192,11 @@ fn scope_decoder() -> decode.Decoder(Scope) {
     [],
     decode.list(containing_block_layer_decoder()),
   )
+  use maybe_signature_container <- decode.optional_field(
+    "signature_container",
+    None,
+    decode.optional(decode.string),
+  )
 
   case scope_type, maybe_container, maybe_component, maybe_member {
     "Global", None, None, None -> {
@@ -206,6 +216,9 @@ fn scope_decoder() -> decode.Decoder(Scope) {
         container: container,
         component: Topic(id: component),
         member: Topic(id: member),
+        signature_container: option.map(maybe_signature_container, fn(id) {
+          Topic(id: id)
+        }),
       ))
     }
     "ContainingBlock", Some(container), Some(component), Some(member) -> {
@@ -322,21 +335,17 @@ pub type ReferenceEntry {
   CommentMention(reference_topic: Topic, mention_topics: List(Topic))
 }
 
-pub type AnnotatedBlockSourceContext {
-  AnnotatedBlockSourceContext(
+pub type SourceChild {
+  SourceChildReference(reference: ReferenceEntry)
+  SourceChildAnnotatedBlock(
     annotation: AnnotatedBlockInfo,
-    references: List(ReferenceEntry),
-    nested: List(AnnotatedBlockSourceContext),
+    children: List(SourceChild),
     has_sibling_branch: Bool,
   )
 }
 
 pub type NestedSourceContext {
-  NestedSourceContext(
-    subscope: Topic,
-    references: List(ReferenceEntry),
-    annotation_groups: List(AnnotatedBlockSourceContext),
-  )
+  NestedSourceContext(subscope: Topic, children: List(SourceChild))
 }
 
 pub type SourceContext {
@@ -488,47 +497,54 @@ fn reference_entry_decoder() -> decode.Decoder(ReferenceEntry) {
   }
 }
 
-fn annotated_block_source_context_decoder() -> decode.Decoder(
-  AnnotatedBlockSourceContext,
-) {
-  use annotation <- decode.field("annotation", annotated_block_info_decoder())
-  use references <- decode.field(
-    "references",
-    decode.list(reference_entry_decoder()),
-  )
-  use nested <- decode.optional_field(
-    "nested",
-    [],
-    decode.list(annotated_block_source_context_decoder()),
-  )
-  use has_sibling_branch <- decode.optional_field(
-    "has_sibling_branch",
-    False,
-    decode.bool,
-  )
-  decode.success(AnnotatedBlockSourceContext(
-    annotation:,
-    references:,
-    nested:,
-    has_sibling_branch:,
-  ))
+fn source_child_decoder() -> decode.Decoder(SourceChild) {
+  use child_type <- decode.field("child_type", decode.string)
+  case child_type {
+    "reference" -> {
+      use reference <- decode.field("reference", reference_entry_decoder())
+      decode.success(SourceChildReference(reference:))
+    }
+    "annotated_block" -> {
+      use annotation <- decode.field(
+        "annotation",
+        annotated_block_info_decoder(),
+      )
+      use children <- decode.optional_field(
+        "children",
+        [],
+        decode.list(source_child_decoder()),
+      )
+      use has_sibling_branch <- decode.optional_field(
+        "has_sibling_branch",
+        False,
+        decode.bool,
+      )
+      decode.success(SourceChildAnnotatedBlock(
+        annotation:,
+        children:,
+        has_sibling_branch:,
+      ))
+    }
+    _ ->
+      decode.failure(
+        SourceChildReference(
+          reference: ProjectReference(reference_topic: Topic(id: "")),
+        ),
+        "SourceChild",
+      )
+  }
 }
 
 fn nested_source_context_decoder() -> decode.Decoder(NestedSourceContext) {
   use subscope_id <- decode.field("subscope", decode.string)
-  use references <- decode.field(
-    "references",
-    decode.list(reference_entry_decoder()),
-  )
-  use annotation_groups <- decode.optional_field(
-    "annotation_groups",
+  use children <- decode.optional_field(
+    "children",
     [],
-    decode.list(annotated_block_source_context_decoder()),
+    decode.list(source_child_decoder()),
   )
   decode.success(NestedSourceContext(
     subscope: Topic(id: subscope_id),
-    references:,
-    annotation_groups:,
+    children:,
   ))
 }
 

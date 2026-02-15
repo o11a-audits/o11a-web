@@ -235,6 +235,19 @@ fn set_active_topic_view(
   Nil
 }
 
+/// Recursively collect reference topic IDs from a list of SourceChild
+fn collect_source_child_ids(children: List(audit_data.SourceChild)) -> List(String) {
+  list.flat_map(children, fn(child) {
+    case child {
+      audit_data.SourceChildReference(reference:) -> [
+        reference.reference_topic.id,
+      ]
+      audit_data.SourceChildAnnotatedBlock(children:, ..) ->
+        collect_source_child_ids(children)
+    }
+  })
+}
+
 /// Flatten expanded_context into a list of topic IDs
 fn flatten_expanded_context(
   expanded_context: List(audit_data.SourceContext),
@@ -247,9 +260,7 @@ fn flatten_expanded_context(
       list.flat_map(group.nested_references, fn(nested_group) {
         [
           nested_group.subscope.id,
-          ..list.map(nested_group.references, fn(entry) {
-            entry.reference_topic.id
-          })
+          ..collect_source_child_ids(nested_group.children)
         ]
       })
     list.flatten([scope_ids, scope_ref_ids, nested_ids])
@@ -1045,10 +1056,12 @@ fn render_control_flow_syntax_block(
   wrap_in_indent(syntax_source, depth)
 }
 
-/// Recursively renders a control flow reference group with opening/closing syntax
-/// and indented references, all within the dashed-border chain.
-fn render_control_flow_group(
-  cf_group: audit_data.AnnotatedBlockSourceContext,
+/// Recursively renders an annotated block group with opening/closing syntax
+/// and indented children, all within the dashed-border chain.
+fn render_annotated_block_group(
+  annotation: audit_data.AnnotatedBlockInfo,
+  children: List(audit_data.SourceChild),
+  has_sibling_branch: Bool,
   parent: element.Element,
   config: GroupedSourcePanelConfig,
   source_context: audit_data.SourceContext,
@@ -1058,7 +1071,6 @@ fn render_control_flow_group(
   depth: Int,
 ) -> Int {
   let kw = fn(text) { "<span class=\"keyword\">" <> text <> "</span>" }
-  let control_flow = cf_group.annotation
 
   // Render opening syntax as a block in the dashed-border chain
   let opening_block =
@@ -1070,7 +1082,7 @@ fn render_control_flow_group(
       depth,
     )
 
-  // Mount subscope title if provided (first control flow group in a nested group)
+  // Mount subscope title if provided (first child in a nested group)
   case subscope_title {
     option.Some(topic) -> {
       mount_subscope_title(topic, to: opening_block)
@@ -1079,13 +1091,13 @@ fn render_control_flow_group(
     option.None -> Nil
   }
 
-  case control_flow.kind {
+  case annotation.kind {
     audit_data.AnnotatedBlockIf(audit_data.FalseBranch)
-      if !cf_group.has_sibling_branch
+      if !has_sibling_branch
     -> {
       // False branch without sibling: render "if (cond) {" then "} else {"
       mount_control_flow_opening(
-        control_flow,
+        annotation,
         to: opening_block,
         config: option.Some(config),
       )
@@ -1096,114 +1108,160 @@ fn render_control_flow_group(
       mount_control_flow_static("} " <> kw("else") <> " {", to: opening_block)
     }
     _ -> {
-      // For, while, if true/do-while: render opening delimiter from API
+      // For, while, if true/do-while/unchecked/assembly: render opening delimiter from API
       mount_control_flow_opening(
-        control_flow,
+        annotation,
         to: opening_block,
         config: option.Some(config),
       )
     }
   }
 
-  // Render references — each gets its own block in the chain,
-  // with source content wrapped in an indent div
-  let index_after_refs =
-    list.index_fold(
-      cf_group.references,
+  // Render children in source order
+  let index_after_children =
+    render_source_children(
+      children,
+      parent,
+      config,
+      source_context,
       current_index + 1,
-      fn(index, ref_entry, _ref_index) {
-        let source_placeholder =
-          dromel.new_div()
-          |> dromel.append_as_child(to: parent)
-
-        audit_data.with_topic_data(
-          ref_entry.reference_topic,
-          fn(_metadata, source_text, _comments) {
-            let reference_source =
-              dromel.new_div()
-              |> dromel.add_class(elements.source_container_class)
-              |> dromel.set_data(topic_key, ref_entry.reference_topic.id)
-              |> dromel.set_data(contract_key, source_context.scope.id)
-              |> dromel.set_style(combined_panel_style)
-              |> dromel.add_style("padding-left: 0.5rem;")
-
-            case source_context.is_in_scope {
-              True -> Nil
-              False -> {
-                dromel.add_style(
-                  reference_source,
-                  "border-color: var(--color-body-out-of-scope-bg)",
-                )
-                Nil
-              }
-            }
-
-            apply_first_last_style(reference_source, index, total_references)
-
-            // Wrap source content in indent divs (depth for nesting + 1 for content)
-            let indent_div = wrap_in_indent(reference_source, depth + 1)
-
-            populate_reference_source(ref_entry, indent_div, source_text)
-
-            let _ =
-              source_placeholder
-              |> dromel.append_child(reference_source)
-
-            gather_panel_tokens(config)
-
-            Nil
-          },
-        )
-
-        index + 1
-      },
+      total_references,
+      depth + 1,
+      option.None,
     )
-
-  // Recursively render nested control flow groups
-  let index_after_nested =
-    list.fold(cf_group.nested, index_after_refs, fn(idx, nested_cf) {
-      render_control_flow_group(
-        nested_cf,
-        parent,
-        config,
-        source_context,
-        idx,
-        total_references,
-        option.None,
-        depth + 1,
-      )
-    })
 
   // Render closing syntax as a block in the dashed-border chain
   let closing_block =
     render_control_flow_syntax_block(
       parent,
       source_context,
-      index_after_nested,
+      index_after_children,
       total_references,
       depth,
     )
-  case control_flow.kind, cf_group.has_sibling_branch {
+  case annotation.kind, has_sibling_branch {
     audit_data.AnnotatedBlockIf(audit_data.TrueBranch), True ->
       mount_control_flow_static("} " <> kw("else") <> " {", to: closing_block)
     audit_data.AnnotatedBlockDoWhile, _ ->
       mount_do_while_closing(
-        control_flow,
+        annotation,
         to: closing_block,
         config: option.Some(config),
       )
     _, _ -> mount_control_flow_static("}", to: closing_block)
   }
 
-  index_after_nested + 1
+  index_after_children + 1
 }
 
-fn count_control_flow_blocks(group: audit_data.AnnotatedBlockSourceContext) -> Int {
-  // Each group contributes: 1 opening block + references + nested groups + 1 closing block
-  2
-  + list.length(group.references)
-  + list.fold(group.nested, 0, fn(acc, nested) {
-    acc + count_control_flow_blocks(nested)
+/// Renders a list of SourceChild items in source order.
+/// Each reference gets its own block; each annotated block recurses.
+/// If subscope_title is provided, it is mounted on the first child's block.
+fn render_source_children(
+  children: List(audit_data.SourceChild),
+  parent: element.Element,
+  config: GroupedSourcePanelConfig,
+  source_context: audit_data.SourceContext,
+  current_index: Int,
+  total_references: Int,
+  depth: Int,
+  subscope_title: option.Option(audit_data.Topic),
+) -> Int {
+  let #(_, final_index) =
+    list.fold(children, #(subscope_title, current_index), fn(state, child) {
+      let #(remaining_title, index) = state
+      case child {
+        audit_data.SourceChildReference(reference: ref_entry) -> {
+          let source_placeholder =
+            dromel.new_div()
+            |> dromel.append_as_child(to: parent)
+
+          audit_data.with_topic_data(
+            ref_entry.reference_topic,
+            fn(_metadata, source_text, _comments) {
+              let reference_source =
+                dromel.new_div()
+                |> dromel.add_class(elements.source_container_class)
+                |> dromel.set_data(topic_key, ref_entry.reference_topic.id)
+                |> dromel.set_data(contract_key, source_context.scope.id)
+                |> dromel.set_style(combined_panel_style)
+                |> dromel.add_style("padding-left: 0.5rem;")
+
+              case source_context.is_in_scope {
+                True -> Nil
+                False -> {
+                  dromel.add_style(
+                    reference_source,
+                    "border-color: var(--color-body-out-of-scope-bg)",
+                  )
+                  Nil
+                }
+              }
+
+              apply_first_last_style(reference_source, index, total_references)
+
+              // Mount subscope title on the first child
+              case remaining_title {
+                option.Some(topic) -> {
+                  mount_subscope_title(topic, to: reference_source)
+                  Nil
+                }
+                option.None -> Nil
+              }
+
+              // Wrap source content in indent divs based on depth
+              let indent_div = wrap_in_indent(reference_source, depth)
+
+              populate_reference_source(ref_entry, indent_div, source_text)
+
+              let _ =
+                source_placeholder
+                |> dromel.append_child(reference_source)
+
+              gather_panel_tokens(config)
+
+              Nil
+            },
+          )
+
+          #(option.None, index + 1)
+        }
+        audit_data.SourceChildAnnotatedBlock(
+          annotation:,
+          children:,
+          has_sibling_branch:,
+        ) -> {
+          let next_index =
+            render_annotated_block_group(
+              annotation,
+              children,
+              has_sibling_branch,
+              parent,
+              config,
+              source_context,
+              index,
+              total_references,
+              remaining_title,
+              depth,
+            )
+          #(option.None, next_index)
+        }
+      }
+    })
+  final_index
+}
+
+/// Counts total blocks for a list of SourceChild items.
+fn count_source_child_blocks(
+  children: List(audit_data.SourceChild),
+) -> Int {
+  list.fold(children, 0, fn(acc, child) {
+    case child {
+      audit_data.SourceChildReference(..) -> acc + 1
+      audit_data.SourceChildAnnotatedBlock(children:, ..) ->
+        // Opening block + children + closing block
+        acc + 2 + count_source_child_blocks(children)
+    }
   })
 }
 
@@ -1304,11 +1362,7 @@ fn populate_grouped_source_panel(
     let total_references =
       list.length(ref_group.scope_references)
       + list.fold(ref_group.nested_references, 0, fn(acc, nested_group) {
-        acc
-        + list.length(nested_group.references)
-        + list.fold(nested_group.annotation_groups, 0, fn(cf_acc, cf_group) {
-          cf_acc + count_control_flow_blocks(cf_group)
-        })
+        acc + count_source_child_blocks(nested_group.children)
       })
 
     // Render scope-level references
@@ -1358,107 +1412,20 @@ fn populate_grouped_source_panel(
         index + 1
       })
 
-    // Render nested-level references, grouped by subscope
+    // Render nested-level children, grouped by subscope
     list.fold(
       ref_group.nested_references,
       index_after_scope,
       fn(current_index, nested_group) {
-        // Render nested group references
-        let index_after_refs =
-          list.index_fold(
-            nested_group.references,
-            current_index,
-            fn(index, ref_entry, nested_ref_index) {
-              let source_placeholder =
-                dromel.new_div()
-                |> dromel.append_as_child(to: group_container)
-
-              audit_data.with_topic_data(
-                ref_entry.reference_topic,
-                fn(_metadata, source_text, _comments) {
-                  let reference_source =
-                    dromel.new_div()
-                    |> dromel.add_class(elements.source_container_class)
-                    |> dromel.set_data(topic_key, ref_entry.reference_topic.id)
-                    |> dromel.set_data(member_key, nested_group.subscope.id)
-                    |> dromel.set_data(contract_key, ref_group.scope.id)
-                    |> dromel.set_style(combined_panel_style)
-                    |> dromel.add_style("padding-left: 0.5rem;")
-
-                  // Apply out-of-scope border color if contract is not in scope
-                  case ref_group.is_in_scope {
-                    True -> Nil
-                    False -> {
-                      dromel.add_style(
-                        reference_source,
-                        "border-color: var(--color-body-out-of-scope-bg)",
-                      )
-                      Nil
-                    }
-                  }
-
-                  apply_first_last_style(
-                    reference_source,
-                    index,
-                    total_references,
-                  )
-
-                  // Add subscope title only for the first reference in the nested group
-                  case nested_ref_index {
-                    0 -> {
-                      mount_subscope_title(
-                        nested_group.subscope,
-                        to: reference_source,
-                      )
-                      Nil
-                    }
-                    _ -> Nil
-                  }
-
-                  populate_reference_source(
-                    ref_entry,
-                    reference_source,
-                    source_text,
-                  )
-
-                  let _ =
-                    source_placeholder
-                    |> dromel.append_child(reference_source)
-
-                  // Re-gather tokens after each source loads
-                  gather_panel_tokens(config)
-
-                  Nil
-                },
-              )
-
-              index + 1
-            },
-          )
-
-        // Render control flow groups for this nested group.
-        // If no direct references were rendered, pass the subscope title
-        // to the first control flow group so it gets rendered there.
-        let needs_subscope_title = list.is_empty(nested_group.references)
-        list.index_fold(
-          nested_group.annotation_groups,
-          index_after_refs,
-          fn(cf_index, cf_group, cf_group_index) {
-            let subscope_title = case needs_subscope_title, cf_group_index {
-              True, 0 -> option.Some(nested_group.subscope)
-              _, _ -> option.None
-            }
-            render_control_flow_group(
-              cf_group,
-              group_container,
-              config,
-              ref_group,
-              cf_index,
-              total_references,
-              subscope_title,
-              0,
-            )
-          },
+        render_source_children(
+          nested_group.children,
+          group_container,
+          config,
+          ref_group,
+          current_index,
+          total_references,
+          0,
+          option.Some(nested_group.subscope),
         )
       },
     )
@@ -1532,7 +1499,7 @@ fn get_fully_qualified_name_parts(
           TopicPart(component),
           TopicPart(metadata.topic),
         ]
-        audit_data.Member(container:, component:, member:)
+        audit_data.Member(container:, component:, member:, ..)
         | audit_data.ContainingBlock(container:, component:, member:, ..) -> [
           TextPart(container),
           TopicPart(component),
