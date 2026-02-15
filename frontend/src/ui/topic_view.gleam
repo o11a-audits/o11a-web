@@ -927,80 +927,32 @@ fn mount_subscope_title(
   Nil
 }
 
-/// Mounts a control flow opening syntax element (e.g., "if (cond) {", "for (...) {").
-/// Fetches the condition source text asynchronously. The condition is indented.
+/// Mounts a control flow opening delimiter (e.g., "if (cond) {", "for (...) {").
+/// Fetches pre-rendered HTML from the delimiter API and appends "{".
 fn mount_control_flow_opening(
-  control_flow: audit_data.ControlFlowInfo,
+  control_flow: audit_data.AnnotatedBlockInfo,
   to parent: element.Element,
   config config: option.Option(GroupedSourcePanelConfig),
 ) -> Nil {
-  let kw = fn(text) { "<span class=\"keyword\">" <> text <> "</span>" }
+  let opening_el =
+    dromel.new_div()
+    |> dromel.set_inner_html("<code>...</code>")
+    |> dromel.append_as_child(to: parent)
 
-  // For do-while, the opening is just "do {" with no condition
-  case control_flow.kind {
-    audit_data.ControlFlowDoWhile -> {
-      let _ =
-        dromel.new_div()
-        |> dromel.set_inner_html("<code>" <> kw("do") <> " {</code>")
-        |> dromel.append_as_child(to: parent)
-      Nil
-    }
-    _ -> {
-      let keyword = case control_flow.kind {
-        audit_data.ControlFlowIf(_) -> "if"
-        audit_data.ControlFlowFor -> "for"
-        audit_data.ControlFlowWhile -> "while"
-        audit_data.ControlFlowDoWhile -> "do"
+  audit_data.with_topic_delimiters(control_flow.topic, fn(result) {
+    case result {
+      Ok(option.Some(delimiters)) -> {
+        dromel.set_inner_html(opening_el, delimiters.opening)
+        inject_inline_info_comments(opening_el)
+        case config {
+          option.Some(cfg) -> gather_panel_tokens(cfg)
+          option.None -> Nil
+        }
       }
-
-      // Render keyword
-      let _ =
-        dromel.new_div()
-        |> dromel.set_inner_html("<code>" <> kw(keyword) <> " (</code>")
-        |> dromel.append_as_child(to: parent)
-
-      // Render condition in an indent div
-      let condition_indent =
-        dromel.new_div()
-        |> dromel.add_class(dromel.Class("indent"))
-        |> dromel.append_as_child(to: parent)
-
-      let condition_el =
-        dromel.new_div()
-        |> dromel.set_inner_html("<code>...</code>")
-        |> dromel.append_as_child(to: condition_indent)
-
-      audit_data.with_topic_metadata(
-        control_flow.topic,
-        fn(metadata: Result(audit_data.TopicMetadata, snag.Snag)) -> Nil {
-          case metadata {
-            Ok(audit_data.ControlFlow(condition:, ..)) -> {
-              audit_data.with_source_text(condition, fn(source_text) {
-                let cond_html = case source_text {
-                  Ok(text) -> text
-                  Error(_) -> "..."
-                }
-                dromel.set_inner_html(condition_el, cond_html)
-                case config {
-                  option.Some(cfg) -> gather_panel_tokens(cfg)
-                  option.None -> Nil
-                }
-              })
-              Nil
-            }
-            _ -> Nil
-          }
-        },
-      )
-
-      // Render closing paren and brace
-      let _ =
-        dromel.new_div()
-        |> dromel.set_inner_html("<code>) {</code>")
-        |> dromel.append_as_child(to: parent)
-      Nil
+      _ -> Nil
     }
-  }
+    Nil
+  })
 }
 
 /// Mounts a static control flow syntax element (no async fetching needed).
@@ -1012,72 +964,64 @@ fn mount_control_flow_static(html: String, to parent: element.Element) -> Nil {
   Nil
 }
 
-/// Mounts a do-while closing: "} while (\n  cond\n)". Fetches condition asynchronously.
+/// Mounts a do-while closing delimiter: "} while (cond)".
+/// Fetches the closing HTML from the delimiter API.
 fn mount_do_while_closing(
-  control_flow: audit_data.ControlFlowInfo,
+  control_flow: audit_data.AnnotatedBlockInfo,
   to parent: element.Element,
   config config: option.Option(GroupedSourcePanelConfig),
 ) -> Nil {
-  let kw = fn(text) { "<span class=\"keyword\">" <> text <> "</span>" }
-
-  // Render "} while ("
-  let _ =
-    dromel.new_div()
-    |> dromel.set_inner_html("<code>} " <> kw("while") <> " (</code>")
-    |> dromel.append_as_child(to: parent)
-
-  // Render condition in an indent div
-  let condition_indent =
-    dromel.new_div()
-    |> dromel.add_class(dromel.Class("indent"))
-    |> dromel.append_as_child(to: parent)
-
-  let condition_el =
+  let closing_el =
     dromel.new_div()
     |> dromel.set_inner_html("<code>...</code>")
-    |> dromel.append_as_child(to: condition_indent)
-
-  audit_data.with_topic_metadata(
-    control_flow.topic,
-    fn(metadata: Result(audit_data.TopicMetadata, snag.Snag)) -> Nil {
-      case metadata {
-        Ok(audit_data.ControlFlow(condition:, ..)) -> {
-          audit_data.with_source_text(condition, fn(source_text) {
-            let cond_html = case source_text {
-              Ok(text) -> text
-              Error(_) -> "..."
-            }
-            dromel.set_inner_html(condition_el, cond_html)
-            // TODO: really the config should be required and this should always
-            // gather panel tokens. Some logic between the main panel and
-            // the references panel needs to be unified.
-            case config {
-              option.Some(cfg) -> gather_panel_tokens(cfg)
-              option.None -> Nil
-            }
-          })
-          Nil
-        }
-        _ -> Nil
-      }
-    },
-  )
-
-  // Render closing paren
-  let _ =
-    dromel.new_div()
-    |> dromel.set_inner_html("<code>)</code>")
     |> dromel.append_as_child(to: parent)
 
-  Nil
+  audit_data.with_topic_delimiters(control_flow.topic, fn(result) {
+    case result {
+      Ok(option.Some(audit_data.TopicDelimiters(
+        closing: option.Some(closing),
+        ..,
+      ))) -> {
+        dromel.set_inner_html(closing_el, "} " <> closing)
+        inject_inline_info_comments(closing_el)
+        case config {
+          option.Some(cfg) -> gather_panel_tokens(cfg)
+          option.None -> Nil
+        }
+      }
+      _ -> Nil
+    }
+    Nil
+  })
+}
+
+/// Wraps content in nested indent divs based on depth.
+/// Returns the innermost element to append content to.
+fn wrap_in_indent(
+  parent: element.Element,
+  depth: Int,
+) -> element.Element {
+  case depth > 0 {
+    True -> {
+      let indent =
+        dromel.new_div()
+        |> dromel.add_class(dromel.Class("indent"))
+        |> dromel.append_as_child(to: parent)
+      wrap_in_indent(indent, depth - 1)
+    }
+    False -> parent
+  }
 }
 
 /// Renders a control flow syntax block as part of the dashed-border chain.
+/// Returns the element where content should be appended (an indent wrapper
+/// when depth > 0, or the block itself at depth 0).
 fn render_control_flow_syntax_block(
   parent: element.Element,
   source_context: audit_data.SourceContext,
   index: Int,
   total_references: Int,
+  depth: Int,
 ) -> element.Element {
   let syntax_source =
     dromel.new_div()
@@ -1096,22 +1040,25 @@ fn render_control_flow_syntax_block(
 
   apply_first_last_style(syntax_source, index, total_references)
   let _ = dromel.append_as_child(syntax_source, to: parent)
-  syntax_source
+
+  // Wrap content in nested indent divs based on depth
+  wrap_in_indent(syntax_source, depth)
 }
 
 /// Recursively renders a control flow reference group with opening/closing syntax
 /// and indented references, all within the dashed-border chain.
 fn render_control_flow_group(
-  cf_group: audit_data.ControlFlowSourceContext,
+  cf_group: audit_data.AnnotatedBlockSourceContext,
   parent: element.Element,
   config: GroupedSourcePanelConfig,
   source_context: audit_data.SourceContext,
   current_index: Int,
   total_references: Int,
   subscope_title: option.Option(audit_data.Topic),
+  depth: Int,
 ) -> Int {
   let kw = fn(text) { "<span class=\"keyword\">" <> text <> "</span>" }
-  let control_flow = cf_group.control_flow
+  let control_flow = cf_group.annotation
 
   // Render opening syntax as a block in the dashed-border chain
   let opening_block =
@@ -1120,6 +1067,7 @@ fn render_control_flow_group(
       source_context,
       current_index,
       total_references,
+      depth,
     )
 
   // Mount subscope title if provided (first control flow group in a nested group)
@@ -1132,7 +1080,7 @@ fn render_control_flow_group(
   }
 
   case control_flow.kind {
-    audit_data.ControlFlowIf(audit_data.FalseBranch)
+    audit_data.AnnotatedBlockIf(audit_data.FalseBranch)
       if !cf_group.has_sibling_branch
     -> {
       // False branch without sibling: render "if (cond) {" then "} else {"
@@ -1143,16 +1091,12 @@ fn render_control_flow_group(
       )
       mount_control_flow_static("} " <> kw("else") <> " {", to: opening_block)
     }
-    audit_data.ControlFlowIf(audit_data.FalseBranch) -> {
+    audit_data.AnnotatedBlockIf(audit_data.FalseBranch) -> {
       // False branch with sibling: just render "} else {"
       mount_control_flow_static("} " <> kw("else") <> " {", to: opening_block)
     }
-    audit_data.ControlFlowDoWhile -> {
-      // Do-while: render "do {"
-      mount_control_flow_static(kw("do") <> " {", to: opening_block)
-    }
     _ -> {
-      // For, while, if true branch: render "keyword (cond) {"
+      // For, while, if true/do-while: render opening delimiter from API
       mount_control_flow_opening(
         control_flow,
         to: opening_block,
@@ -1196,11 +1140,8 @@ fn render_control_flow_group(
 
             apply_first_last_style(reference_source, index, total_references)
 
-            // Wrap source content in indent div
-            let indent_div =
-              dromel.new_div()
-              |> dromel.add_class(dromel.Class("indent"))
-              |> dromel.append_as_child(to: reference_source)
+            // Wrap source content in indent divs (depth for nesting + 1 for content)
+            let indent_div = wrap_in_indent(reference_source, depth + 1)
 
             populate_reference_source(ref_entry, indent_div, source_text)
 
@@ -1229,6 +1170,7 @@ fn render_control_flow_group(
         idx,
         total_references,
         option.None,
+        depth + 1,
       )
     })
 
@@ -1239,11 +1181,12 @@ fn render_control_flow_group(
       source_context,
       index_after_nested,
       total_references,
+      depth,
     )
   case control_flow.kind, cf_group.has_sibling_branch {
-    audit_data.ControlFlowIf(audit_data.TrueBranch), True ->
+    audit_data.AnnotatedBlockIf(audit_data.TrueBranch), True ->
       mount_control_flow_static("} " <> kw("else") <> " {", to: closing_block)
-    audit_data.ControlFlowDoWhile, _ ->
+    audit_data.AnnotatedBlockDoWhile, _ ->
       mount_do_while_closing(
         control_flow,
         to: closing_block,
@@ -1255,7 +1198,7 @@ fn render_control_flow_group(
   index_after_nested + 1
 }
 
-fn count_control_flow_blocks(group: audit_data.ControlFlowSourceContext) -> Int {
+fn count_control_flow_blocks(group: audit_data.AnnotatedBlockSourceContext) -> Int {
   // Each group contributes: 1 opening block + references + nested groups + 1 closing block
   2
   + list.length(group.references)
@@ -1363,7 +1306,7 @@ fn populate_grouped_source_panel(
       + list.fold(ref_group.nested_references, 0, fn(acc, nested_group) {
         acc
         + list.length(nested_group.references)
-        + list.fold(nested_group.control_flow_groups, 0, fn(cf_acc, cf_group) {
+        + list.fold(nested_group.annotation_groups, 0, fn(cf_acc, cf_group) {
           cf_acc + count_control_flow_blocks(cf_group)
         })
       })
@@ -1498,7 +1441,7 @@ fn populate_grouped_source_panel(
         // to the first control flow group so it gets rendered there.
         let needs_subscope_title = list.is_empty(nested_group.references)
         list.index_fold(
-          nested_group.control_flow_groups,
+          nested_group.annotation_groups,
           index_after_refs,
           fn(cf_index, cf_group, cf_group_index) {
             let subscope_title = case needs_subscope_title, cf_group_index {
@@ -1513,6 +1456,7 @@ fn populate_grouped_source_panel(
               cf_index,
               total_references,
               subscope_title,
+              0,
             )
           },
         )

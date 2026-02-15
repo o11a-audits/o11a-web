@@ -125,6 +125,32 @@ export function set_source_text(topic_id, text) {
   source_text_dict[topic_id] = text;
 }
 
+let topic_delimiters_dict = {};
+
+let topic_delimiters_promises = {};
+
+export function set_topic_delimiters_promise(topic_id, promise) {
+  topic_delimiters_promises[topic_id] = promise;
+}
+
+export function get_topic_delimiters_promise(topic_id) {
+  if (!topic_delimiters_promises[topic_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(topic_delimiters_promises[topic_id]);
+}
+
+export function get_topic_delimiters(topic_id) {
+  if (topic_id in topic_delimiters_dict) {
+    return Result$Ok(topic_delimiters_dict[topic_id]);
+  }
+  return Result$Error();
+}
+
+export function set_topic_delimiters(topic_id, val) {
+  topic_delimiters_dict[topic_id] = val;
+}
+
 // =============================================================================
 // History Entries
 // =============================================================================

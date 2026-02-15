@@ -94,26 +94,28 @@ pub type Topic {
   Topic(id: String)
 }
 
-pub type ControlFlowBranch {
+pub type AnnotatedBlockBranch {
   TrueBranch
   FalseBranch
 }
 
-pub type ControlFlowKind {
-  ControlFlowIf(branch: ControlFlowBranch)
-  ControlFlowFor
-  ControlFlowWhile
-  ControlFlowDoWhile
+pub type AnnotatedBlockKind {
+  AnnotatedBlockIf(branch: AnnotatedBlockBranch)
+  AnnotatedBlockFor
+  AnnotatedBlockWhile
+  AnnotatedBlockDoWhile
+  AnnotatedBlockUnchecked
+  AnnotatedBlockInlineAssembly
 }
 
-pub type ControlFlowInfo {
-  ControlFlowInfo(topic: Topic, kind: ControlFlowKind)
+pub type AnnotatedBlockInfo {
+  AnnotatedBlockInfo(topic: Topic, kind: AnnotatedBlockKind)
 }
 
 pub type ContainingBlockLayer {
   ContainingBlockLayer(
     block: Topic,
-    control_flow: option.Option(ControlFlowInfo),
+    control_flow: option.Option(AnnotatedBlockInfo),
   )
 }
 
@@ -130,22 +132,24 @@ pub type Scope {
   )
 }
 
-fn control_flow_kind_decoder() -> decode.Decoder(ControlFlowKind) {
+fn annotated_block_kind_decoder() -> decode.Decoder(AnnotatedBlockKind) {
   use kind_str <- decode.then(decode.string)
   case kind_str {
-    "if_true" -> decode.success(ControlFlowIf(branch: TrueBranch))
-    "if_false" -> decode.success(ControlFlowIf(branch: FalseBranch))
-    "for" -> decode.success(ControlFlowFor)
-    "while" -> decode.success(ControlFlowWhile)
-    "do_while" -> decode.success(ControlFlowDoWhile)
-    _ -> decode.failure(ControlFlowFor, "ControlFlowKind")
+    "if_true" -> decode.success(AnnotatedBlockIf(branch: TrueBranch))
+    "if_false" -> decode.success(AnnotatedBlockIf(branch: FalseBranch))
+    "for" -> decode.success(AnnotatedBlockFor)
+    "while" -> decode.success(AnnotatedBlockWhile)
+    "do_while" -> decode.success(AnnotatedBlockDoWhile)
+    "unchecked" -> decode.success(AnnotatedBlockUnchecked)
+    "inline_assembly" -> decode.success(AnnotatedBlockInlineAssembly)
+    _ -> decode.failure(AnnotatedBlockFor, "AnnotatedBlockKind")
   }
 }
 
-fn control_flow_info_decoder() -> decode.Decoder(ControlFlowInfo) {
+fn annotated_block_info_decoder() -> decode.Decoder(AnnotatedBlockInfo) {
   use topic_id <- decode.field("topic", decode.string)
-  use kind <- decode.field("kind", control_flow_kind_decoder())
-  decode.success(ControlFlowInfo(topic: Topic(id: topic_id), kind: kind))
+  use kind <- decode.field("kind", annotated_block_kind_decoder())
+  decode.success(AnnotatedBlockInfo(topic: Topic(id: topic_id), kind: kind))
 }
 
 fn containing_block_layer_decoder() -> decode.Decoder(ContainingBlockLayer) {
@@ -153,7 +157,7 @@ fn containing_block_layer_decoder() -> decode.Decoder(ContainingBlockLayer) {
   use control_flow <- decode.optional_field(
     "control_flow",
     None,
-    decode.optional(control_flow_info_decoder()),
+    decode.optional(annotated_block_info_decoder()),
   )
   decode.success(ContainingBlockLayer(
     block: Topic(id: block_id),
@@ -318,11 +322,11 @@ pub type ReferenceEntry {
   CommentMention(reference_topic: Topic, mention_topics: List(Topic))
 }
 
-pub type ControlFlowSourceContext {
-  ControlFlowSourceContext(
-    control_flow: ControlFlowInfo,
+pub type AnnotatedBlockSourceContext {
+  AnnotatedBlockSourceContext(
+    annotation: AnnotatedBlockInfo,
     references: List(ReferenceEntry),
-    nested: List(ControlFlowSourceContext),
+    nested: List(AnnotatedBlockSourceContext),
     has_sibling_branch: Bool,
   )
 }
@@ -331,7 +335,7 @@ pub type NestedSourceContext {
   NestedSourceContext(
     subscope: Topic,
     references: List(ReferenceEntry),
-    control_flow_groups: List(ControlFlowSourceContext),
+    annotation_groups: List(AnnotatedBlockSourceContext),
   )
 }
 
@@ -484,10 +488,10 @@ fn reference_entry_decoder() -> decode.Decoder(ReferenceEntry) {
   }
 }
 
-fn control_flow_source_context_decoder() -> decode.Decoder(
-  ControlFlowSourceContext,
+fn annotated_block_source_context_decoder() -> decode.Decoder(
+  AnnotatedBlockSourceContext,
 ) {
-  use control_flow <- decode.field("control_flow", control_flow_info_decoder())
+  use annotation <- decode.field("annotation", annotated_block_info_decoder())
   use references <- decode.field(
     "references",
     decode.list(reference_entry_decoder()),
@@ -495,15 +499,15 @@ fn control_flow_source_context_decoder() -> decode.Decoder(
   use nested <- decode.optional_field(
     "nested",
     [],
-    decode.list(control_flow_source_context_decoder()),
+    decode.list(annotated_block_source_context_decoder()),
   )
   use has_sibling_branch <- decode.optional_field(
     "has_sibling_branch",
     False,
     decode.bool,
   )
-  decode.success(ControlFlowSourceContext(
-    control_flow:,
+  decode.success(AnnotatedBlockSourceContext(
+    annotation:,
     references:,
     nested:,
     has_sibling_branch:,
@@ -516,15 +520,15 @@ fn nested_source_context_decoder() -> decode.Decoder(NestedSourceContext) {
     "references",
     decode.list(reference_entry_decoder()),
   )
-  use control_flow_groups <- decode.optional_field(
-    "control_flow_groups",
+  use annotation_groups <- decode.optional_field(
+    "annotation_groups",
     [],
-    decode.list(control_flow_source_context_decoder()),
+    decode.list(annotated_block_source_context_decoder()),
   )
   decode.success(NestedSourceContext(
     subscope: Topic(id: subscope_id),
     references:,
-    control_flow_groups:,
+    annotation_groups:,
   ))
 }
 
@@ -1161,6 +1165,108 @@ pub fn with_source_text(topic: Topic, callback) {
             |> io.println_error
         }
         callback(source_text)
+
+        promise.resolve(Nil)
+      })
+
+      Nil
+    }
+  }
+}
+
+pub type TopicDelimiters {
+  TopicDelimiters(opening: String, closing: option.Option(String))
+}
+
+fn topic_delimiters_decoder() -> decode.Decoder(option.Option(TopicDelimiters)) {
+  decode.optional({
+    use opening <- decode.field("opening", decode.string)
+    use closing <- decode.optional_field(
+      "closing",
+      None,
+      decode.optional(decode.string),
+    )
+    decode.success(TopicDelimiters(opening:, closing:))
+  })
+}
+
+@external(javascript, "./mem_ffi.mjs", "set_topic_delimiters_promise")
+fn set_topic_delimiters_promise(
+  topic_id: String,
+  promise: promise.Promise(Result(option.Option(TopicDelimiters), snag.Snag)),
+) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_topic_delimiters_promise")
+fn read_topic_delimiters_promise(
+  topic_id: String,
+) -> Result(
+  promise.Promise(Result(option.Option(TopicDelimiters), snag.Snag)),
+  Nil,
+)
+
+@external(javascript, "./mem_ffi.mjs", "get_topic_delimiters")
+fn read_topic_delimiters(
+  topic_id: String,
+) -> Result(option.Option(TopicDelimiters), Nil)
+
+@external(javascript, "./mem_ffi.mjs", "set_topic_delimiters")
+fn set_topic_delimiters(
+  topic_id: String,
+  delimiters: option.Option(TopicDelimiters),
+) -> Nil
+
+fn fetch_topic_delimiters(topic: Topic) {
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/"
+      <> audit_name()
+      <> "/delimiter/"
+      <> topic.id,
+    )
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_json_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  let delimiters =
+    decode.run(resp.body, topic_delimiters_decoder())
+    |> snag.map_error(string.inspect)
+
+  promise.resolve(delimiters)
+}
+
+pub fn with_topic_delimiters(
+  topic: Topic,
+  callback: fn(Result(option.Option(TopicDelimiters), snag.Snag)) -> Nil,
+) {
+  case read_topic_delimiters(topic.id) {
+    Ok(delimiters) -> {
+      callback(Ok(delimiters))
+      Nil
+    }
+    Error(_) -> {
+      let promise = case read_topic_delimiters_promise(topic.id) {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_topic_delimiters(topic)
+          set_topic_delimiters_promise(topic.id, promise)
+          promise
+        }
+      }
+
+      promise.await(promise, fn(delimiters) {
+        case delimiters {
+          Ok(delimiters) -> set_topic_delimiters(topic.id, delimiters)
+          Error(error) ->
+            snag.layer(error, "Unable to fetch topic delimiters")
+            |> snag.line_print
+            |> io.println_error
+        }
+        callback(delimiters)
 
         promise.resolve(Nil)
       })
