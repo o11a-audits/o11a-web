@@ -838,140 +838,6 @@ pub fn topic_metadata_name(metadata: TopicMetadata) -> String {
   }
 }
 
-pub fn topic_metadata_highlighted_name(metadata: TopicMetadata) -> String {
-  let kw = fn(text) { "<span class=\"keyword\">" <> text <> "</span>" }
-  let visibility_kw = fn(visibility) {
-    case visibility {
-      Public -> kw("pub") <> " "
-      Private -> kw("priv") <> " "
-      Internal -> kw("int") <> " "
-      External -> kw("ext") <> " "
-    }
-  }
-
-  let highlighted_name = case metadata {
-    NamedTopic(name:, kind:, visibility:, is_mutable:, ..) ->
-      case kind, is_mutable {
-        TopicContract(contract_kind), _ ->
-          kw(contract_kind_to_keyword(contract_kind))
-          <> " <span class=\"contract\">"
-          <> name
-          <> "</span>"
-        TopicFunction(Function), _ | TopicFunction(FreeFunction), _ ->
-          visibility_kw(visibility)
-          <> kw("fn")
-          <> " <span class=\"function\">"
-          <> name
-          <> "</span>"
-        TopicFunction(Receive), _ -> visibility_kw(visibility) <> kw("receive")
-        TopicFunction(Fallback), _ ->
-          visibility_kw(visibility) <> kw("fallback")
-        TopicFunction(Constructor), _ -> kw("constructor")
-        Modifier, _ ->
-          kw("mod") <> " <span class=\"modifier\">" <> name <> "</span>"
-        Event, _ ->
-          visibility_kw(visibility)
-          <> kw("event")
-          <> " <span class=\"event\">"
-          <> name
-          <> "</span>"
-        TopicError, _ ->
-          visibility_kw(visibility)
-          <> kw("error")
-          <> " <span class=\"error\">"
-          <> name
-          <> "</span>"
-        Struct, _ ->
-          visibility_kw(visibility)
-          <> kw("struct")
-          <> " <span class=\"struct\">"
-          <> name
-          <> "</span>"
-        Enum, _ ->
-          visibility_kw(visibility)
-          <> kw("enum")
-          <> " <span class=\"enum\">"
-          <> name
-          <> "</span>"
-        EnumMember, _ -> "<span class=\"enum-value\">" <> name <> "</span>"
-        StateVariable(_), True | StateVariable(Mutable), _ ->
-          visibility_kw(visibility)
-          <> "<span class=\"mutable-state-variable\">"
-          <> name
-          <> "</span>"
-        StateVariable(Constant), False ->
-          visibility_kw(visibility)
-          <> kw("const")
-          <> " <span class=\"constant\">"
-          <> name
-          <> "</span>"
-        StateVariable(Immutable), False ->
-          visibility_kw(visibility)
-          <> kw("immutable")
-          <> " <span class=\"immutable-state-variable\">"
-          <> name
-          <> "</span>"
-        LocalVariable, True ->
-          "<span class=\"mutable-local-variable\">" <> name <> "</span>"
-        LocalVariable, False ->
-          "<span class=\"local-variable\">" <> name <> "</span>"
-        Builtin, _ -> "<span class=\"global\">" <> name <> "</span>"
-      }
-    TitledTopic(title:, kind:, ..) ->
-      case kind {
-        DocumentationSection -> "<span>" <> title <> "</span>"
-      }
-    UnnamedTopic(kind:, ..) ->
-      case kind {
-        VariableMutation -> "<span class=\"keyword\">MutationStatement</span>"
-        Arithmetic -> "<span class=\"operator\">ArithmeticExpression</span>"
-        Comparison -> "<span class=\"operator\">ComparisonExpression</span>"
-        Logical -> "<span class=\"operator\">BooleanExpression</span>"
-        Bitwise -> "<span class=\"operator\">BitwiseExpression</span>"
-        Conditional -> "<span class=\"keyword\">ConditionalStatement</span>"
-        FunctionCall -> "<span class=\"function\">FunctionCall</span>"
-        TypeConversion -> "<span class=\"operator\">TypeConversion</span>"
-        StructConstruction -> "<span class=\"struct\">StructConstruction</span>"
-        NewExpression -> "<span class=\"keyword\">NewExpression</span>"
-        SemanticBlock -> "<span class=\"block\">ContainingBlock</span>"
-        Break -> "<span class=\"keyword\">BreakStatement</span>"
-        Continue -> "<span class=\"keyword\">ContinueStatement</span>"
-        Emit -> "<span class=\"keyword\">EmitStatement</span>"
-        InlineAssembly -> "<span class=\"keyword\">InlineAssembly</span>"
-        Placeholder -> "<span class=\"keyword\">PlaceholderStatement</span>"
-        Return -> "<span class=\"keyword\">ReturnStatement</span>"
-        Revert -> "<span class=\"keyword\">RevertStatement</span>"
-        Try -> "<span class=\"keyword\">TryStatement</span>"
-        UncheckedBlock -> "<span class=\"keyword\">UncheckedBlock</span>"
-        Reference -> "<span class=\"identifier\">Reference</span>"
-        MutableReference -> "<span class=\"identifier\">MutableReference</span>"
-        Signature -> "<span class=\"identifier\">Signature</span>"
-        DocumentationRoot -> "<span>Documentation</span>"
-        DocumentationHeading -> "<span>DocumentationHeading</span>"
-        DocumentationParagraph -> "<span>DocumentationParagraph</span>"
-        DocumentationSentence -> "<span>DocumentationSentence</span>"
-        DocumentationCodeBlock -> "<span>DocumentationCodeBlock</span>"
-        DocumentationList -> "<span>DocumentationList</span>"
-        DocumentationBlockQuote -> "<span>DocumentationBlockQuote</span>"
-        DocumentationInlineCode -> "<span>DocumentationInlineCode</span>"
-        Literal -> "<span class=\"literal\">Literal</span>"
-        Other -> "<span>Other</span>"
-      }
-    ControlFlow(kind:, ..) ->
-      case kind {
-        ControlFlowStatementIf -> "<span class=\"keyword\">IfStatement</span>"
-        ControlFlowStatementFor -> "<span class=\"keyword\">ForStatement</span>"
-        ControlFlowStatementWhile ->
-          "<span class=\"keyword\">WhileStatement</span>"
-        ControlFlowStatementDoWhile ->
-          "<span class=\"keyword\">DoWhileStatement</span>"
-      }
-    CommentTopic(..) -> "<span>Comment</span>"
-  }
-
-  "<code>" <> highlighted_name <> "</code>"
-}
-
 pub type ContractKind {
   Contract
   Interface
@@ -1190,106 +1056,82 @@ pub fn with_source_text(topic: Topic, callback) {
   }
 }
 
-pub type TopicDelimiters {
-  TopicDelimiters(opening: String, closing: option.Option(String))
-}
+// --- Topic View (server-side rendered) ---
 
-fn topic_delimiters_decoder() -> decode.Decoder(option.Option(TopicDelimiters)) {
-  decode.optional({
-    use opening <- decode.field("opening", decode.string)
-    use closing <- decode.optional_field(
-      "closing",
-      None,
-      decode.optional(decode.string),
-    )
-    decode.success(TopicDelimiters(opening:, closing:))
-  })
-}
-
-@external(javascript, "./mem_ffi.mjs", "set_topic_delimiters_promise")
-fn set_topic_delimiters_promise(
-  topic_id: String,
-  promise: promise.Promise(Result(option.Option(TopicDelimiters), snag.Snag)),
-) -> Nil
-
-@external(javascript, "./mem_ffi.mjs", "get_topic_delimiters_promise")
-fn read_topic_delimiters_promise(
-  topic_id: String,
-) -> Result(
-  promise.Promise(Result(option.Option(TopicDelimiters), snag.Snag)),
-  Nil,
-)
-
-@external(javascript, "./mem_ffi.mjs", "get_topic_delimiters")
-fn read_topic_delimiters(
-  topic_id: String,
-) -> Result(option.Option(TopicDelimiters), Nil)
-
-@external(javascript, "./mem_ffi.mjs", "set_topic_delimiters")
-fn set_topic_delimiters(
-  topic_id: String,
-  delimiters: option.Option(TopicDelimiters),
-) -> Nil
-
-fn fetch_topic_delimiters(topic: Topic) {
-  let assert Ok(req) =
-    request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
-      <> audit_name()
-      <> "/delimiter/"
-      <> topic.id,
-    )
-
-  use resp <- promise.try_await(
-    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+pub type TopicViewResponse {
+  TopicViewResponse(
+    topic_panel_html: String,
+    mentions_panel_html: String,
+    expanded_references_panel_html: String,
+    breadcrumb_html: String,
+    highlight_css: String,
+    comments_panel_html: String,
+    comment_topic_ids: List(String),
   )
-  use resp <- promise.try_await(
-    fetch.read_json_body(resp)
-    |> promise.map(snag.map_error(_, string.inspect)),
-  )
-
-  let delimiters =
-    decode.run(resp.body, topic_delimiters_decoder())
-    |> snag.map_error(string.inspect)
-
-  promise.resolve(delimiters)
 }
 
-pub fn with_topic_delimiters(
+fn topic_view_response_decoder() -> decode.Decoder(TopicViewResponse) {
+  use topic_panel_html <- decode.field("topic_panel_html", decode.string)
+  use mentions_panel_html <- decode.field("mentions_panel_html", decode.string)
+  use expanded_references_panel_html <- decode.field(
+    "expanded_references_panel_html",
+    decode.string,
+  )
+  use breadcrumb_html <- decode.field("breadcrumb_html", decode.string)
+  use highlight_css <- decode.field("highlight_css", decode.string)
+  use comments_panel_html <- decode.subfield(
+    ["comments", "panel_html"],
+    decode.string,
+  )
+  use comment_topic_ids <- decode.subfield(
+    ["comments", "comment_topic_ids"],
+    decode.list(decode.string),
+  )
+  decode.success(TopicViewResponse(
+    topic_panel_html:,
+    mentions_panel_html:,
+    expanded_references_panel_html:,
+    breadcrumb_html:,
+    highlight_css:,
+    comments_panel_html:,
+    comment_topic_ids:,
+  ))
+}
+
+pub fn fetch_topic_view(
   topic: Topic,
-  callback: fn(Result(option.Option(TopicDelimiters), snag.Snag)) -> Nil,
-) {
-  case read_topic_delimiters(topic.id) {
-    Ok(delimiters) -> {
-      callback(Ok(delimiters))
-      Nil
-    }
-    Error(_) -> {
-      let promise = case read_topic_delimiters_promise(topic.id) {
-        Ok(promise) -> promise
-        Error(Nil) -> {
-          let promise = fetch_topic_delimiters(topic)
-          set_topic_delimiters_promise(topic.id, promise)
-          promise
-        }
-      }
+  callback: fn(Result(TopicViewResponse, snag.Snag)) -> Nil,
+) -> Nil {
+  let request_promise = {
+    let assert Ok(req) =
+      request.to(
+        "http://172.18.115.78:3000/api/v1/audits/"
+        <> audit_name()
+        <> "/topic_view/"
+        <> topic.id,
+      )
 
-      promise.await(promise, fn(delimiters) {
-        case delimiters {
-          Ok(delimiters) -> set_topic_delimiters(topic.id, delimiters)
-          Error(error) ->
-            snag.layer(error, "Unable to fetch topic delimiters")
-            |> snag.line_print
-            |> io.println_error
-        }
-        callback(delimiters)
+    use resp <- promise.try_await(
+      fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+    )
+    use resp <- promise.try_await(
+      fetch.read_json_body(resp)
+      |> promise.map(snag.map_error(_, string.inspect)),
+    )
 
-        promise.resolve(Nil)
-      })
+    let result =
+      decode.run(resp.body, topic_view_response_decoder())
+      |> snag.map_error(string.inspect)
 
-      Nil
-    }
+    promise.resolve(result)
   }
+
+  promise.await(request_promise, fn(result) {
+    callback(result)
+    promise.resolve(Nil)
+  })
+
+  Nil
 }
 
 @external(javascript, "./mem_ffi.mjs", "set_topic_metadata_promise")

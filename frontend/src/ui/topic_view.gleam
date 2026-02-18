@@ -87,7 +87,6 @@ import gleam/int
 import gleam/io
 import gleam/javascript/array
 import gleam/list
-import gleam/option
 import gleam/result
 import gleam/string
 import history_graph
@@ -95,7 +94,6 @@ import plinth/browser/element
 import plinth/browser/event
 import snag
 import ui/elements
-import ui/icons
 
 // ============================================================================
 // Topic View State
@@ -110,26 +108,6 @@ pub type TopicView {
 /// Re-export ActivePanel from history_graph for convenience
 pub type ActivePanel =
   history_graph.ActivePanel
-
-/// Identifies which token array field to update in ActiveViewElements
-type TokenField {
-  MentionsPanelTokens
-  CommentsPanelTokens
-  TopicPanelTokens
-  ReferencesPanelTokens
-}
-
-/// Configuration for rendering a panel with grouped source containers
-type GroupedSourcePanelConfig {
-  GroupedSourcePanelConfig(
-    /// The view container element (for state like pending focus)
-    container: element.Element,
-    /// The panel element to render into
-    panel: element.Element,
-    /// Which token field to update when gathering tokens
-    token_field: TokenField,
-  )
-}
 
 // ============================================================================
 // Active View Elements (transient, only exists for currently displayed view)
@@ -225,119 +203,26 @@ const active_topic_view_key = dromel.DataKey("active_topic_view")
 
 const active_topic_style_id = "active-topic-highlight-style"
 
-fn set_active_topic_view(
+fn set_active_topic_view_entry(
   container: element.Element,
   view: TopicView,
-  metadata: Result(audit_data.TopicMetadata, snag.Snag),
 ) -> Nil {
   let _ = dromel.set_data(container, active_topic_view_key, view.entry_id)
-  set_active_topic_highlight_style(view.topic_id, metadata)
   Nil
 }
 
-/// Recursively collect reference topic IDs from a list of SourceChild
-fn collect_source_child_ids(children: List(audit_data.SourceChild)) -> List(String) {
-  list.flat_map(children, fn(child) {
-    case child {
-      audit_data.SourceChildReference(reference:) -> [
-        reference.reference_topic.id,
-      ]
-      audit_data.SourceChildAnnotatedBlock(children:, ..) ->
-        collect_source_child_ids(children)
-    }
-  })
-}
-
-/// Flatten expanded_context into a list of topic IDs
-fn flatten_expanded_context(
-  expanded_context: List(audit_data.SourceContext),
-) -> List(String) {
-  list.flat_map(expanded_context, fn(group) {
-    let scope_ids = [group.scope.id]
-    let scope_ref_ids =
-      list.map(group.scope_references, fn(entry) { entry.reference_topic.id })
-    let nested_ids =
-      list.flat_map(group.nested_references, fn(nested_group) {
-        [
-          nested_group.subscope.id,
-          ..collect_source_child_ids(nested_group.children)
-        ]
-      })
-    list.flatten([scope_ids, scope_ref_ids, nested_ids])
-  })
-}
-
-/// Sets a dynamic CSS rule on the app element to highlight elements with data-topic matching the active topic
-fn set_active_topic_highlight_style(
-  topic_id: String,
-  metadata: Result(audit_data.TopicMetadata, snag.Snag),
-) -> Nil {
-  // Build style for the active topic (solid underline)
-  let active_topic_style =
-    "span[data-topic=\"" <> topic_id <> "\"] { text-decoration: underline; }"
-
-  // Extract ancestors and descendants from metadata
-  let #(ancestor_ids, descendant_ids, relative_ids) = case metadata {
-    Ok(audit_data.NamedTopic(ancestors:, descendants:, expanded_context:, ..)) -> {
-      let ancestor_id_list = list.map(ancestors, fn(t) { t.id })
-      let descendant_id_list = list.map(descendants, fn(t) { t.id })
-      let relative_id_list = flatten_expanded_context(expanded_context)
-      #(ancestor_id_list, descendant_id_list, relative_id_list)
-    }
-    _ -> #([], [], [])
-  }
-
-  // Build styles for ancestors (wavy underline in ancestor color)
-  let ancestor_styles =
-    list.map(ancestor_ids, fn(id) {
-      dromel.selector(expanded_references_panel_id)
-      <> " span[data-topic=\""
-      <> id
-      <> "\"] { text-decoration: underline; }"
-    })
-    |> string.join("\n")
-
-  // Build styles for descendants (wavy underline in descendant color)
-  let descendant_styles =
-    list.map(descendant_ids, fn(id) {
-      dromel.selector(expanded_references_panel_id)
-      <> " span[data-topic=\""
-      <> id
-      <> "\"] { text-decoration: underline; }"
-    })
-    |> string.join("\n")
-
-  // Build styles for relatives (wavy underline in relative color)
-  let relative_styles =
-    list.map(relative_ids, fn(id) {
-      dromel.selector(expanded_references_panel_id)
-      <> " span[data-topic=\""
-      <> id
-      <> "\"] { text-decoration: underline; }"
-    })
-    |> string.join("\n")
-
-  // Combine all styles (active topic style comes last to take precedence)
-  let style_content =
-    string.join(
-      [relative_styles, ancestor_styles, descendant_styles, active_topic_style],
-      "\n",
-    )
-
+fn set_highlight_css(css: String) -> Nil {
   let style_id = dromel.Id(active_topic_style_id)
-
-  // Try to find existing style element
   case dromel.query_document(style_id) {
     Ok(style_element) -> {
-      let _ = dromel.set_inner_text(style_element, style_content)
+      dromel.set_inner_text(style_element, css)
       Nil
     }
     Error(Nil) -> {
-      // Create new style element and append to app element
       let style_element =
         dromel.new("style")
         |> dromel.set_id(style_id)
-        |> dromel.set_inner_text(style_content)
+        |> dromel.set_inner_text(css)
       let _ = audit_data.app_element() |> dromel.append_child(style_element)
       Nil
     }
@@ -489,27 +374,7 @@ const container_style = "position: relative; padding-top: 0.5rem; width: calc(40
 
 const panel_style = "min-height: 0; height: 100%; width: unset;"
 
-// Note: These styles use border-width and border-style separately from border-color
-// so that the out-of-scope border-color (--color-body-out-of-scope-bg) is not overridden
-const combined_panel_first_style = "border-top-width: 1px; border-top-style: solid; border-top-right-radius: 8px; border-top-left-radius: 8px;"
-
-const combined_panel_last_style = "border-bottom-right-radius: 8px; border-bottom-left-radius: 8px; border-bottom-width: 1px; border-bottom-style: solid;"
-
-const combined_panel_style = "border-color: var(--color-body-border); border-right-width: 1px; border-right-style: solid; border-left-width: 1px; border-left-style: solid; border-bottom-width: 1px; border-bottom-style: dashed; padding: 0.5rem; background: var(--color-code-bg); max-height: 100%;"
-
-const combined_panel_member_title_style = "outline: 1px solid var(--color-body-border); border-radius: 4px; margin-bottom: 0.5rem; background: var(--color-body-bg); padding-left: 0.5rem;"
-
-const scope_style = "position: relative; display: inline-flex; align-items: center; gap: 0.25rem; margin-bottom: 0.5rem; padding-right: 0.5rem; direction: rtl; overflow: hidden;"
-
-const scope_standard_class = dromel.Class("scope-standard")
-
-const scope_expanded_class = dromel.Class("scope-expanded")
-
 const reference_group_class = dromel.Class("reference-group")
-
-const scope_overflow_gradient_style_hidden = "display: none;"
-
-const scope_overflow_gradient_style_visible = "position: absolute; left: 0; top: 0; bottom: 0; width: 1.5rem; background: linear-gradient(to right, var(--color-body-bg), transparent); pointer-events: none;"
 
 const footer_style = "position: absolute; bottom: 0.25rem; right: 0.5rem;"
 
@@ -796,51 +661,7 @@ fn reset_active_view() -> Result(ActiveViewElements, Nil) {
   }
 }
 
-// ============================================================================
-// Source Text Loading Callbacks
-// ============================================================================
-
-/// Helper to apply first/last styling to reference source elements
-fn apply_first_last_style(
-  reference_source: element.Element,
-  index: Int,
-  total: Int,
-) -> Nil {
-  // Apply first style if this is the first element
-  case index {
-    0 -> {
-      dromel.add_style(reference_source, combined_panel_first_style)
-      Nil
-    }
-    _ -> Nil
-  }
-  // Apply last style if this is the last element (can be both first and last)
-  case index == total - 1 {
-    True -> {
-      dromel.add_style(reference_source, combined_panel_last_style)
-      Nil
-    }
-    False -> Nil
-  }
-}
-
-/// Reapply first/last styles to all source containers in a reference group
-fn reapply_first_last_styles(group_container: element.Element) -> Nil {
-  let all_containers =
-    dromel.query_element_all(group_container, elements.source_container_class)
-
-  let total = array.size(all_containers)
-
-  all_containers
-  |> array.to_list
-  |> list.index_map(fn(elem, index) {
-    apply_first_last_style(elem, index, total)
-  })
-
-  Nil
-}
-
-/// Helper to populate a reference source element with source text or error
+/// Populate placeholder divs for inline info comments
 fn inject_inline_info_comments(container: element.Element) -> Nil {
   echo "injecting info comments"
   let placeholders =
@@ -906,694 +727,45 @@ fn inject_inline_info_comments(container: element.Element) -> Nil {
   })
 }
 
-fn mount_subscope_title(
-  topic: audit_data.Topic,
-  to parent: element.Element,
-) -> Nil {
-  let subscope_title =
-    dromel.new_div()
-    |> dromel.set_style(combined_panel_member_title_style)
-    |> dromel.set_inner_html("...")
-    |> dromel.append_as_child(to: parent)
+// ============================================================================
+// Scope Collapsing Helpers
+// ============================================================================
 
-  audit_data.with_topic_metadata(
-    topic,
-    fn(metadata: Result(audit_data.TopicMetadata, snag.Snag)) -> Nil {
-      case metadata {
-        Ok(metadata) -> {
-          subscope_title
-          |> dromel.set_inner_html(audit_data.topic_metadata_highlighted_name(
-            metadata,
-          ))
-          Nil
-        }
-        Error(snag) -> {
-          subscope_title
-          |> dromel.set_inner_html(snag.line_print(snag))
-          Nil
-        }
-      }
-    },
-  )
-  Nil
-}
+const combined_panel_first_style = "border-top-width: 1px; border-top-style: solid; border-top-right-radius: 8px; border-top-left-radius: 8px;"
 
-/// Mounts a control flow opening delimiter (e.g., "if (cond) {", "for (...) {").
-/// Fetches pre-rendered HTML from the delimiter API and appends "{".
-fn mount_control_flow_opening(
-  control_flow: audit_data.AnnotatedBlockInfo,
-  to parent: element.Element,
-  config config: option.Option(GroupedSourcePanelConfig),
-) -> Nil {
-  let opening_el =
-    dromel.new_div()
-    |> dromel.set_inner_html("<code>...</code>")
-    |> dromel.append_as_child(to: parent)
+const combined_panel_last_style = "border-bottom-right-radius: 8px; border-bottom-left-radius: 8px; border-bottom-width: 1px; border-bottom-style: solid;"
 
-  audit_data.with_topic_delimiters(control_flow.topic, fn(result) {
-    case result {
-      Ok(option.Some(delimiters)) -> {
-        dromel.set_inner_html(opening_el, delimiters.opening)
-        inject_inline_info_comments(opening_el)
-        case config {
-          option.Some(cfg) -> gather_panel_tokens(cfg)
-          option.None -> Nil
-        }
-      }
-      _ -> Nil
-    }
-    Nil
-  })
-}
-
-/// Mounts a static control flow syntax element (no async fetching needed).
-fn mount_control_flow_static(html: String, to parent: element.Element) -> Nil {
-  let _ =
-    dromel.new_div()
-    |> dromel.set_inner_html("<code>" <> html <> "</code>")
-    |> dromel.append_as_child(to: parent)
-  Nil
-}
-
-/// Mounts a do-while closing delimiter: "} while (cond)".
-/// Fetches the closing HTML from the delimiter API.
-fn mount_do_while_closing(
-  control_flow: audit_data.AnnotatedBlockInfo,
-  to parent: element.Element,
-  config config: option.Option(GroupedSourcePanelConfig),
-) -> Nil {
-  let closing_el =
-    dromel.new_div()
-    |> dromel.set_inner_html("<code>...</code>")
-    |> dromel.append_as_child(to: parent)
-
-  audit_data.with_topic_delimiters(control_flow.topic, fn(result) {
-    case result {
-      Ok(option.Some(audit_data.TopicDelimiters(
-        closing: option.Some(closing),
-        ..,
-      ))) -> {
-        dromel.set_inner_html(closing_el, "} " <> closing)
-        inject_inline_info_comments(closing_el)
-        case config {
-          option.Some(cfg) -> gather_panel_tokens(cfg)
-          option.None -> Nil
-        }
-      }
-      _ -> Nil
-    }
-    Nil
-  })
-}
-
-/// Wraps content in nested indent divs based on depth.
-/// Returns the innermost element to append content to.
-fn wrap_in_indent(
-  parent: element.Element,
-  depth: Int,
-) -> element.Element {
-  case depth > 0 {
-    True -> {
-      let indent =
-        dromel.new_div()
-        |> dromel.add_class(dromel.Class("indent"))
-        |> dromel.append_as_child(to: parent)
-      wrap_in_indent(indent, depth - 1)
-    }
-    False -> parent
-  }
-}
-
-/// Renders a control flow syntax block as part of the dashed-border chain.
-/// Returns the element where content should be appended (an indent wrapper
-/// when depth > 0, or the block itself at depth 0).
-fn render_control_flow_syntax_block(
-  parent: element.Element,
-  source_context: audit_data.SourceContext,
-  index: Int,
-  total_references: Int,
-  depth: Int,
-) -> element.Element {
-  let syntax_source =
-    dromel.new_div()
-    |> dromel.set_style(combined_panel_style)
-
-  case source_context.is_in_scope {
-    True -> Nil
-    False -> {
-      dromel.add_style(
-        syntax_source,
-        "border-color: var(--color-body-out-of-scope-bg)",
-      )
-      Nil
-    }
-  }
-
-  apply_first_last_style(syntax_source, index, total_references)
-  let _ = dromel.append_as_child(syntax_source, to: parent)
-
-  // Wrap content in nested indent divs based on depth
-  wrap_in_indent(syntax_source, depth)
-}
-
-/// Recursively renders an annotated block group with opening/closing syntax
-/// and indented children, all within the dashed-border chain.
-fn render_annotated_block_group(
-  annotation: audit_data.AnnotatedBlockInfo,
-  children: List(audit_data.SourceChild),
-  has_sibling_branch: Bool,
-  parent: element.Element,
-  config: GroupedSourcePanelConfig,
-  source_context: audit_data.SourceContext,
-  current_index: Int,
-  total_references: Int,
-  subscope_title: option.Option(audit_data.Topic),
-  depth: Int,
-) -> Int {
-  let kw = fn(text) { "<span class=\"keyword\">" <> text <> "</span>" }
-
-  // Render opening syntax as a block in the dashed-border chain
-  let opening_block =
-    render_control_flow_syntax_block(
-      parent,
-      source_context,
-      current_index,
-      total_references,
-      depth,
-    )
-
-  // Mount subscope title if provided (first child in a nested group)
-  case subscope_title {
-    option.Some(topic) -> {
-      mount_subscope_title(topic, to: opening_block)
-      Nil
-    }
-    option.None -> Nil
-  }
-
-  case annotation.kind {
-    audit_data.AnnotatedBlockIf(audit_data.FalseBranch)
-      if !has_sibling_branch
-    -> {
-      // False branch without sibling: render "if (cond) {" then "} else {"
-      mount_control_flow_opening(
-        annotation,
-        to: opening_block,
-        config: option.Some(config),
-      )
-      mount_control_flow_static("} " <> kw("else") <> " {", to: opening_block)
-    }
-    audit_data.AnnotatedBlockIf(audit_data.FalseBranch) -> {
-      // False branch with sibling: just render "} else {"
-      mount_control_flow_static("} " <> kw("else") <> " {", to: opening_block)
-    }
-    _ -> {
-      // For, while, if true/do-while/unchecked/assembly: render opening delimiter from API
-      mount_control_flow_opening(
-        annotation,
-        to: opening_block,
-        config: option.Some(config),
-      )
-    }
-  }
-
-  // Render children in source order
-  let index_after_children =
-    render_source_children(
-      children,
-      parent,
-      config,
-      source_context,
-      current_index + 1,
-      total_references,
-      depth + 1,
-      option.None,
-    )
-
-  // Render closing syntax as a block in the dashed-border chain
-  let closing_block =
-    render_control_flow_syntax_block(
-      parent,
-      source_context,
-      index_after_children,
-      total_references,
-      depth,
-    )
-  case annotation.kind, has_sibling_branch {
-    audit_data.AnnotatedBlockIf(audit_data.TrueBranch), True ->
-      mount_control_flow_static("} " <> kw("else") <> " {", to: closing_block)
-    audit_data.AnnotatedBlockDoWhile, _ ->
-      mount_do_while_closing(
-        annotation,
-        to: closing_block,
-        config: option.Some(config),
-      )
-    _, _ -> mount_control_flow_static("}", to: closing_block)
-  }
-
-  index_after_children + 1
-}
-
-/// Renders a list of SourceChild items in source order.
-/// Each reference gets its own block; each annotated block recurses.
-/// If subscope_title is provided, it is mounted on the first child's block.
-fn render_source_children(
-  children: List(audit_data.SourceChild),
-  parent: element.Element,
-  config: GroupedSourcePanelConfig,
-  source_context: audit_data.SourceContext,
-  current_index: Int,
-  total_references: Int,
-  depth: Int,
-  subscope_title: option.Option(audit_data.Topic),
-) -> Int {
-  let #(_, final_index) =
-    list.fold(children, #(subscope_title, current_index), fn(state, child) {
-      let #(remaining_title, index) = state
-      case child {
-        audit_data.SourceChildReference(reference: ref_entry) -> {
-          let source_placeholder =
-            dromel.new_div()
-            |> dromel.append_as_child(to: parent)
-
-          audit_data.with_topic_data(
-            ref_entry.reference_topic,
-            fn(_metadata, source_text, _comments) {
-              let reference_source =
-                dromel.new_div()
-                |> dromel.add_class(elements.source_container_class)
-                |> dromel.set_data(topic_key, ref_entry.reference_topic.id)
-                |> dromel.set_data(contract_key, source_context.scope.id)
-                |> dromel.set_style(combined_panel_style)
-                |> dromel.add_style("padding-left: 0.5rem;")
-
-              case source_context.is_in_scope {
-                True -> Nil
-                False -> {
-                  dromel.add_style(
-                    reference_source,
-                    "border-color: var(--color-body-out-of-scope-bg)",
-                  )
-                  Nil
-                }
-              }
-
-              apply_first_last_style(reference_source, index, total_references)
-
-              // Mount subscope title on the first child
-              case remaining_title {
-                option.Some(topic) -> {
-                  mount_subscope_title(topic, to: reference_source)
-                  Nil
-                }
-                option.None -> Nil
-              }
-
-              // Wrap source content in indent divs based on depth
-              let indent_div = wrap_in_indent(reference_source, depth)
-
-              populate_reference_source(ref_entry, indent_div, source_text)
-
-              let _ =
-                source_placeholder
-                |> dromel.append_child(reference_source)
-
-              gather_panel_tokens(config)
-
-              Nil
-            },
-          )
-
-          #(option.None, index + 1)
-        }
-        audit_data.SourceChildAnnotatedBlock(
-          annotation:,
-          children:,
-          has_sibling_branch:,
-        ) -> {
-          let next_index =
-            render_annotated_block_group(
-              annotation,
-              children,
-              has_sibling_branch,
-              parent,
-              config,
-              source_context,
-              index,
-              total_references,
-              remaining_title,
-              depth,
-            )
-          #(option.None, next_index)
-        }
-      }
-    })
-  final_index
-}
-
-/// Counts total blocks for a list of SourceChild items.
-fn count_source_child_blocks(
-  children: List(audit_data.SourceChild),
-) -> Int {
-  list.fold(children, 0, fn(acc, child) {
-    case child {
-      audit_data.SourceChildReference(..) -> acc + 1
-      audit_data.SourceChildAnnotatedBlock(children:, ..) ->
-        // Opening block + children + closing block
-        acc + 2 + count_source_child_blocks(children)
-    }
-  })
-}
-
-fn populate_reference_source(
-  ref_entry: audit_data.ReferenceEntry,
+fn apply_first_last_style(
   reference_source: element.Element,
-  source_text: Result(String, snag.Snag),
+  index: Int,
+  total: Int,
 ) -> Nil {
-  case source_text {
-    Ok(source_text) -> {
-      case ref_entry {
-        audit_data.ProjectReference(..) -> {
-          let source_div =
-            dromel.new_div()
-            |> dromel.set_inner_html(source_text)
-            |> dromel.append_as_child(to: reference_source)
-          inject_inline_info_comments(source_div)
-          Nil
-        }
-        audit_data.ProjectReferenceWithMentions(mention_topics:, ..)
-        | audit_data.CommentMention(mention_topics:, ..) -> {
-          let comments = dromel.new_div()
-
-          list.each(mention_topics, fn(mention_topic) {
-            let comment_placeholder =
-              dromel.new_div()
-              |> dromel.set_style(
-                // "outline: 1px solid var(--color-body-border); border-radius: 4px; margin-bottom: 0.5rem; padding-left: 0.5rem;",
-                // "margin-bottom: 0.5rem;",
-                "",
-              )
-              |> dromel.set_class(elements.inline_comment_class)
-              |> dromel.add_class(elements.code_style_class)
-              |> dromel.append_as_child(to: comments)
-
-            audit_data.with_source_text(mention_topic, fn(comment_source_text) {
-              case comment_source_text {
-                Ok(text) -> {
-                  dromel.new_div()
-                  |> dromel.set_inner_html(text)
-                  |> dromel.append_as_child(to: comment_placeholder)
-                  Nil
-                }
-                Error(error) -> {
-                  dromel.new_div()
-                  |> dromel.set_inner_html(log.render_source_error(error))
-                  |> dromel.append_as_child(to: comment_placeholder)
-                  Nil
-                }
-              }
-            })
-          })
-
-          comments
-          |> dromel.append_as_child(to: reference_source)
-
-          dromel.new_div()
-          |> dromel.set_inner_html(source_text)
-          |> dromel.append_as_child(to: reference_source)
-          Nil
-        }
-      }
-    }
-    Error(error) -> {
-      let _ =
-        dromel.new_div()
-        |> dromel.set_inner_html(log.render_source_error(error))
-        |> dromel.append_as_child(to: reference_source)
-
+  case index {
+    0 -> {
+      dromel.add_style(reference_source, combined_panel_first_style)
       Nil
     }
+    _ -> Nil
   }
-}
-
-/// Generic function to populate a panel with grouped source containers
-fn populate_grouped_source_panel(
-  config: GroupedSourcePanelConfig,
-  groups: List(audit_data.SourceContext),
-) -> Nil {
-  list.each(groups, fn(ref_group) {
-    let group_container =
-      dromel.new_div()
-      |> dromel.set_style("margin-bottom: 0.5rem;")
-      |> dromel.set_class(reference_group_class)
-      |> dromel.append_as_child(to: config.panel)
-
-    // Mount the contract breadcrumb once per reference group
-    let contract_scope =
-      dromel.new_div()
-      |> dromel.set_class(reference_title_class)
-      |> dromel.set_style(scope_style)
-      |> dromel.add_class(scope_standard_class)
-      |> dromel.append_as_child(to: group_container)
-
-    mount_breadcrumb_parts(contract_scope, [TopicPart(ref_group.scope)])
-
-    // Calculate total reference count for first/last styling
-    let total_references =
-      list.length(ref_group.scope_references)
-      + list.fold(ref_group.nested_references, 0, fn(acc, nested_group) {
-        acc + count_source_child_blocks(nested_group.children)
-      })
-
-    // Render scope-level references
-    let index_after_scope =
-      list.index_fold(ref_group.scope_references, 0, fn(index, ref_entry, _) {
-        let source_placeholder =
-          dromel.new_div()
-          |> dromel.append_as_child(to: group_container)
-
-        audit_data.with_topic_data(
-          ref_entry.reference_topic,
-          fn(_metadata, source_text, _comments) {
-            let reference_source =
-              dromel.new_div()
-              |> dromel.add_class(elements.source_container_class)
-              |> dromel.set_data(topic_key, ref_entry.reference_topic.id)
-              |> dromel.set_data(contract_key, ref_group.scope.id)
-              |> dromel.set_style(combined_panel_style)
-              |> dromel.add_style("padding-left: 0.5rem;")
-
-            // Apply out-of-scope border color if scope is not in scope
-            case ref_group.is_in_scope {
-              True -> Nil
-              False -> {
-                dromel.add_style(
-                  reference_source,
-                  "border-color: var(--color-body-out-of-scope-bg)",
-                )
-                Nil
-              }
-            }
-
-            apply_first_last_style(reference_source, index, total_references)
-            populate_reference_source(ref_entry, reference_source, source_text)
-
-            let _ =
-              source_placeholder
-              |> dromel.append_child(reference_source)
-
-            // Re-gather tokens after each source loads
-            gather_panel_tokens(config)
-
-            Nil
-          },
-        )
-
-        index + 1
-      })
-
-    // Render nested-level children, grouped by subscope
-    list.fold(
-      ref_group.nested_references,
-      index_after_scope,
-      fn(current_index, nested_group) {
-        render_source_children(
-          nested_group.children,
-          group_container,
-          config,
-          ref_group,
-          current_index,
-          total_references,
-          0,
-          option.Some(nested_group.subscope),
-        )
-      },
-    )
-  })
-}
-
-/// Gather topic tokens for a panel based on its configuration.
-/// Only focuses the token if this panel is the currently active panel.
-fn gather_panel_tokens(config: GroupedSourcePanelConfig) -> Nil {
-  case get_active_view_elements() {
-    Ok(active_elements) -> {
-      let tokens =
-        dromel.query_element_all(config.panel, elements.topic_tokens_class)
-      let panel = case config.token_field {
-        MentionsPanelTokens -> history_graph.MentionsPanel
-        CommentsPanelTokens -> history_graph.CommentsPanel
-        TopicPanelTokens -> history_graph.TopicPanel
-        ReferencesPanelTokens -> history_graph.ReferencesPanel
-      }
-      let updated = set_panel_tokens(active_elements, panel, tokens)
-      set_active_view_elements(updated)
-
-      // Only focus if this is the active panel. Without this check,
-      // navigating back to a topic where the user was in the references
-      // panel would incorrectly focus the topic panel, because
-      // populate_topic_panel runs before populate_expanded_references_panel.
-      case get_active_panel(config.container) == panel {
-        True -> {
-          let index = get_panel_index(config.container, panel)
-          case array.get(tokens, index) {
-            Ok(el) -> focus_topic_token_and_prefetch(el)
-            Error(Nil) -> Nil
-          }
-        }
-        False -> Nil
-      }
+  case index == total - 1 {
+    True -> {
+      dromel.add_style(reference_source, combined_panel_last_style)
       Nil
     }
-    Error(Nil) -> Nil
+    False -> Nil
   }
 }
 
-// ============================================================================
-// Topic Scope Breadcrumb
-// ============================================================================
+fn reapply_first_last_styles(group_container: element.Element) -> Nil {
+  let all_containers =
+    dromel.query_element_all(group_container, elements.source_container_class)
 
-const scope_item_style = "color: var(--color-body-text); white-space: nowrap;"
+  let total = array.size(all_containers)
 
-const scope_chevron_style = "display: inline-flex; align-items: center; opacity: 0.6; width: 0.75em; height: 0.75em; line-height: 1; flex-shrink: 0;"
-
-/// A part of a breadcrumb - either a file name string or a topic
-type BreadcrumbPart {
-  // For file names and other prefixes like "global"
-  TextPart(String)
-  TopicPart(audit_data.Topic)
-}
-
-fn get_fully_qualified_name_parts(
-  metadata: Result(audit_data.TopicMetadata, snag.Snag),
-) {
-  case metadata {
-    Ok(metadata) ->
-      case metadata.scope {
-        audit_data.Global -> [TextPart("global"), TopicPart(metadata.topic)]
-        audit_data.Container(container:) -> [
-          TextPart(container),
-          TopicPart(metadata.topic),
-        ]
-        audit_data.Component(container:, component:) -> [
-          TextPart(container),
-          TopicPart(component),
-          TopicPart(metadata.topic),
-        ]
-        audit_data.Member(container:, component:, member:, ..)
-        | audit_data.ContainingBlock(container:, component:, member:, ..) -> [
-          TextPart(container),
-          TopicPart(component),
-          TopicPart(member),
-          TopicPart(metadata.topic),
-        ]
-      }
-    Error(_snag) -> [TextPart("Unknown")]
-  }
-}
-
-/// Render breadcrumb parts into a container element
-/// Creates breadcrumb elements separated by chevron_right icons
-/// Parts should be in display order (will be reversed for RTL container)
-fn mount_breadcrumb_parts(
-  to container: element.Element,
-  parts parts: List(BreadcrumbPart),
-) -> Nil {
-  // Clear current container content to save a clear slate to insert new
-  // breadcrumb elements to
-  dromel.set_inner_html(container, "")
-
-  // Create gradient overlay element (hidden by default, shown when overflowing)
-  let gradient =
-    dromel.new_div()
-    |> dromel.set_style(scope_overflow_gradient_style_hidden)
-    |> dromel.append_as_child(to: container)
-
-  // Reverse because container has direction: rtl, so last items appear first (rightmost)
-  let reversed_parts = list.reverse(parts)
-
-  // Create breadcrumb elements for each part
-  list.index_map(reversed_parts, fn(part, index) {
-    // Add chevron delimiter before each item except the first
-    case index > 0 {
-      True -> {
-        let _ =
-          dromel.new_span()
-          |> dromel.set_inner_html(icons.chevron_right_breadcrumb)
-          |> dromel.set_style(scope_chevron_style)
-          |> dromel.append_as_child(to: container)
-        Nil
-      }
-      False -> Nil
-    }
-
-    case part {
-      TextPart(name) -> {
-        let _ =
-          dromel.new("code")
-          |> dromel.set_inner_text(name)
-          |> dromel.set_style(scope_item_style)
-          |> dromel.append_as_child(to: container)
-        Nil
-      }
-      TopicPart(topic) -> {
-        let text_span =
-          dromel.new_span()
-          |> dromel.set_inner_text("...")
-          |> dromel.set_style(scope_item_style)
-        let _ = dromel.append_child(container, text_span)
-
-        audit_data.with_topic_metadata(topic, fn(result) {
-          case result {
-            Ok(topic_metadata) -> {
-              let name =
-                audit_data.topic_metadata_highlighted_name(topic_metadata)
-              let _ = dromel.set_inner_html(text_span, name)
-              // Check for overflow after content is loaded and show gradient if needed
-              case
-                dromel.scroll_width(container) > dromel.client_width(container)
-              {
-                True -> {
-                  container
-                  |> dromel.remove_class(scope_standard_class)
-                  |> dromel.add_class(scope_expanded_class)
-                  dromel.set_style(
-                    gradient,
-                    scope_overflow_gradient_style_visible,
-                  )
-                  Nil
-                }
-                False -> Nil
-              }
-              Nil
-            }
-            Error(_) -> {
-              dromel.set_inner_text(text_span, "?")
-              Nil
-            }
-          }
-        })
-      }
-    }
+  all_containers
+  |> array.to_list
+  |> list.index_map(fn(elem, index) {
+    apply_first_last_style(elem, index, total)
   })
 
   Nil
@@ -1606,78 +778,63 @@ fn mount_breadcrumb_parts(
 fn repopulate_view(
   container: element.Element,
   view: TopicView,
-  metadata: Result(audit_data.TopicMetadata, snag.Snag),
 ) -> Nil {
   let elements = case reset_active_view() {
     Ok(elements) -> elements
     Error(Nil) -> mount_topic_view(container)
   }
 
-  set_active_topic_view(container, view, metadata)
+  set_active_topic_view_entry(container, view)
 
-  get_fully_qualified_name_parts(metadata)
-  |> mount_breadcrumb_parts(to: get_history_container())
+  audit_data.fetch_topic_view(
+    audit_data.Topic(id: view.topic_id),
+    fn(result) {
+      case result {
+        Ok(response) -> {
+          // Set panel HTML
+          dromel.set_inner_html(elements.topic_panel, response.topic_panel_html)
+          dromel.set_inner_html(
+            elements.mentions_panel,
+            response.mentions_panel_html,
+          )
+          dromel.set_inner_html(
+            elements.expanded_references_panel,
+            response.expanded_references_panel_html,
+          )
+          dromel.set_inner_html(
+            elements.comments_panel,
+            response.comments_panel_html,
+          )
 
-  case metadata {
-    Ok(metadata) -> {
-      // Topic panel: all variants now have context
-      populate_grouped_source_panel(
-        GroupedSourcePanelConfig(
-          container:,
-          panel: elements.topic_panel,
-          token_field: TopicPanelTokens,
-        ),
-        metadata.context,
-      )
+          // Set breadcrumb
+          dromel.set_inner_html(get_history_container(), response.breadcrumb_html)
 
-      // Expanded references panel: only NamedTopic has expanded_context
-      let expanded_context = case metadata {
-        audit_data.NamedTopic(expanded_context:, ..) -> expanded_context
-        _ -> []
+          // Set highlight CSS
+          set_highlight_css(response.highlight_css)
+
+          // Inject inline info comments (placeholder divs are in the HTML)
+          inject_inline_info_comments(elements.topic_panel)
+          inject_inline_info_comments(elements.expanded_references_panel)
+
+          // Gather tokens for keyboard navigation
+          let active_panel = get_active_panel(container)
+          gather_tokens_for_panel(container, history_graph.MentionsPanel)
+          gather_tokens_for_panel(container, history_graph.CommentsPanel)
+          gather_tokens_for_panel(container, history_graph.TopicPanel)
+          gather_tokens_for_panel(container, history_graph.ReferencesPanel)
+
+          // Focus the active panel's current token
+          move_focus_in_panel(container, active_panel, 0)
+          Nil
+        }
+        Error(err) -> {
+          elements.topic_panel
+          |> dromel.set_inner_html(log.render_source_error(err))
+          Nil
+        }
       }
-      populate_grouped_source_panel(
-        GroupedSourcePanelConfig(
-          container:,
-          panel: elements.expanded_references_panel,
-          token_field: ReferencesPanelTokens,
-        ),
-        expanded_context,
-      )
-
-      // Mentions panel: all variants have mentions
-      populate_grouped_source_panel(
-        GroupedSourcePanelConfig(
-          container:,
-          panel: elements.mentions_panel,
-          token_field: MentionsPanelTokens,
-        ),
-        metadata.mentions,
-      )
-    }
-    Error(snag) -> {
-      elements.topic_panel
-      |> dromel.set_inner_html(log.render_source_error(snag))
-      Nil
-    }
-  }
-
-  // Comments panel: fetch comments and flat-map their context fields
-  let comments_config =
-    GroupedSourcePanelConfig(
-      container:,
-      panel: elements.comments_panel,
-      token_field: CommentsPanelTokens,
-    )
-  audit_data.with_topic_comments(view.topic_id, fn(comments_result) {
-    case comments_result {
-      Ok(comment_entries) -> {
-        let comment_contexts =
-          list.flat_map(comment_entries, fn(entry) { entry.context })
-        populate_grouped_source_panel(comments_config, comment_contexts)
-      }
-      Error(_) -> Nil
-    }
-  })
+    },
+  )
 }
 
 /// Create or get a view for a navigation entry
@@ -1731,21 +888,11 @@ pub fn navigate_to_new_entry(
         ),
       )
 
-      // Load source text and replace
-      // DOM elements. We wait to replace DOM elements until after
-      // we have the source text so that there is no flicker when
-      // navigating to a new topic due to unloaded DOM elements
-      // but no new context to replace it with yet.
-      audit_data.with_topic_data(
-        audit_data.Topic(id: new_entry.topic_id),
-        fn(metadata, _source_text, _comments) {
-          let view =
-            TopicView(entry_id: new_entry.id, topic_id: new_entry.topic_id)
-          set_topic_view(new_entry.id, view)
-          set_active_panel(container, history_graph.TopicPanel)
-          repopulate_view(container, view, metadata)
-        },
-      )
+      let view =
+        TopicView(entry_id: new_entry.id, topic_id: new_entry.topic_id)
+      set_topic_view(new_entry.id, view)
+      set_active_panel(container, history_graph.TopicPanel)
+      repopulate_view(container, view)
     }
   }
 }
@@ -1789,17 +936,7 @@ pub fn navigate_back(container) -> Nil {
               // Set the focus state for restoration
               set_focus_state(container, focus_state)
 
-              // Load source text and restore scroll position. We wait to reset
-              // DOM elements until after we have the source text so that
-              // there is no flicker when navigating to a new topic.
-              let parent_topic = audit_data.Topic(id: parent_entry.topic_id)
-              audit_data.with_topic_data(
-                parent_topic,
-                fn(metadata, _source_text, _comments) {
-                  repopulate_view(container, parent_view, metadata)
-                },
-              )
-
+              repopulate_view(container, parent_view)
               Nil
             }
 
@@ -1843,17 +980,7 @@ pub fn navigate_forward(container) -> Nil {
               // Set the focus state for restoration
               set_focus_state(container, focus_state)
 
-              // Load source text and restore scroll position. We wait to reset
-              // DOM elements until after we have the source text so that
-              // there is no flicker when navigating to a new topic.
-              let child_topic = audit_data.Topic(id: child_entry.topic_id)
-              audit_data.with_topic_data(
-                child_topic,
-                fn(metadata, _source_text, _comments) {
-                  repopulate_view(container, child_view, metadata)
-                },
-              )
-
+              repopulate_view(container, child_view)
               Nil
             }
           }
@@ -1876,12 +1003,7 @@ fn reload_topic_chain(topic_id: String, visited: List(String)) -> Nil {
           let container = topic_view_container()
           case get_active_topic_view(container) {
             Ok(active_view) -> {
-              audit_data.with_topic_data(
-                audit_data.Topic(id: active_view.topic_id),
-                fn(metadata, _source_text, _comments) {
-                  repopulate_view(container, active_view, metadata)
-                },
-              )
+              repopulate_view(container, active_view)
             }
             Error(_) -> Nil
           }
@@ -2387,8 +1509,6 @@ fn move_focus_in_panel(
     Error(Nil) -> io.println_error("no active view")
   }
 }
-
-const reference_title_class = dromel.Class("topic-reference-title")
 
 /// Gather tokens for a panel standalone (without a pre-built config)
 fn gather_tokens_for_panel(
