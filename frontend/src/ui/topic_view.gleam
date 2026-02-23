@@ -786,55 +786,112 @@ fn repopulate_view(
 
   set_active_topic_view_entry(container, view)
 
-  audit_data.fetch_topic_view(
-    audit_data.Topic(id: view.topic_id),
-    fn(result) {
-      case result {
-        Ok(response) -> {
-          // Set panel HTML
-          dromel.set_inner_html(elements.topic_panel, response.topic_panel_html)
-          dromel.set_inner_html(
-            elements.mentions_panel,
-            response.mentions_panel_html,
-          )
-          dromel.set_inner_html(
-            elements.expanded_references_panel,
-            response.expanded_references_panel_html,
-          )
-          dromel.set_inner_html(
-            elements.comments_panel,
-            response.comments_panel_html,
-          )
+  let topic = audit_data.Topic(id: view.topic_id)
 
-          // Set breadcrumb
-          dromel.set_inner_html(get_history_container(), response.breadcrumb_html)
+  // Fetch topic_view (topic panel, references, breadcrumb, highlight CSS)
+  audit_data.fetch_topic_view(topic, fn(result) {
+    case result {
+      Ok(response) -> {
+        dromel.set_inner_html(elements.topic_panel, response.topic_panel_html)
+        dromel.set_inner_html(
+          elements.expanded_references_panel,
+          response.expanded_references_panel_html,
+        )
+        dromel.set_inner_html(get_history_container(), response.breadcrumb_html)
+        set_highlight_css(response.highlight_css)
 
-          // Set highlight CSS
-          set_highlight_css(response.highlight_css)
+        inject_inline_info_comments(elements.topic_panel)
+        inject_inline_info_comments(elements.expanded_references_panel)
 
-          // Inject inline info comments (placeholder divs are in the HTML)
-          inject_inline_info_comments(elements.topic_panel)
-          inject_inline_info_comments(elements.expanded_references_panel)
-
-          // Gather tokens for keyboard navigation
-          let active_panel = get_active_panel(container)
-          gather_tokens_for_panel(container, history_graph.MentionsPanel)
-          gather_tokens_for_panel(container, history_graph.CommentsPanel)
-          gather_tokens_for_panel(container, history_graph.TopicPanel)
-          gather_tokens_for_panel(container, history_graph.ReferencesPanel)
-
-          // Focus the active panel's current token
-          move_focus_in_panel(container, active_panel, 0)
-          Nil
-        }
-        Error(err) -> {
-          elements.topic_panel
-          |> dromel.set_inner_html(log.render_source_error(err))
-          Nil
-        }
+        let active_panel = get_active_panel(container)
+        gather_tokens_for_panel(container, history_graph.TopicPanel)
+        gather_tokens_for_panel(container, history_graph.ReferencesPanel)
+        move_focus_in_panel(container, active_panel, 0)
+        Nil
       }
-    },
-  )
+      Error(err) -> {
+        elements.topic_panel
+        |> dromel.set_inner_html(log.render_source_error(err))
+        Nil
+      }
+    }
+  })
+
+  // Fetch mentions panel separately
+  audit_data.fetch_mentions_panel(topic, fn(result) {
+    case result {
+      Ok(mentions_html) -> {
+        dromel.set_inner_html(elements.mentions_panel, mentions_html)
+        gather_tokens_for_panel(container, history_graph.MentionsPanel)
+        Nil
+      }
+      Error(err) -> {
+        snag.layer(err, "Failed to fetch mentions panel")
+        |> log.print_error
+        Nil
+      }
+    }
+  })
+
+  // Build comments panel from existing endpoints
+  populate_comments_panel(container, elements, view.topic_id)
+}
+
+fn populate_comments_panel(
+  container: element.Element,
+  elements: ActiveViewElements,
+  topic_id: String,
+) -> Nil {
+  audit_data.with_topic_comments(topic_id, fn(comments_result) {
+    case comments_result {
+      Ok(comments) -> {
+        // Clear existing comments content
+        dromel.set_inner_html(elements.comments_panel, "")
+
+        // Fetch and render source text for each comment
+        list.each(comments, fn(comment) {
+          let comment_topic_id = case comment {
+            audit_data.CommentTopic(topic:, ..) -> topic.id
+            audit_data.NamedTopic(topic:, ..) -> topic.id
+            audit_data.UnnamedTopic(topic:, ..) -> topic.id
+            audit_data.ControlFlow(topic:, ..) -> topic.id
+            audit_data.TitledTopic(topic:, ..) -> topic.id
+          }
+          audit_data.with_source_text(
+            audit_data.Topic(id: comment_topic_id),
+            fn(source_text_result) {
+              case source_text_result {
+                Ok(source_text) -> {
+                  dromel.new_div()
+                  |> dromel.set_class(elements.source_container_class)
+                  |> dromel.set_inner_html(source_text)
+                  |> dromel.append_as_child(to: elements.comments_panel)
+
+                  gather_tokens_for_panel(container, history_graph.CommentsPanel)
+                  Nil
+                }
+                Error(err) -> {
+                  snag.layer(
+                    err,
+                    "Failed to fetch comment source text for "
+                      <> comment_topic_id,
+                  )
+                  |> log.print_error
+                  Nil
+                }
+              }
+            },
+          )
+        })
+        Nil
+      }
+      Error(err) -> {
+        snag.layer(err, "Failed to fetch comments for topic " <> topic_id)
+        |> log.print_error
+        Nil
+      }
+    }
+  })
 }
 
 /// Create or get a view for a navigation entry

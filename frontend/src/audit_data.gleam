@@ -1061,40 +1061,25 @@ pub fn with_source_text(topic: Topic, callback) {
 pub type TopicViewResponse {
   TopicViewResponse(
     topic_panel_html: String,
-    mentions_panel_html: String,
     expanded_references_panel_html: String,
     breadcrumb_html: String,
     highlight_css: String,
-    comments_panel_html: String,
-    comment_topic_ids: List(String),
   )
 }
 
 fn topic_view_response_decoder() -> decode.Decoder(TopicViewResponse) {
   use topic_panel_html <- decode.field("topic_panel_html", decode.string)
-  use mentions_panel_html <- decode.field("mentions_panel_html", decode.string)
   use expanded_references_panel_html <- decode.field(
     "expanded_references_panel_html",
     decode.string,
   )
   use breadcrumb_html <- decode.field("breadcrumb_html", decode.string)
   use highlight_css <- decode.field("highlight_css", decode.string)
-  use comments_panel_html <- decode.subfield(
-    ["comments", "panel_html"],
-    decode.string,
-  )
-  use comment_topic_ids <- decode.subfield(
-    ["comments", "comment_topic_ids"],
-    decode.list(decode.string),
-  )
   decode.success(TopicViewResponse(
     topic_panel_html:,
-    mentions_panel_html:,
     expanded_references_panel_html:,
     breadcrumb_html:,
     highlight_css:,
-    comments_panel_html:,
-    comment_topic_ids:,
   ))
 }
 
@@ -1132,6 +1117,50 @@ pub fn fetch_topic_view(
   })
 
   Nil
+}
+
+pub fn fetch_mentions_panel(
+  topic: Topic,
+  callback: fn(Result(String, snag.Snag)) -> Nil,
+) -> Nil {
+  let request_promise = {
+    let assert Ok(req) =
+      request.to(
+        "http://172.18.115.78:3000/api/v1/audits/"
+        <> audit_name()
+        <> "/mentions_panel/"
+        <> topic.id,
+      )
+
+    use resp <- promise.try_await(
+      fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+    )
+    use resp <- promise.try_await(
+      fetch.read_json_body(resp)
+      |> promise.map(snag.map_error(_, string.inspect)),
+    )
+
+    let result =
+      decode.run(resp.body, mentions_panel_response_decoder())
+      |> snag.map_error(string.inspect)
+
+    promise.resolve(result)
+  }
+
+  promise.await(request_promise, fn(result) {
+    callback(result)
+    promise.resolve(Nil)
+  })
+
+  Nil
+}
+
+fn mentions_panel_response_decoder() -> decode.Decoder(String) {
+  use mentions_panel_html <- decode.field(
+    "mentions_panel_html",
+    decode.string,
+  )
+  decode.success(mentions_panel_html)
 }
 
 @external(javascript, "./mem_ffi.mjs", "set_topic_metadata_promise")
