@@ -87,6 +87,7 @@ import gleam/int
 import gleam/io
 import gleam/javascript/array
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import history_graph
@@ -778,6 +779,7 @@ fn reapply_first_last_styles(group_container: element.Element) -> Nil {
 fn repopulate_view(
   container: element.Element,
   view: TopicView,
+  focus_topic_id: Option(String),
 ) -> Nil {
   let elements = case reset_active_view() {
     Ok(elements) -> elements
@@ -806,7 +808,12 @@ fn repopulate_view(
         let active_panel = get_active_panel(container)
         gather_tokens_for_panel(container, history_graph.TopicPanel)
         gather_tokens_for_panel(container, history_graph.ReferencesPanel)
-        move_focus_in_panel(container, active_panel, 0)
+
+        case focus_topic_id {
+          Some(topic_id) ->
+            focus_declaring_node(container, active_panel, topic_id)
+          None -> move_focus_in_panel(container, active_panel, 0)
+        }
         Nil
       }
       Error(err) -> {
@@ -949,7 +956,7 @@ pub fn navigate_to_new_entry(
         TopicView(entry_id: new_entry.id, topic_id: new_entry.topic_id)
       set_topic_view(new_entry.id, view)
       set_active_panel(container, history_graph.TopicPanel)
-      repopulate_view(container, view)
+      repopulate_view(container, view, Some(view.topic_id))
     }
   }
 }
@@ -993,7 +1000,7 @@ pub fn navigate_back(container) -> Nil {
               // Set the focus state for restoration
               set_focus_state(container, focus_state)
 
-              repopulate_view(container, parent_view)
+              repopulate_view(container, parent_view, None)
               Nil
             }
 
@@ -1037,7 +1044,7 @@ pub fn navigate_forward(container) -> Nil {
               // Set the focus state for restoration
               set_focus_state(container, focus_state)
 
-              repopulate_view(container, child_view)
+              repopulate_view(container, child_view, None)
               Nil
             }
           }
@@ -1060,7 +1067,7 @@ fn reload_topic_chain(topic_id: String, visited: List(String)) -> Nil {
           let container = topic_view_container()
           case get_active_topic_view(container) {
             Ok(active_view) -> {
-              repopulate_view(container, active_view)
+              repopulate_view(container, active_view, None)
             }
             Error(_) -> Nil
           }
@@ -1245,7 +1252,8 @@ fn navigate_scope_up(container: element.Element, panel: ActivePanel) -> Nil {
         Error(Nil) -> io.println_error("No element selected")
         Ok(focused_element) -> {
           let focused_element_id =
-            dromel.get_attribute(focused_element, "id") |> result.unwrap("")
+            dromel.get_data(focused_element, elements.node_topic_key)
+            |> result.unwrap("")
 
           case find_source_container(focused_element) {
             Error(Nil) -> io.println_error("Unable to find source container")
@@ -1507,7 +1515,7 @@ fn find_and_focus_element_by_id(
   case array.get(tokens, index) {
     Error(Nil) -> Nil
     Ok(el) -> {
-      case dromel.get_attribute(el, "id") {
+      case dromel.get_data(el, elements.node_topic_key) {
         Ok(id) if id == target_id -> {
           focus_topic_token_and_prefetch(el)
           set_panel_index(container, panel, index)
@@ -1523,6 +1531,40 @@ fn find_and_focus_element_by_id(
           )
       }
     }
+  }
+}
+
+/// Focus the declaring node of a topic in the active panel.
+/// Searches tokens for an element whose data-node-topic matches the topic_id,
+/// falling back to index 0 if not found.
+fn focus_declaring_node(
+  container: element.Element,
+  panel: ActivePanel,
+  topic_id: String,
+) -> Nil {
+  case get_active_view_elements() {
+    Ok(active_elements) -> {
+      let tokens = get_panel_tokens(active_elements, panel)
+      let index = find_token_index_by_node_topic(tokens, topic_id, 0)
+      set_panel_index(container, panel, index)
+      move_focus_in_panel(container, panel, 0)
+    }
+    Error(Nil) -> move_focus_in_panel(container, panel, 0)
+  }
+}
+
+fn find_token_index_by_node_topic(
+  tokens: array.Array(element.Element),
+  topic_id: String,
+  index: Int,
+) -> Int {
+  case array.get(tokens, index) {
+    Error(Nil) -> 0
+    Ok(el) ->
+      case dromel.get_data(el, elements.node_topic_key) {
+        Ok(node_topic) if node_topic == topic_id -> index
+        _ -> find_token_index_by_node_topic(tokens, topic_id, index + 1)
+      }
   }
 }
 

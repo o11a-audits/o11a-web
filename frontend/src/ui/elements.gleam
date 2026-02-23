@@ -20,6 +20,8 @@ pub const code_style_class = dromel.Class(class: "code-style")
 // Data keys
 pub const token_topic_id_key = dromel.DataKey(key: "topic")
 
+pub const node_topic_key = dromel.DataKey(key: "nodeTopic")
+
 pub fn topic_selector(topic_id: String) {
   dromel.Selector(selector: "[data-topic=\"" <> topic_id <> "\"]")
 }
