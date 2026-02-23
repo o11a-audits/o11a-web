@@ -679,10 +679,14 @@ fn prepare_active_view() -> Result(ActiveViewElements, Nil) {
 }
 
 /// Populate placeholder divs for inline info comments
-fn inject_inline_info_comments(container: element.Element) -> Nil {
+fn inject_inline_info_comments(
+  view_container: element.Element,
+  panel_element: element.Element,
+  panel: ActivePanel,
+) -> Nil {
   echo "injecting info comments"
   let placeholders =
-    dromel.query_element_all(container, elements.placeholder_topic_sel)
+    dromel.query_element_all(panel_element, elements.placeholder_topic_sel)
     |> array.to_list
 
   list.each(placeholders, fn(placeholder) {
@@ -709,6 +713,8 @@ fn inject_inline_info_comments(container: element.Element) -> Nil {
                         |> dromel.add_class(elements.code_style_class)
                         |> dromel.set_inner_html(source_text)
                         |> dromel.append_as_child(to: placeholder)
+                        // Re-gather tokens to include newly injected comment
+                        gather_tokens_for_panel(view_container, panel)
                         Nil
                       }
                       Error(error) -> {
@@ -818,8 +824,16 @@ fn repopulate_view(
         dromel.set_inner_html(get_history_container(), response.breadcrumb_html)
         set_highlight_css(response.highlight_css)
 
-        inject_inline_info_comments(elements.topic_panel)
-        inject_inline_info_comments(elements.expanded_references_panel)
+        inject_inline_info_comments(
+          container,
+          elements.topic_panel,
+          history_graph.TopicPanel,
+        )
+        inject_inline_info_comments(
+          container,
+          elements.expanded_references_panel,
+          history_graph.ReferencesPanel,
+        )
 
         let active_panel = get_active_panel(container)
         gather_tokens_for_panel(container, history_graph.TopicPanel)
@@ -891,7 +905,10 @@ fn populate_comments_panel(
                   |> dromel.set_inner_html(source_text)
                   |> dromel.append_as_child(to: elements.comments_panel)
 
-                  gather_tokens_for_panel(container, history_graph.CommentsPanel)
+                  gather_tokens_for_panel(
+                    container,
+                    history_graph.CommentsPanel,
+                  )
                   Nil
                 }
                 Error(err) -> {
@@ -963,8 +980,7 @@ pub fn navigate_to_new_entry(
       set_panel_index(container, history_graph.TopicPanel, 0)
       set_panel_index(container, history_graph.ReferencesPanel, 0)
 
-      let view =
-        TopicView(entry_id: new_entry.id, topic_id: new_entry.topic_id)
+      let view = TopicView(entry_id: new_entry.id, topic_id: new_entry.topic_id)
       set_topic_view(new_entry.id, view)
       set_active_panel(container, history_graph.TopicPanel)
       repopulate_view(container, view, FocusOnDeclaringNode(view.topic_id))
