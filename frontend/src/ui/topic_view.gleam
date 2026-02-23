@@ -651,29 +651,17 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
 /// Save scroll position and remove DOM elements for the active view
 /// Save scroll position and reset DOM elements for reuse (avoids flickering)
 /// Returns the existing elements with their content cleared
-fn reset_active_view() -> Result(ActiveViewElements, Nil) {
+fn prepare_active_view() -> Result(ActiveViewElements, Nil) {
   case get_active_view_elements() {
     Ok(elements) -> {
-      // Clear inner HTML of panels and reset scroll positions
-      let _ = dromel.set_inner_html(elements.mentions_panel, "")
-      dromel.set_scroll_top(elements.mentions_panel, 0.0)
-
-      let _ = dromel.set_inner_html(elements.comments_panel, "")
-      dromel.set_scroll_top(elements.comments_panel, 0.0)
-
-      let _ = dromel.set_inner_html(elements.topic_panel, "")
       // Reset the topic panel style to default (removes out-of-scope border color)
       let _ = dromel.set_style(elements.topic_panel, panel_style)
       // Remove data attributes from previous view
       let _ = dromel.remove_data(elements.topic_panel, topic_key)
       let _ = dromel.remove_data(elements.topic_panel, member_key)
       let _ = dromel.remove_data(elements.topic_panel, contract_key)
-      dromel.set_scroll_top(elements.topic_panel, 0.0)
 
-      let _ = dromel.set_inner_html(elements.expanded_references_panel, "")
-      dromel.set_scroll_top(elements.expanded_references_panel, 0.0)
-
-      // Reset the token arrays since content was cleared
+      // Reset the token arrays since content will be replaced by fetch callbacks
       let reset_elements =
         ActiveViewElements(
           ..elements,
@@ -809,7 +797,7 @@ fn repopulate_view(
   view: TopicView,
   focus_strategy: FocusStrategy,
 ) -> Nil {
-  let elements = case reset_active_view() {
+  let elements = case prepare_active_view() {
     Ok(elements) -> elements
     Error(Nil) -> mount_topic_view(container)
   }
