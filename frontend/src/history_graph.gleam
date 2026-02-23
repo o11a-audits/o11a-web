@@ -37,13 +37,15 @@ pub fn active_panel_from_string(string: String) {
   }
 }
 
-/// Focus state capturing the user's position in all three panels
+/// Focus state capturing the user's position in all four panels.
+/// Stores data-node-topic identifiers instead of indices so that
+/// focus is resilient to token insertions/removals (e.g. new comments).
 pub type FocusState {
   FocusState(
-    mentions_index: Int,
-    comments_index: Int,
-    topic_index: Int,
-    references_index: Int,
+    mentions_node_topic: String,
+    comments_node_topic: String,
+    topic_node_topic: String,
+    references_node_topic: String,
     active_panel: ActivePanel,
   )
 }
@@ -51,10 +53,10 @@ pub type FocusState {
 /// Default focus state for new entries
 pub fn default_focus_state() -> FocusState {
   FocusState(
-    mentions_index: 0,
-    comments_index: 0,
-    topic_index: 0,
-    references_index: 0,
+    mentions_node_topic: "",
+    comments_node_topic: "",
+    topic_node_topic: "",
+    references_node_topic: "",
     active_panel: TopicPanel,
   )
 }

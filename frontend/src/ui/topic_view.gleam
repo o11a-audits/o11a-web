@@ -87,7 +87,6 @@ import gleam/int
 import gleam/io
 import gleam/javascript/array
 import gleam/list
-import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import history_graph
@@ -109,6 +108,14 @@ pub type TopicView {
 /// Re-export ActivePanel from history_graph for convenience
 pub type ActivePanel =
   history_graph.ActivePanel
+
+/// How to determine initial focus when populating a view
+type FocusStrategy {
+  /// New entry: focus the declaring node matching this topic_id
+  FocusOnDeclaringNode(topic_id: String)
+  /// Restored navigation: find tokens by their data-node-topic identifiers
+  RestoreFocusState(focus_state: history_graph.FocusState)
+}
 
 // ============================================================================
 // Active View Elements (transient, only exists for currently displayed view)
@@ -335,35 +342,56 @@ fn get_current_focus_state(
   container: element.Element,
 ) -> history_graph.FocusState {
   history_graph.FocusState(
-    mentions_index: get_panel_index(container, history_graph.MentionsPanel),
-    comments_index: get_panel_index(container, history_graph.CommentsPanel),
-    topic_index: get_panel_index(container, history_graph.TopicPanel),
-    references_index: get_panel_index(container, history_graph.ReferencesPanel),
+    mentions_node_topic: get_focused_node_topic(
+      container,
+      history_graph.MentionsPanel,
+    ),
+    comments_node_topic: get_focused_node_topic(
+      container,
+      history_graph.CommentsPanel,
+    ),
+    topic_node_topic: get_focused_node_topic(
+      container,
+      history_graph.TopicPanel,
+    ),
+    references_node_topic: get_focused_node_topic(
+      container,
+      history_graph.ReferencesPanel,
+    ),
     active_panel: get_active_panel(container),
   )
 }
 
-fn set_focus_state(
+/// Read the data-node-topic of the currently focused token in a panel
+fn get_focused_node_topic(
   container: element.Element,
+  panel: ActivePanel,
+) -> String {
+  case get_active_view_elements() {
+    Ok(active_elements) -> {
+      let tokens = get_panel_tokens(active_elements, panel)
+      let index = get_panel_index(container, panel)
+      case array.get(tokens, index) {
+        Ok(el) ->
+          dromel.get_data(el, elements.node_topic_key)
+          |> result.unwrap("")
+        Error(Nil) -> ""
+      }
+    }
+    Error(Nil) -> ""
+  }
+}
+
+fn get_focus_state_node_topic(
   focus_state: history_graph.FocusState,
-) -> Nil {
-  set_panel_index(
-    container,
-    history_graph.MentionsPanel,
-    focus_state.mentions_index,
-  )
-  set_panel_index(
-    container,
-    history_graph.CommentsPanel,
-    focus_state.comments_index,
-  )
-  set_panel_index(container, history_graph.TopicPanel, focus_state.topic_index)
-  set_panel_index(
-    container,
-    history_graph.ReferencesPanel,
-    focus_state.references_index,
-  )
-  set_active_panel(container, focus_state.active_panel)
+  panel: ActivePanel,
+) -> String {
+  case panel {
+    history_graph.MentionsPanel -> focus_state.mentions_node_topic
+    history_graph.CommentsPanel -> focus_state.comments_node_topic
+    history_graph.TopicPanel -> focus_state.topic_node_topic
+    history_graph.ReferencesPanel -> focus_state.references_node_topic
+  }
 }
 
 // ============================================================================
@@ -523,7 +551,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
           case dromel.cast(event.target(e)) {
             Ok(input_elem) -> {
               dromel.blur(input_elem)
-              move_focus_in_panel(container, get_active_panel(container), 0)
+              focus_current_token(container, get_active_panel(container))
             }
             Error(_) -> Nil
           }
@@ -779,7 +807,7 @@ fn reapply_first_last_styles(group_container: element.Element) -> Nil {
 fn repopulate_view(
   container: element.Element,
   view: TopicView,
-  focus_topic_id: Option(String),
+  focus_strategy: FocusStrategy,
 ) -> Nil {
   let elements = case reset_active_view() {
     Ok(elements) -> elements
@@ -809,10 +837,11 @@ fn repopulate_view(
         gather_tokens_for_panel(container, history_graph.TopicPanel)
         gather_tokens_for_panel(container, history_graph.ReferencesPanel)
 
-        case focus_topic_id {
-          Some(topic_id) ->
+        case focus_strategy {
+          FocusOnDeclaringNode(topic_id) ->
             focus_declaring_node(container, active_panel, topic_id)
-          None -> move_focus_in_panel(container, active_panel, 0)
+          RestoreFocusState(focus_state) ->
+            restore_focus_from_state(container, active_panel, focus_state)
         }
         Nil
       }
@@ -940,23 +969,17 @@ pub fn navigate_to_new_entry(
       // Update the URL to reflect the active topic
       update_url_for_topic(new_entry.topic_id)
 
-      // Set the focus state for the new entry (default to index 0 in topic panel)
-      set_focus_state(
-        container,
-        history_graph.FocusState(
-          mentions_index: 0,
-          comments_index: 0,
-          topic_index: 0,
-          references_index: 0,
-          active_panel: history_graph.TopicPanel,
-        ),
-      )
+      // Reset panel indices for the new entry
+      set_panel_index(container, history_graph.MentionsPanel, 0)
+      set_panel_index(container, history_graph.CommentsPanel, 0)
+      set_panel_index(container, history_graph.TopicPanel, 0)
+      set_panel_index(container, history_graph.ReferencesPanel, 0)
 
       let view =
         TopicView(entry_id: new_entry.id, topic_id: new_entry.topic_id)
       set_topic_view(new_entry.id, view)
       set_active_panel(container, history_graph.TopicPanel)
-      repopulate_view(container, view, Some(view.topic_id))
+      repopulate_view(container, view, FocusOnDeclaringNode(view.topic_id))
     }
   }
 }
@@ -997,10 +1020,12 @@ pub fn navigate_back(container) -> Nil {
               // Update the URL to reflect the active topic
               update_url_for_topic(parent_entry.topic_id)
 
-              // Set the focus state for restoration
-              set_focus_state(container, focus_state)
-
-              repopulate_view(container, parent_view, None)
+              set_active_panel(container, focus_state.active_panel)
+              repopulate_view(
+                container,
+                parent_view,
+                RestoreFocusState(focus_state),
+              )
               Nil
             }
 
@@ -1041,10 +1066,12 @@ pub fn navigate_forward(container) -> Nil {
               // Update the URL to reflect the active topic
               update_url_for_topic(child_entry.topic_id)
 
-              // Set the focus state for restoration
-              set_focus_state(container, focus_state)
-
-              repopulate_view(container, child_view, None)
+              set_active_panel(container, focus_state.active_panel)
+              repopulate_view(
+                container,
+                child_view,
+                RestoreFocusState(focus_state),
+              )
               Nil
             }
           }
@@ -1067,7 +1094,13 @@ fn reload_topic_chain(topic_id: String, visited: List(String)) -> Nil {
           let container = topic_view_container()
           case get_active_topic_view(container) {
             Ok(active_view) -> {
-              repopulate_view(container, active_view, None)
+              let focus_state = get_current_focus_state(container)
+              set_active_panel(container, focus_state.active_panel)
+              repopulate_view(
+                container,
+                active_view,
+                RestoreFocusState(focus_state),
+              )
             }
             Error(_) -> Nil
           }
@@ -1139,18 +1172,18 @@ pub fn handle_topic_view_keydown(event) {
           let next = history_graph.CommentsPanel
           gather_tokens_for_panel(container, next)
           set_active_panel(container, next)
-          move_focus_in_panel(container, next, 0)
+          focus_current_token(container, next)
         }
         history_graph.CommentsPanel -> {
           let next = history_graph.TopicPanel
           set_active_panel(container, next)
-          move_focus_in_panel(container, next, 0)
+          focus_current_token(container, next)
         }
         history_graph.TopicPanel -> {
           let next = history_graph.ReferencesPanel
           gather_tokens_for_panel(container, next)
           set_active_panel(container, next)
-          move_focus_in_panel(container, next, 0)
+          focus_current_token(container, next)
         }
         history_graph.ReferencesPanel -> Nil
       }
@@ -1162,19 +1195,19 @@ pub fn handle_topic_view_keydown(event) {
         history_graph.ReferencesPanel -> {
           let next = history_graph.TopicPanel
           set_active_panel(container, next)
-          move_focus_in_panel(container, next, 0)
+          focus_current_token(container, next)
         }
         history_graph.TopicPanel -> {
           let next = history_graph.CommentsPanel
           gather_tokens_for_panel(container, next)
           set_active_panel(container, next)
-          move_focus_in_panel(container, next, 0)
+          focus_current_token(container, next)
         }
         history_graph.CommentsPanel -> {
           let next = history_graph.MentionsPanel
           gather_tokens_for_panel(container, next)
           set_active_panel(container, next)
-          move_focus_in_panel(container, next, 0)
+          focus_current_token(container, next)
         }
         history_graph.MentionsPanel -> Nil
       }
@@ -1547,9 +1580,9 @@ fn focus_declaring_node(
       let tokens = get_panel_tokens(active_elements, panel)
       let index = find_token_index_by_node_topic(tokens, topic_id, 0)
       set_panel_index(container, panel, index)
-      move_focus_in_panel(container, panel, 0)
+      focus_current_token(container, panel)
     }
-    Error(Nil) -> move_focus_in_panel(container, panel, 0)
+    Error(Nil) -> focus_current_token(container, panel)
   }
 }
 
@@ -1568,6 +1601,30 @@ fn find_token_index_by_node_topic(
   }
 }
 
+/// Restore focus for the active panel using the node-topic identifiers
+/// stored in the focus state.
+fn restore_focus_from_state(
+  container: element.Element,
+  active_panel: ActivePanel,
+  focus_state: history_graph.FocusState,
+) -> Nil {
+  let node_topic = get_focus_state_node_topic(focus_state, active_panel)
+  case node_topic {
+    "" -> focus_current_token(container, active_panel)
+    _ -> {
+      case get_active_view_elements() {
+        Ok(active_elements) -> {
+          let tokens = get_panel_tokens(active_elements, active_panel)
+          let index = find_token_index_by_node_topic(tokens, node_topic, 0)
+          set_panel_index(container, active_panel, index)
+          focus_current_token(container, active_panel)
+        }
+        Error(Nil) -> focus_current_token(container, active_panel)
+      }
+    }
+  }
+}
+
 fn find_source_container(elem: element.Element) -> Result(element.Element, Nil) {
   case dromel.has_class(elem, elements.source_container_class) {
     True -> Ok(elem)
@@ -1577,6 +1634,11 @@ fn find_source_container(elem: element.Element) -> Result(element.Element, Nil) 
         Error(Nil) -> Error(Nil)
       }
   }
+}
+
+/// Focus the token at the current panel index without moving
+fn focus_current_token(container: element.Element, panel: ActivePanel) -> Nil {
+  move_focus_in_panel(container, panel, 0)
 }
 
 fn move_focus_in_panel(
