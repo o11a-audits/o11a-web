@@ -1056,6 +1056,91 @@ pub fn with_source_text(topic: Topic, callback) {
   }
 }
 
+// --- Comment Thread ---
+
+@external(javascript, "./mem_ffi.mjs", "set_comment_thread_promise")
+fn set_comment_thread_promise(
+  topic_id: String,
+  promise: promise.Promise(Result(String, snag.Snag)),
+) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_comment_thread_promise")
+fn read_comment_thread_promise(
+  topic_id: String,
+) -> Result(promise.Promise(Result(String, snag.Snag)), Nil)
+
+@external(javascript, "./mem_ffi.mjs", "get_comment_thread")
+fn read_comment_thread(topic_id: String) -> Result(String, snag.Snag)
+
+@external(javascript, "./mem_ffi.mjs", "set_comment_thread")
+fn set_comment_thread(topic_id: String, val: String) -> Nil
+
+fn fetch_comment_thread(topic: Topic) {
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/"
+      <> audit_name()
+      <> "/comment_thread/"
+      <> topic.id,
+    )
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_json_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  let result =
+    decode.run(resp.body, comment_thread_response_decoder())
+    |> snag.map_error(string.inspect)
+
+  promise.resolve(result)
+}
+
+fn comment_thread_response_decoder() -> decode.Decoder(String) {
+  use thread_html <- decode.field("thread_html", decode.string)
+  decode.success(thread_html)
+}
+
+pub fn with_comment_thread(topic: Topic, callback) {
+  case read_comment_thread(topic.id) {
+    Ok(thread_html) -> {
+      callback(Ok(thread_html))
+      Nil
+    }
+    Error(_) -> {
+      let promise = case read_comment_thread_promise(topic.id) {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_comment_thread(topic)
+          set_comment_thread_promise(topic.id, promise)
+          promise
+        }
+      }
+
+      promise.await(promise, fn(thread_html) {
+        case thread_html {
+          Ok(thread_html) -> set_comment_thread(topic.id, thread_html)
+          Error(error) ->
+            snag.layer(
+              error,
+              "Unable to fetch comment thread for " <> topic.id,
+            )
+            |> snag.line_print
+            |> io.println_error
+        }
+        callback(thread_html)
+
+        promise.resolve(Nil)
+      })
+
+      Nil
+    }
+  }
+}
+
 // --- Topic View (server-side rendered) ---
 
 pub type TopicViewResponse {

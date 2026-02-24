@@ -377,6 +377,31 @@ export function set_topic_info_comments(topic_id, val) {
   topic_info_comments_dict[topic_id] = val;
 }
 
+let comment_thread_dict = {};
+let comment_thread_promises = {};
+
+export function set_comment_thread_promise(topic_id, promise) {
+  comment_thread_promises[topic_id] = promise;
+}
+
+export function get_comment_thread_promise(topic_id) {
+  if (!comment_thread_promises[topic_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(comment_thread_promises[topic_id]);
+}
+
+export function get_comment_thread(topic_id) {
+  if (!comment_thread_dict[topic_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(comment_thread_dict[topic_id]);
+}
+
+export function set_comment_thread(topic_id, val) {
+  comment_thread_dict[topic_id] = val;
+}
+
 let comments_by_type_dict = {};
 let comments_by_type_promises = {};
 

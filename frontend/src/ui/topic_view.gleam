@@ -883,7 +883,7 @@ fn populate_comments_panel(
         dromel.set_inner_html(elements.comments_panel, "")
 
         // Create placeholder divs synchronously to preserve comment order,
-        // then populate each with source text when the async fetch resolves
+        // then populate each with thread HTML when the async fetch resolves
         list.each(comments, fn(comment) {
           let comment_topic_id = case comment {
             audit_data.CommentTopic(topic:, ..) -> topic.id
@@ -895,15 +895,15 @@ fn populate_comments_panel(
           // Create and append the placeholder div now, preserving list order
           let placeholder =
             dromel.new_div()
-            |> dromel.set_class(elements.source_container_class)
+            |> dromel.set_style("margin-top: 0.5rem")
             |> dromel.append_as_child(to: elements.comments_panel)
 
-          audit_data.with_source_text(
+          audit_data.with_comment_thread(
             audit_data.Topic(id: comment_topic_id),
-            fn(source_text_result) {
-              case source_text_result {
-                Ok(source_text) -> {
-                  dromel.set_inner_html(placeholder, source_text)
+            fn(thread_result) {
+              case thread_result {
+                Ok(thread_html) -> {
+                  dromel.set_inner_html(placeholder, thread_html)
 
                   gather_tokens_for_panel(
                     container,
@@ -914,7 +914,7 @@ fn populate_comments_panel(
                 Error(err) -> {
                   snag.layer(
                     err,
-                    "Failed to fetch comment source text for "
+                    "Failed to fetch comment thread for "
                       <> comment_topic_id,
                   )
                   |> log.print_error
