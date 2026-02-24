@@ -2426,13 +2426,26 @@ fn process_comment_event(
       target_topic:,
       metadata:,
       comment_topic_id: _,
-      comment_type: _,
+      comment_type:,
     ) -> {
       // Cache the metadata and prepend to comments list
       set_topic_metadata(metadata.topic.id, metadata)
       case read_topic_comments(target_topic) {
         Ok(comments) -> set_topic_comments(target_topic, [metadata, ..comments])
         Error(_) -> Nil
+      }
+      // Update info comments cache so inline injection picks up the new comment
+      case comment_type {
+        Info ->
+          case read_topic_info_comments(target_topic) {
+            Ok(info_comments) ->
+              set_topic_info_comments(target_topic, [
+                metadata.topic.id,
+                ..info_comments
+              ])
+            Error(_) -> Nil
+          }
+        _ -> Nil
       }
       case audit_id == audit_name() {
         True -> on_comment_created(target_topic)

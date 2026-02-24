@@ -684,35 +684,31 @@ fn inject_inline_info_comments(
   panel_element: element.Element,
   panel: ActivePanel,
 ) -> Nil {
-  echo "injecting info comments"
   let placeholders =
     dromel.query_element_all(panel_element, elements.placeholder_topic_sel)
     |> array.to_list
 
   list.each(placeholders, fn(placeholder) {
-    case
-      dromel.get_data(placeholder, elements.placeholder_topic_key)
-      |> echo as "topic id"
-    {
+    case dromel.get_data(placeholder, elements.placeholder_topic_key) {
       Ok(topic_id) -> {
         audit_data.with_topic_info_comments(topic_id, fn(result) {
-          case result |> echo as "topic ids" {
+          case result {
             Ok(info_comment_ids) ->
+              // Create placeholder divs synchronously to preserve comment order,
+              // then populate each with source text when the async fetch resolves
               list.each(info_comment_ids, fn(comment_topic_id) {
+                let comment_placeholder =
+                  dromel.new_div()
+                  |> dromel.set_class(elements.inline_comment_class)
+                  |> dromel.add_class(elements.code_style_class)
+                  |> dromel.append_as_child(to: placeholder)
+
                 audit_data.with_source_text(
                   audit_data.Topic(id: comment_topic_id),
                   fn(source_text_result) {
                     case source_text_result {
                       Ok(source_text) -> {
-                        echo "got source text for topic "
-                          <> comment_topic_id
-                          <> ": "
-                          <> source_text
-                        dromel.new_div()
-                        |> dromel.set_class(elements.inline_comment_class)
-                        |> dromel.add_class(elements.code_style_class)
-                        |> dromel.set_inner_html(source_text)
-                        |> dromel.append_as_child(to: placeholder)
+                        dromel.set_inner_html(comment_placeholder, source_text)
                         // Re-gather tokens to include newly injected comment
                         gather_tokens_for_panel(view_container, panel)
                         Nil
@@ -886,7 +882,8 @@ fn populate_comments_panel(
         // Clear existing comments content
         dromel.set_inner_html(elements.comments_panel, "")
 
-        // Fetch and render source text for each comment
+        // Create placeholder divs synchronously to preserve comment order,
+        // then populate each with source text when the async fetch resolves
         list.each(comments, fn(comment) {
           let comment_topic_id = case comment {
             audit_data.CommentTopic(topic:, ..) -> topic.id
@@ -895,15 +892,18 @@ fn populate_comments_panel(
             audit_data.ControlFlow(topic:, ..) -> topic.id
             audit_data.TitledTopic(topic:, ..) -> topic.id
           }
+          // Create and append the placeholder div now, preserving list order
+          let placeholder =
+            dromel.new_div()
+            |> dromel.set_class(elements.source_container_class)
+            |> dromel.append_as_child(to: elements.comments_panel)
+
           audit_data.with_source_text(
             audit_data.Topic(id: comment_topic_id),
             fn(source_text_result) {
               case source_text_result {
                 Ok(source_text) -> {
-                  dromel.new_div()
-                  |> dromel.set_class(elements.source_container_class)
-                  |> dromel.set_inner_html(source_text)
-                  |> dromel.append_as_child(to: elements.comments_panel)
+                  dromel.set_inner_html(placeholder, source_text)
 
                   gather_tokens_for_panel(
                     container,
