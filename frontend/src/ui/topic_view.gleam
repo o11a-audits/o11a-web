@@ -82,6 +82,7 @@
 import audit_data
 import context
 import core/log
+import core/user
 import dromel
 import gleam/int
 import gleam/io
@@ -507,7 +508,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
                       audit_data.create_comment(
                         active_view.topic_id,
                         comment_content,
-                        0,
+                        user.id(),
                         comment_type,
                         fn(result) {
                           case result {
