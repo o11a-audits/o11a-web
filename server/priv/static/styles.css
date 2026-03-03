@@ -186,6 +186,10 @@ code,
   color: var(--color-number);
 }
 
+/* Number literals */
+.unknown {
+  color: var(--color-code-text);
+}
 /* Comments */
 .comment-root,
 .comment,
