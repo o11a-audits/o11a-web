@@ -128,17 +128,14 @@ const expanded_references_panel_id = dromel.Id("expanded-references-panel")
 
 type ActiveViewElements {
   ActiveViewElements(
-    mentions_panel: element.Element,
-    mentions_container: element.Element,
-    comments_panel: element.Element,
-    comments_container: element.Element,
-    comments_input: element.Element,
+    conversation_panel: element.Element,
+    conversation_container: element.Element,
+    conversation_input: element.Element,
     topic_panel: element.Element,
     topic_container: element.Element,
     expanded_references_panel: element.Element,
     expanded_references_container: element.Element,
-    mentions_tokens: array.Array(element.Element),
-    comments_tokens: array.Array(element.Element),
+    conversation_tokens: array.Array(element.Element),
     topic_children_tokens: array.Array(element.Element),
     expanded_references_tokens: array.Array(element.Element),
   )
@@ -253,8 +250,8 @@ const contract_key = dromel.DataKey("contract")
 
 fn panel_index_key(panel: ActivePanel) -> dromel.DataKey {
   case panel {
-    history_graph.MentionsPanel -> dromel.DataKey("current_mentions_index")
-    history_graph.CommentsPanel -> dromel.DataKey("current_comments_index")
+    history_graph.ConversationPanel ->
+      dromel.DataKey("current_conversation_index")
     history_graph.TopicPanel -> dromel.DataKey("current_child_topic_index")
     history_graph.ReferencesPanel -> dromel.DataKey("current_references_index")
   }
@@ -281,8 +278,7 @@ fn get_panel_tokens(
   panel: ActivePanel,
 ) -> array.Array(element.Element) {
   case panel {
-    history_graph.MentionsPanel -> elements.mentions_tokens
-    history_graph.CommentsPanel -> elements.comments_tokens
+    history_graph.ConversationPanel -> elements.conversation_tokens
     history_graph.TopicPanel -> elements.topic_children_tokens
     history_graph.ReferencesPanel -> elements.expanded_references_tokens
   }
@@ -294,10 +290,8 @@ fn set_panel_tokens(
   tokens: array.Array(element.Element),
 ) -> ActiveViewElements {
   case panel {
-    history_graph.MentionsPanel ->
-      ActiveViewElements(..elements, mentions_tokens: tokens)
-    history_graph.CommentsPanel ->
-      ActiveViewElements(..elements, comments_tokens: tokens)
+    history_graph.ConversationPanel ->
+      ActiveViewElements(..elements, conversation_tokens: tokens)
     history_graph.TopicPanel ->
       ActiveViewElements(..elements, topic_children_tokens: tokens)
     history_graph.ReferencesPanel ->
@@ -310,8 +304,7 @@ fn get_panel_element(
   panel: ActivePanel,
 ) -> element.Element {
   case panel {
-    history_graph.MentionsPanel -> elements.mentions_panel
-    history_graph.CommentsPanel -> elements.comments_panel
+    history_graph.ConversationPanel -> elements.conversation_panel
     history_graph.TopicPanel -> elements.topic_panel
     history_graph.ReferencesPanel -> elements.expanded_references_panel
   }
@@ -343,13 +336,9 @@ fn get_current_focus_state(
   container: element.Element,
 ) -> history_graph.FocusState {
   history_graph.FocusState(
-    mentions_node_topic: get_focused_node_topic(
+    conversation_node_topic: get_focused_node_topic(
       container,
-      history_graph.MentionsPanel,
-    ),
-    comments_node_topic: get_focused_node_topic(
-      container,
-      history_graph.CommentsPanel,
+      history_graph.ConversationPanel,
     ),
     topic_node_topic: get_focused_node_topic(
       container,
@@ -388,8 +377,7 @@ fn get_focus_state_node_topic(
   panel: ActivePanel,
 ) -> String {
   case panel {
-    history_graph.MentionsPanel -> focus_state.mentions_node_topic
-    history_graph.CommentsPanel -> focus_state.comments_node_topic
+    history_graph.ConversationPanel -> focus_state.conversation_node_topic
     history_graph.TopicPanel -> focus_state.topic_node_topic
     history_graph.ReferencesPanel -> focus_state.references_node_topic
   }
@@ -457,25 +445,8 @@ fn update_comment_type_label(e: event.Event(a), label: element.Element) -> Nil {
 }
 
 fn mount_topic_view(container: element.Element) -> ActiveViewElements {
-  // Create the mentions panel element
-  let mentions_panel =
-    dromel.new_div()
-    |> dromel.set_class(elements.source_container_class)
-    |> dromel.set_style(panel_style)
-
-  let mentions_footer =
-    dromel.new_div()
-    |> dromel.set_inner_text("Mentions")
-    |> dromel.set_style(footer_style)
-
-  let mentions_container =
-    dromel.new_div()
-    |> dromel.set_style(container_style)
-    |> dromel.append_child(mentions_footer)
-    |> dromel.append_child(mentions_panel)
-
-  // Create the comments panel element
-  let comments_panel =
+  // Create the conversation panel element
+  let conversation_panel =
     dromel.new_div()
     |> dromel.set_class(elements.source_container_class)
     |> dromel.set_style(panel_style)
@@ -484,7 +455,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
     dromel.new_span()
     |> dromel.add_class(elements.code_style_class)
 
-  let comments_input =
+  let conversation_input =
     dromel.new_input()
     |> dromel.set_type("text")
     |> dromel.set_placeholder("Add a comment...")
@@ -573,18 +544,18 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
       update_comment_type_label(e, comment_type_label)
     })
 
-  let comments_footer =
+  let conversation_footer =
     dromel.new_div()
-    |> dromel.set_inner_text("Comments")
+    |> dromel.set_inner_text("Conversation")
     |> dromel.set_style(footer_style)
 
-  let comments_container =
+  let conversation_container =
     dromel.new_div()
     |> dromel.set_style(container_style)
-    |> dromel.append_child(comments_footer)
+    |> dromel.append_child(conversation_footer)
     |> dromel.append_child(comment_type_label)
-    |> dromel.append_child(comments_input)
-    |> dromel.append_child(comments_panel)
+    |> dromel.append_child(conversation_input)
+    |> dromel.append_child(conversation_panel)
 
   // Create the topic panel element
   let topic_panel =
@@ -622,24 +593,20 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
     |> dromel.append_child(expanded_references_footer)
     |> dromel.append_child(expanded_references_panel)
 
-  let _ = container |> dromel.append_child(mentions_container)
-  let _ = container |> dromel.append_child(comments_container)
+  let _ = container |> dromel.append_child(conversation_container)
   let _ = container |> dromel.append_child(topic_container)
   let _ = container |> dromel.append_child(expanded_references_container)
 
   let elements =
     ActiveViewElements(
-      mentions_panel:,
-      mentions_container:,
-      comments_panel:,
-      comments_container:,
-      comments_input:,
+      conversation_panel:,
+      conversation_container:,
+      conversation_input:,
       topic_panel:,
       topic_container:,
       expanded_references_panel:,
       expanded_references_container:,
-      mentions_tokens: array.from_list([]),
-      comments_tokens: array.from_list([]),
+      conversation_tokens: array.from_list([]),
       topic_children_tokens: array.from_list([]),
       expanded_references_tokens: array.from_list([]),
     )
@@ -666,8 +633,7 @@ fn prepare_active_view() -> Result(ActiveViewElements, Nil) {
       let reset_elements =
         ActiveViewElements(
           ..elements,
-          mentions_tokens: array.from_list([]),
-          comments_tokens: array.from_list([]),
+          conversation_tokens: array.from_list([]),
           topic_children_tokens: array.from_list([]),
           expanded_references_tokens: array.from_list([]),
         )
@@ -852,83 +818,53 @@ fn repopulate_view(
     }
   })
 
-  // Fetch mentions panel separately
-  audit_data.fetch_mentions_panel(topic, fn(result) {
-    case result {
-      Ok(mentions_html) -> {
-        dromel.set_inner_html(elements.mentions_panel, mentions_html)
-        gather_tokens_for_panel(container, history_graph.MentionsPanel)
-        Nil
-      }
-      Error(err) -> {
-        snag.layer(err, "Failed to fetch mentions panel")
-        |> log.print_error
-        Nil
-      }
-    }
-  })
-
-  // Build comments panel from existing endpoints
-  populate_comments_panel(container, elements, view.topic_id)
+  // Build conversation panel from existing endpoints
+  populate_conversation_panel(container, elements, view.topic_id)
 }
 
-fn populate_comments_panel(
+fn populate_conversation_panel(
   container: element.Element,
   elements: ActiveViewElements,
   topic_id: String,
 ) -> Nil {
-  audit_data.with_topic_comments(topic_id, fn(comments_result) {
-    case comments_result {
-      Ok(comments) -> {
-        // Clear existing comments content
-        dromel.set_inner_html(elements.comments_panel, "")
+  audit_data.with_conversation(topic_id, fn(result) {
+    case result {
+      Ok(entries) -> {
+        dromel.set_inner_html(elements.conversation_panel, "")
 
-        // Create placeholder divs synchronously to preserve comment order,
+        // Create placeholder divs synchronously to preserve entry order,
         // then populate each with thread HTML when the async fetch resolves
-        list.each(comments, fn(comment) {
-          let comment_topic_id = case comment {
-            audit_data.CommentTopic(topic:, ..) -> topic.id
-            audit_data.NamedTopic(topic:, ..) -> topic.id
-            audit_data.UnnamedTopic(topic:, ..) -> topic.id
-            audit_data.ControlFlow(topic:, ..) -> topic.id
-            audit_data.TitledTopic(topic:, ..) -> topic.id
-          }
-          // Create and append the placeholder div now, preserving list order
+        list.each(entries, fn(entry) {
           let placeholder =
             dromel.new_div()
             |> dromel.set_style("margin-top: 0.5rem")
-            |> dromel.append_as_child(to: elements.comments_panel)
+            |> dromel.append_as_child(to: elements.conversation_panel)
 
-          audit_data.with_comment_thread(
-            audit_data.Topic(id: comment_topic_id),
-            fn(thread_result) {
-              case thread_result {
-                Ok(thread_html) -> {
-                  dromel.set_inner_html(placeholder, thread_html)
-
-                  gather_tokens_for_panel(
-                    container,
-                    history_graph.CommentsPanel,
-                  )
-                  Nil
-                }
-                Error(err) -> {
-                  snag.layer(
-                    err,
-                    "Failed to fetch comment thread for "
-                      <> comment_topic_id,
-                  )
-                  |> log.print_error
-                  Nil
-                }
+          audit_data.with_thread_html(entry.topic_id, fn(thread_result) {
+            case thread_result {
+              Ok(html) -> {
+                dromel.set_inner_html(placeholder, html)
+                gather_tokens_for_panel(
+                  container,
+                  history_graph.ConversationPanel,
+                )
+                Nil
               }
-            },
-          )
+              Error(err) -> {
+                snag.layer(
+                  err,
+                  "Failed to fetch thread for " <> entry.topic_id,
+                )
+                |> log.print_error
+                Nil
+              }
+            }
+          })
         })
         Nil
       }
       Error(err) -> {
-        snag.layer(err, "Failed to fetch comments for topic " <> topic_id)
+        snag.layer(err, "Failed to fetch conversation for topic " <> topic_id)
         |> log.print_error
         Nil
       }
@@ -976,8 +912,7 @@ pub fn navigate_to_new_entry(
       update_url_for_topic(new_entry.topic_id)
 
       // Reset panel indices for the new entry
-      set_panel_index(container, history_graph.MentionsPanel, 0)
-      set_panel_index(container, history_graph.CommentsPanel, 0)
+      set_panel_index(container, history_graph.ConversationPanel, 0)
       set_panel_index(container, history_graph.TopicPanel, 0)
       set_panel_index(container, history_graph.ReferencesPanel, 0)
 
@@ -1173,13 +1108,7 @@ pub fn handle_topic_view_keydown(event) {
     _, False, False, "ArrowRight" -> {
       event.prevent_default(event)
       case panel {
-        history_graph.MentionsPanel -> {
-          let next = history_graph.CommentsPanel
-          gather_tokens_for_panel(container, next)
-          set_active_panel(container, next)
-          focus_current_token(container, next)
-        }
-        history_graph.CommentsPanel -> {
+        history_graph.ConversationPanel -> {
           let next = history_graph.TopicPanel
           set_active_panel(container, next)
           focus_current_token(container, next)
@@ -1203,18 +1132,12 @@ pub fn handle_topic_view_keydown(event) {
           focus_current_token(container, next)
         }
         history_graph.TopicPanel -> {
-          let next = history_graph.CommentsPanel
+          let next = history_graph.ConversationPanel
           gather_tokens_for_panel(container, next)
           set_active_panel(container, next)
           focus_current_token(container, next)
         }
-        history_graph.CommentsPanel -> {
-          let next = history_graph.MentionsPanel
-          gather_tokens_for_panel(container, next)
-          set_active_panel(container, next)
-          focus_current_token(container, next)
-        }
-        history_graph.MentionsPanel -> Nil
+        history_graph.ConversationPanel -> Nil
       }
     }
 
@@ -1245,7 +1168,7 @@ pub fn handle_topic_view_keydown(event) {
       event.prevent_default(event)
       case get_active_view_elements() {
         Ok(elems) -> {
-          let _ = dromel.focus(elems.comments_input)
+          let _ = dromel.focus(elems.conversation_input)
           Nil
         }
         Error(Nil) -> Nil

@@ -627,7 +627,6 @@ pub type TopicMetadata {
     topic: Topic,
     scope: Scope,
     context: List(SourceContext),
-    mentions: List(SourceContext),
     kind: NamedTopicKind,
     name: String,
     visibility: NamedTopicVisibility,
@@ -643,14 +642,12 @@ pub type TopicMetadata {
     topic: Topic,
     scope: Scope,
     context: List(SourceContext),
-    mentions: List(SourceContext),
     kind: UnnamedTopicKind,
   )
   ControlFlow(
     topic: Topic,
     scope: Scope,
     context: List(SourceContext),
-    mentions: List(SourceContext),
     kind: ControlFlowStatementKind,
     condition: Topic,
   )
@@ -658,7 +655,6 @@ pub type TopicMetadata {
     topic: Topic,
     scope: Scope,
     context: List(SourceContext),
-    mentions: List(SourceContext),
     kind: TitledTopicKind,
     title: String,
   )
@@ -666,13 +662,49 @@ pub type TopicMetadata {
     topic: Topic,
     scope: Scope,
     context: List(SourceContext),
-    mentions: List(SourceContext),
     author_id: Int,
     comment_type: CommentType,
     target_topic: Topic,
     created_at: String,
     mentioned_topics: List(Topic),
   )
+}
+
+pub type ConversationEntryKind {
+  CommentEntry
+  MentionEntry
+}
+
+pub type ConversationEntry {
+  ConversationEntry(
+    topic_id: String,
+    kind: ConversationEntryKind,
+    html: String,
+  )
+}
+
+fn conversation_entry_kind_decoder() -> decode.Decoder(ConversationEntryKind) {
+  use kind_str <- decode.then(decode.string)
+  case kind_str {
+    "comment" -> decode.success(CommentEntry)
+    "mention" -> decode.success(MentionEntry)
+    _ -> decode.failure(CommentEntry, "ConversationEntryKind")
+  }
+}
+
+fn conversation_entry_decoder() -> decode.Decoder(ConversationEntry) {
+  use topic_id <- decode.field("topic_id", decode.string)
+  use kind <- decode.field("kind", conversation_entry_kind_decoder())
+  use html <- decode.field("html", decode.string)
+  decode.success(ConversationEntry(topic_id:, kind:, html:))
+}
+
+fn conversation_response_decoder() -> decode.Decoder(List(ConversationEntry)) {
+  use entries <- decode.field(
+    "entries",
+    decode.list(conversation_entry_decoder()),
+  )
+  decode.success(entries)
 }
 
 fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
@@ -714,11 +746,6 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         decode.list(decode.string),
       )
       use relative_ids <- decode.field("relatives", decode.list(decode.string))
-      use mentions <- decode.optional_field(
-        "mentions",
-        [],
-        decode.list(source_context_decoder()),
-      )
       decode.success(NamedTopic(
         topic:,
         scope:,
@@ -733,7 +760,6 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         ancestors: list.map(ancestor_ids, Topic),
         descendants: list.map(descendant_ids, Topic),
         relatives: list.map(relative_ids, Topic),
-        mentions:,
       ))
     }
     "titled" -> {
@@ -744,18 +770,12 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         [],
         decode.list(source_context_decoder()),
       )
-      use mentions <- decode.optional_field(
-        "mentions",
-        [],
-        decode.list(source_context_decoder()),
-      )
       decode.success(TitledTopic(
         topic:,
         scope:,
         context:,
         kind:,
         title:,
-        mentions:,
       ))
     }
     "control_flow" -> {
@@ -766,18 +786,12 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         [],
         decode.list(source_context_decoder()),
       )
-      use mentions <- decode.optional_field(
-        "mentions",
-        [],
-        decode.list(source_context_decoder()),
-      )
       decode.success(ControlFlow(
         topic:,
         scope:,
         context:,
         kind:,
         condition: Topic(id: condition_id),
-        mentions:,
       ))
     }
     "CommentTopic" -> {
@@ -794,11 +808,6 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         [],
         decode.list(source_context_decoder()),
       )
-      use mentions <- decode.optional_field(
-        "mentions",
-        [],
-        decode.list(source_context_decoder()),
-      )
       decode.success(CommentTopic(
         topic:,
         scope:,
@@ -808,7 +817,6 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         target_topic: Topic(id: target_topic_id),
         created_at:,
         mentioned_topics: list.map(mentioned_topic_ids, Topic),
-        mentions:,
       ))
     }
     _ -> {
@@ -818,12 +826,7 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         [],
         decode.list(source_context_decoder()),
       )
-      use mentions <- decode.optional_field(
-        "mentions",
-        [],
-        decode.list(source_context_decoder()),
-      )
-      decode.success(UnnamedTopic(topic:, scope:, context:, kind:, mentions:))
+      decode.success(UnnamedTopic(topic:, scope:, context:, kind:))
     }
   }
 }
@@ -1056,91 +1059,6 @@ pub fn with_source_text(topic: Topic, callback) {
   }
 }
 
-// --- Comment Thread ---
-
-@external(javascript, "./mem_ffi.mjs", "set_comment_thread_promise")
-fn set_comment_thread_promise(
-  topic_id: String,
-  promise: promise.Promise(Result(String, snag.Snag)),
-) -> Nil
-
-@external(javascript, "./mem_ffi.mjs", "get_comment_thread_promise")
-fn read_comment_thread_promise(
-  topic_id: String,
-) -> Result(promise.Promise(Result(String, snag.Snag)), Nil)
-
-@external(javascript, "./mem_ffi.mjs", "get_comment_thread")
-fn read_comment_thread(topic_id: String) -> Result(String, snag.Snag)
-
-@external(javascript, "./mem_ffi.mjs", "set_comment_thread")
-fn set_comment_thread(topic_id: String, val: String) -> Nil
-
-fn fetch_comment_thread(topic: Topic) {
-  let assert Ok(req) =
-    request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
-      <> audit_name()
-      <> "/comment_thread/"
-      <> topic.id,
-    )
-
-  use resp <- promise.try_await(
-    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
-  )
-  use resp <- promise.try_await(
-    fetch.read_json_body(resp)
-    |> promise.map(snag.map_error(_, string.inspect)),
-  )
-
-  let result =
-    decode.run(resp.body, comment_thread_response_decoder())
-    |> snag.map_error(string.inspect)
-
-  promise.resolve(result)
-}
-
-fn comment_thread_response_decoder() -> decode.Decoder(String) {
-  use thread_html <- decode.field("thread_html", decode.string)
-  decode.success(thread_html)
-}
-
-pub fn with_comment_thread(topic: Topic, callback) {
-  case read_comment_thread(topic.id) {
-    Ok(thread_html) -> {
-      callback(Ok(thread_html))
-      Nil
-    }
-    Error(_) -> {
-      let promise = case read_comment_thread_promise(topic.id) {
-        Ok(promise) -> promise
-        Error(Nil) -> {
-          let promise = fetch_comment_thread(topic)
-          set_comment_thread_promise(topic.id, promise)
-          promise
-        }
-      }
-
-      promise.await(promise, fn(thread_html) {
-        case thread_html {
-          Ok(thread_html) -> set_comment_thread(topic.id, thread_html)
-          Error(error) ->
-            snag.layer(
-              error,
-              "Unable to fetch comment thread for " <> topic.id,
-            )
-            |> snag.line_print
-            |> io.println_error
-        }
-        callback(thread_html)
-
-        promise.resolve(Nil)
-      })
-
-      Nil
-    }
-  }
-}
-
 // --- Topic View (server-side rendered) ---
 
 pub type TopicViewResponse {
@@ -1204,49 +1122,6 @@ pub fn fetch_topic_view(
   Nil
 }
 
-pub fn fetch_mentions_panel(
-  topic: Topic,
-  callback: fn(Result(String, snag.Snag)) -> Nil,
-) -> Nil {
-  let request_promise = {
-    let assert Ok(req) =
-      request.to(
-        "http://172.18.115.78:3000/api/v1/audits/"
-        <> audit_name()
-        <> "/mentions_panel/"
-        <> topic.id,
-      )
-
-    use resp <- promise.try_await(
-      fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
-    )
-    use resp <- promise.try_await(
-      fetch.read_json_body(resp)
-      |> promise.map(snag.map_error(_, string.inspect)),
-    )
-
-    let result =
-      decode.run(resp.body, mentions_panel_response_decoder())
-      |> snag.map_error(string.inspect)
-
-    promise.resolve(result)
-  }
-
-  promise.await(request_promise, fn(result) {
-    callback(result)
-    promise.resolve(Nil)
-  })
-
-  Nil
-}
-
-fn mentions_panel_response_decoder() -> decode.Decoder(String) {
-  use mentions_panel_html <- decode.field(
-    "mentions_panel_html",
-    decode.string,
-  )
-  decode.success(mentions_panel_html)
-}
 
 @external(javascript, "./mem_ffi.mjs", "set_topic_metadata_promise")
 fn set_topic_metadata_promise(
@@ -1320,15 +1195,15 @@ pub fn with_topic_metadata(topic: Topic, callback) {
   }
 }
 
-// Fetches both metadata and source text for a topic
+// Prefetches metadata, source text, and conversation for a topic
 pub fn with_topic_data(topic: Topic, callback) {
   case
     read_topic_metadata(topic.id),
     read_source_text(topic.id),
-    read_topic_comments(topic.id)
+    read_conversation(topic.id)
   {
-    Ok(metadata), Ok(source_text), Ok(comments) ->
-      callback(Ok(metadata), Ok(source_text), Ok(comments))
+    Ok(metadata), Ok(source_text), Ok(conversation) ->
+      callback(Ok(metadata), Ok(source_text), Ok(conversation))
     _, _, _ -> {
       let metadata_promise = case read_topic_metadata_promise(topic.id) {
         Ok(promise) -> promise
@@ -1348,11 +1223,11 @@ pub fn with_topic_data(topic: Topic, callback) {
         }
       }
 
-      let comments_promise = case read_topic_comments_promise(topic.id) {
+      let conversation_promise = case read_conversation_promise(topic.id) {
         Ok(promise) -> promise
         Error(Nil) -> {
-          let promise = fetch_topic_comments(topic.id)
-          set_topic_comments_promise(topic.id, promise)
+          let promise = fetch_conversation(topic.id)
+          set_conversation_promise(topic.id, promise)
           promise
         }
       }
@@ -1378,19 +1253,20 @@ pub fn with_topic_data(topic: Topic, callback) {
               |> io.println_error
           }
 
-          promise.await(comments_promise, fn(comments) {
-            case comments {
-              Ok(comments) -> set_topic_comments(topic.id, comments)
+          promise.await(conversation_promise, fn(conversation) {
+            case conversation {
+              Ok(conversation) ->
+                set_conversation(topic.id, conversation)
               Error(error) ->
                 snag.layer(
                   error,
-                  "Unable to fetch comments for topic " <> topic.id,
+                  "Unable to fetch conversation for topic " <> topic.id,
                 )
                 |> snag.line_print
                 |> io.println_error
             }
 
-            callback(metadata, source_text, comments)
+            callback(metadata, source_text, conversation)
             promise.resolve(Nil)
           })
           promise.resolve(Nil)
@@ -1526,12 +1402,11 @@ pub type CommentVoteSummary {
 }
 
 pub type CommentEvent {
-  CommentCreated(
+  ConversationUpdated(
     audit_id: String,
-    comment_topic_id: String,
-    target_topic: String,
-    comment_type: CommentType,
-    metadata: TopicMetadata,
+    topic_id: String,
+    entry: ConversationEntry,
+    invalidated_thread_ids: List(String),
   )
   StatusUpdated(
     audit_id: String,
@@ -1544,11 +1419,6 @@ pub type CommentEvent {
     score: Int,
     upvotes: Int,
     downvotes: Int,
-  )
-  MentionsUpdated(
-    audit_id: String,
-    topic_id: String,
-    mentions: List(SourceContext),
   )
 }
 
@@ -1622,17 +1492,19 @@ fn comment_event_decoder() -> decode.Decoder(CommentEvent) {
   use event_type <- decode.field("type", decode.string)
   use audit_id <- decode.field("audit_id", decode.string)
   case event_type {
-    "Created" -> {
-      use comment_topic_id <- decode.field("comment_topic_id", decode.string)
-      use target_topic <- decode.field("target_topic", decode.string)
-      use comment_type <- decode.field("comment_type", comment_type_decoder())
-      use metadata <- decode.field("metadata", topic_metadata_decoder())
-      decode.success(CommentCreated(
+    "ConversationUpdated" -> {
+      use topic_id <- decode.field("topic_id", decode.string)
+      use entry <- decode.field("entry", conversation_entry_decoder())
+      use invalidated_thread_ids <- decode.optional_field(
+        "invalidated_thread_ids",
+        [],
+        decode.list(decode.string),
+      )
+      decode.success(ConversationUpdated(
         audit_id:,
-        comment_topic_id:,
-        target_topic:,
-        comment_type:,
-        metadata:,
+        topic_id:,
+        entry:,
+        invalidated_thread_ids:,
       ))
     }
     "StatusUpdated" -> {
@@ -1653,32 +1525,17 @@ fn comment_event_decoder() -> decode.Decoder(CommentEvent) {
         downvotes:,
       ))
     }
-    "MentionsUpdated" -> {
-      use topic_id <- decode.field("topic_id", decode.string)
-      use mentions <- decode.field(
-        "mentions",
-        decode.list(source_context_decoder()),
-      )
-      decode.success(MentionsUpdated(audit_id:, topic_id:, mentions:))
-    }
     _ ->
       decode.failure(
-        CommentCreated(
+        ConversationUpdated(
           audit_id: "",
-          comment_topic_id: "",
-          target_topic: "",
-          comment_type: Note,
-          metadata: CommentTopic(
-            topic: Topic(id: ""),
-            scope: Global,
-            context: [],
-            author_id: 0,
-            comment_type: Note,
-            target_topic: Topic(id: ""),
-            created_at: "",
-            mentioned_topics: [],
-            mentions: [],
+          topic_id: "",
+          entry: ConversationEntry(
+            topic_id: "",
+            kind: CommentEntry,
+            html: "",
           ),
+          invalidated_thread_ids: [],
         ),
         "CommentEvent",
       )
@@ -1720,12 +1577,9 @@ pub fn vote_value_to_string(vote: VoteValue) -> String {
 
 // --- Collaborator Response Decoders ---
 
-fn topic_comments_response_decoder() -> decode.Decoder(List(TopicMetadata)) {
-  use comments <- decode.field(
-    "comments",
-    decode.list(topic_metadata_decoder()),
-  )
-  decode.success(comments)
+fn comment_created_response_decoder() -> decode.Decoder(String) {
+  use id <- decode.field("comment_topic_id", decode.string)
+  decode.success(id)
 }
 
 fn comment_list_response_decoder() -> decode.Decoder(List(String)) {
@@ -1733,31 +1587,45 @@ fn comment_list_response_decoder() -> decode.Decoder(List(String)) {
   decode.success(ids)
 }
 
-fn comment_created_response_decoder() -> decode.Decoder(String) {
-  use id <- decode.field("comment_topic_id", decode.string)
-  decode.success(id)
-}
+// --- Conversation: FFI Declarations ---
 
-// --- Comments: FFI Declarations ---
-
-@external(javascript, "./mem_ffi.mjs", "set_topic_comments_promise")
-fn set_topic_comments_promise(
+@external(javascript, "./mem_ffi.mjs", "set_conversation_promise")
+fn set_conversation_promise(
   topic_id: String,
-  promise: promise.Promise(Result(List(TopicMetadata), snag.Snag)),
+  promise: promise.Promise(Result(List(ConversationEntry), snag.Snag)),
 ) -> Nil
 
-@external(javascript, "./mem_ffi.mjs", "get_topic_comments_promise")
-fn read_topic_comments_promise(
+@external(javascript, "./mem_ffi.mjs", "get_conversation_promise")
+fn read_conversation_promise(
   topic_id: String,
-) -> Result(promise.Promise(Result(List(TopicMetadata), snag.Snag)), Nil)
+) -> Result(
+  promise.Promise(Result(List(ConversationEntry), snag.Snag)),
+  Nil,
+)
 
-@external(javascript, "./mem_ffi.mjs", "get_topic_comments")
-fn read_topic_comments(
+@external(javascript, "./mem_ffi.mjs", "get_conversation")
+fn read_conversation(
   topic_id: String,
-) -> Result(List(TopicMetadata), snag.Snag)
+) -> Result(List(ConversationEntry), snag.Snag)
 
-@external(javascript, "./mem_ffi.mjs", "set_topic_comments")
-fn set_topic_comments(topic_id: String, val: List(TopicMetadata)) -> Nil
+@external(javascript, "./mem_ffi.mjs", "set_conversation")
+fn set_conversation(
+  topic_id: String,
+  val: List(ConversationEntry),
+) -> Nil
+
+// --- Thread HTML Cache: FFI Declarations ---
+
+@external(javascript, "./mem_ffi.mjs", "get_thread_html")
+fn read_thread_html(topic_id: String) -> Result(String, snag.Snag)
+
+@external(javascript, "./mem_ffi.mjs", "set_thread_html")
+fn set_thread_html(topic_id: String, val: String) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "clear_thread_html")
+fn clear_thread_html(topic_id: String) -> Nil
+
+// --- Comments by type: FFI Declarations ---
 
 @external(javascript, "./mem_ffi.mjs", "set_comments_by_type_promise")
 fn set_comments_by_type_promise(
@@ -1778,33 +1646,80 @@ fn read_comments_by_type(
 @external(javascript, "./mem_ffi.mjs", "set_comments_by_type")
 fn set_comments_by_type(comment_type: String, val: List(String)) -> Nil
 
-@external(javascript, "./mem_ffi.mjs", "set_mentions_promise")
-fn set_mentions_promise(
-  topic_id: String,
-  promise: promise.Promise(Result(List(String), snag.Snag)),
-) -> Nil
+// --- Thread: Fetch Functions ---
 
-@external(javascript, "./mem_ffi.mjs", "get_mentions_promise")
-fn read_mentions_promise(
-  topic_id: String,
-) -> Result(promise.Promise(Result(List(String), snag.Snag)), Nil)
-
-@external(javascript, "./mem_ffi.mjs", "get_mentions")
-fn read_mentions(topic_id: String) -> Result(List(String), snag.Snag)
-
-@external(javascript, "./mem_ffi.mjs", "set_mentions")
-fn set_mentions(topic_id: String, val: List(String)) -> Nil
-
-// --- Comments: Fetch Functions ---
-
-fn fetch_topic_comments(topic_id: String) {
+fn fetch_thread(topic_id: String) {
   let assert Ok(req) =
     request.to(
       "http://172.18.115.78:3000/api/v1/audits/"
       <> audit_name()
-      <> "/topics/"
-      <> topic_id
-      <> "/comments",
+      <> "/thread/"
+      <> topic_id,
+    )
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_text_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  promise.resolve(Ok(resp.body))
+}
+
+fn refetch_thread(topic_id: String) -> Nil {
+  let request_promise = fetch_thread(topic_id)
+  promise.await(request_promise, fn(result) {
+    case result {
+      Ok(html) -> set_thread_html(topic_id, html)
+      Error(error) ->
+        snag.layer(error, "Unable to refetch thread for " <> topic_id)
+        |> snag.line_print
+        |> io.println_error
+    }
+    promise.resolve(Nil)
+  })
+  Nil
+}
+
+pub fn get_cached_thread_html(topic_id: String) -> Result(String, snag.Snag) {
+  read_thread_html(topic_id)
+}
+
+pub fn with_thread_html(
+  topic_id: String,
+  callback: fn(Result(String, snag.Snag)) -> Nil,
+) {
+  case read_thread_html(topic_id) {
+    Ok(html) -> {
+      callback(Ok(html))
+      Nil
+    }
+    Error(_) -> {
+      let request_promise = fetch_thread(topic_id)
+      promise.await(request_promise, fn(result) {
+        case result {
+          Ok(html) -> set_thread_html(topic_id, html)
+          Error(_) -> Nil
+        }
+        callback(result)
+        promise.resolve(Nil)
+      })
+      Nil
+    }
+  }
+}
+
+// --- Conversation: Fetch Functions ---
+
+fn fetch_conversation(topic_id: String) {
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/"
+      <> audit_name()
+      <> "/conversation/"
+      <> topic_id,
     )
 
   use resp <- promise.try_await(
@@ -1816,42 +1731,49 @@ fn fetch_topic_comments(topic_id: String) {
   )
 
   let result =
-    decode.run(resp.body, topic_comments_response_decoder())
+    decode.run(resp.body, conversation_response_decoder())
     |> snag.map_error(string.inspect)
 
   promise.resolve(result)
 }
 
-pub fn with_topic_comments(topic_id: String, callback) {
-  case read_topic_comments(topic_id) {
-    Ok(comments) -> {
-      callback(Ok(comments))
+pub fn with_conversation(
+  topic_id: String,
+  callback: fn(Result(List(ConversationEntry), snag.Snag)) -> Nil,
+) {
+  case read_conversation(topic_id) {
+    Ok(entries) -> {
+      callback(Ok(entries))
       Nil
     }
     Error(_) -> {
-      let promise = case read_topic_comments_promise(topic_id) {
+      let promise = case read_conversation_promise(topic_id) {
         Ok(promise) -> promise
         Error(Nil) -> {
-          let promise = fetch_topic_comments(topic_id)
-          set_topic_comments_promise(topic_id, promise)
+          let promise = fetch_conversation(topic_id)
+          set_conversation_promise(topic_id, promise)
           promise
         }
       }
 
-      promise.await(promise, fn(comments) {
-        case comments {
-          Ok(comments) -> {
-            set_topic_comments(topic_id, comments)
-            list.each(comments, fn(comment) {
-              set_topic_metadata(comment.topic.id, comment)
+      promise.await(promise, fn(entries) {
+        case entries {
+          Ok(entries) -> {
+            set_conversation(topic_id, entries)
+            // Populate thread cache from conversation entries
+            list.each(entries, fn(entry) {
+              set_thread_html(entry.topic_id, entry.html)
             })
           }
           Error(error) ->
-            snag.layer(error, "Unable to fetch comments for topic " <> topic_id)
+            snag.layer(
+              error,
+              "Unable to fetch conversation for topic " <> topic_id,
+            )
             |> snag.line_print
             |> io.println_error
         }
-        callback(comments)
+        callback(entries)
 
         promise.resolve(Nil)
       })
@@ -1884,13 +1806,18 @@ fn set_topic_info_comments(topic_id: String, val: List(String)) -> Nil
 
 fn fetch_topic_info_comments(topic_id: String) {
   promise.new(fn(resolve) {
-    with_topic_comments(topic_id, fn(comments_result) {
+    with_conversation(topic_id, fn(conversation_result) {
       resolve(
-        result.map(comments_result, fn(entries) {
+        result.map(conversation_result, fn(entries) {
           list.filter_map(entries, fn(entry) {
-            case entry {
-              CommentTopic(topic:, comment_type: Info, ..) -> Ok(topic.id)
-              _ -> Error(Nil)
+            case entry.kind {
+              CommentEntry ->
+                case read_topic_metadata(entry.topic_id) {
+                  Ok(CommentTopic(comment_type: Info, ..)) ->
+                    Ok(entry.topic_id)
+                  _ -> Error(Nil)
+                }
+              MentionEntry -> Error(Nil)
             }
           })
         }),
@@ -2051,64 +1978,6 @@ pub fn create_comment(
     callback(result)
     promise.resolve(Nil)
   })
-}
-
-fn fetch_mentions(topic_id: String) {
-  let assert Ok(req) =
-    request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
-      <> audit_name()
-      <> "/mentions/"
-      <> topic_id,
-    )
-
-  use resp <- promise.try_await(
-    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
-  )
-  use resp <- promise.try_await(
-    fetch.read_json_body(resp)
-    |> promise.map(snag.map_error(_, string.inspect)),
-  )
-
-  let result =
-    decode.run(resp.body, comment_list_response_decoder())
-    |> snag.map_error(string.inspect)
-
-  promise.resolve(result)
-}
-
-pub fn with_mentions(topic_id: String, callback) {
-  case read_mentions(topic_id) {
-    Ok(mentions) -> {
-      callback(Ok(mentions))
-      Nil
-    }
-    Error(_) -> {
-      let promise = case read_mentions_promise(topic_id) {
-        Ok(promise) -> promise
-        Error(Nil) -> {
-          let promise = fetch_mentions(topic_id)
-          set_mentions_promise(topic_id, promise)
-          promise
-        }
-      }
-
-      promise.await(promise, fn(mentions) {
-        case mentions {
-          Ok(mentions) -> set_mentions(topic_id, mentions)
-          Error(error) ->
-            snag.layer(error, "Unable to fetch mentions for topic " <> topic_id)
-            |> snag.line_print
-            |> io.println_error
-        }
-        callback(mentions)
-
-        promise.resolve(Nil)
-      })
-
-      Nil
-    }
-  }
 }
 
 // --- Status: FFI Declarations ---
@@ -2480,20 +2349,20 @@ fn ws_connect(url: String, on_message: fn(String) -> Nil) -> Nil
 pub fn ws_close() -> Nil
 
 pub fn connect_comment_ws(
-  on_comment_created on_comment_created: fn(String) -> Nil,
+  on_conversation_updated on_conversation_updated: fn(String) -> Nil,
 ) -> Nil {
   let url =
     "ws://172.18.115.78:3000/api/v1/audits/" <> audit_name() <> "/comments/ws"
 
-  ws_connect(url, handle_comment_event(_, on_comment_created))
+  ws_connect(url, handle_comment_event(_, on_conversation_updated))
 }
 
 fn handle_comment_event(
   raw: String,
-  on_comment_created: fn(String) -> Nil,
+  on_conversation_updated: fn(String) -> Nil,
 ) -> Nil {
   case json.parse(raw, comment_event_decoder()) {
-    Ok(event) -> process_comment_event(event, on_comment_created)
+    Ok(event) -> process_comment_event(event, on_conversation_updated)
     Error(_) -> {
       io.println_error("Failed to decode WebSocket comment event")
       Nil
@@ -2503,37 +2372,25 @@ fn handle_comment_event(
 
 fn process_comment_event(
   event: CommentEvent,
-  on_comment_created: fn(String) -> Nil,
+  on_conversation_updated: fn(String) -> Nil,
 ) -> Nil {
   case event {
-    CommentCreated(
-      audit_id:,
-      target_topic:,
-      metadata:,
-      comment_topic_id: _,
-      comment_type:,
-    ) -> {
-      // Cache the metadata and prepend to comments list
-      set_topic_metadata(metadata.topic.id, metadata)
-      case read_topic_comments(target_topic) {
-        Ok(comments) -> set_topic_comments(target_topic, [metadata, ..comments])
+    ConversationUpdated(audit_id:, topic_id:, entry:, invalidated_thread_ids:) -> {
+      // Append entry to cached conversation list
+      case read_conversation(topic_id) {
+        Ok(entries) ->
+          set_conversation(topic_id, list.append(entries, [entry]))
         Error(_) -> Nil
       }
-      // Update info comments cache so inline injection picks up the new comment
-      case comment_type {
-        Info ->
-          case read_topic_info_comments(target_topic) {
-            Ok(info_comments) ->
-              set_topic_info_comments(target_topic, [
-                metadata.topic.id,
-                ..info_comments
-              ])
-            Error(_) -> Nil
-          }
-        _ -> Nil
-      }
+      // Cache the new entry's thread HTML
+      set_thread_html(entry.topic_id, entry.html)
+      // Invalidate and refetch stale threads
+      list.each(invalidated_thread_ids, fn(thread_id) {
+        clear_thread_html(thread_id)
+        refetch_thread(thread_id)
+      })
       case audit_id == audit_name() {
-        True -> on_comment_created(target_topic)
+        True -> on_conversation_updated(topic_id)
         False -> Nil
       }
       Nil
@@ -2553,47 +2410,6 @@ fn process_comment_event(
             CommentVoteSummary(..existing, score:, upvotes:, downvotes:),
           )
         Error(_) -> Nil
-      }
-      Nil
-    }
-    MentionsUpdated(audit_id: _, topic_id:, mentions:) -> {
-      case read_topic_metadata(topic_id) {
-        Ok(NamedTopic(
-          topic:,
-          scope:,
-          kind:,
-          name:,
-          visibility:,
-          context:,
-          expanded_context:,
-          ancestry:,
-          is_mutable:,
-          mutations:,
-          ancestors:,
-          descendants:,
-          relatives:,
-          mentions: _,
-        )) ->
-          set_topic_metadata(
-            topic_id,
-            NamedTopic(
-              topic:,
-              scope:,
-              kind:,
-              name:,
-              visibility:,
-              context:,
-              expanded_context:,
-              ancestry:,
-              is_mutable:,
-              mutations:,
-              ancestors:,
-              descendants:,
-              relatives:,
-              mentions:,
-            ),
-          )
-        _ -> Nil
       }
       Nil
     }

@@ -327,30 +327,6 @@ export function get_in_scope_files() {
 // Comments
 // =============================================================================
 
-let topic_comments_dict = {};
-let topic_comments_promises = {};
-
-export function set_topic_comments_promise(topic_id, promise) {
-  topic_comments_promises[topic_id] = promise;
-}
-
-export function get_topic_comments_promise(topic_id) {
-  if (!topic_comments_promises[topic_id]) {
-    return Result$Error();
-  }
-  return Result$Ok(topic_comments_promises[topic_id]);
-}
-
-export function get_topic_comments(topic_id) {
-  if (!topic_comments_dict[topic_id]) {
-    return Result$Error();
-  }
-  return Result$Ok(topic_comments_dict[topic_id]);
-}
-
-export function set_topic_comments(topic_id, val) {
-  topic_comments_dict[topic_id] = val;
-}
 
 let topic_info_comments_dict = {};
 let topic_info_comments_promises = {};
@@ -377,29 +353,46 @@ export function set_topic_info_comments(topic_id, val) {
   topic_info_comments_dict[topic_id] = val;
 }
 
-let comment_thread_dict = {};
-let comment_thread_promises = {};
+let conversation_dict = {};
+let conversation_promises = {};
 
-export function set_comment_thread_promise(topic_id, promise) {
-  comment_thread_promises[topic_id] = promise;
+export function set_conversation_promise(topic_id, promise) {
+  conversation_promises[topic_id] = promise;
 }
 
-export function get_comment_thread_promise(topic_id) {
-  if (!comment_thread_promises[topic_id]) {
+export function get_conversation_promise(topic_id) {
+  if (!conversation_promises[topic_id]) {
     return Result$Error();
   }
-  return Result$Ok(comment_thread_promises[topic_id]);
+  return Result$Ok(conversation_promises[topic_id]);
 }
 
-export function get_comment_thread(topic_id) {
-  if (!comment_thread_dict[topic_id]) {
+export function get_conversation(topic_id) {
+  if (!conversation_dict[topic_id]) {
     return Result$Error();
   }
-  return Result$Ok(comment_thread_dict[topic_id]);
+  return Result$Ok(conversation_dict[topic_id]);
 }
 
-export function set_comment_thread(topic_id, val) {
-  comment_thread_dict[topic_id] = val;
+export function set_conversation(topic_id, val) {
+  conversation_dict[topic_id] = val;
+}
+
+let thread_html_dict = {};
+
+export function get_thread_html(topic_id) {
+  if (!thread_html_dict[topic_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(thread_html_dict[topic_id]);
+}
+
+export function set_thread_html(topic_id, val) {
+  thread_html_dict[topic_id] = val;
+}
+
+export function clear_thread_html(topic_id) {
+  delete thread_html_dict[topic_id];
 }
 
 let comments_by_type_dict = {};
@@ -425,31 +418,6 @@ export function get_comments_by_type(comment_type) {
 
 export function set_comments_by_type(comment_type, val) {
   comments_by_type_dict[comment_type] = val;
-}
-
-let mentions_dict = {};
-let mentions_promises = {};
-
-export function set_mentions_promise(topic_id, promise) {
-  mentions_promises[topic_id] = promise;
-}
-
-export function get_mentions_promise(topic_id) {
-  if (!mentions_promises[topic_id]) {
-    return Result$Error();
-  }
-  return Result$Ok(mentions_promises[topic_id]);
-}
-
-export function get_mentions(topic_id) {
-  if (!mentions_dict[topic_id]) {
-    return Result$Error();
-  }
-  return Result$Ok(mentions_dict[topic_id]);
-}
-
-export function set_mentions(topic_id, val) {
-  mentions_dict[topic_id] = val;
 }
 
 // =============================================================================
