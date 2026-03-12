@@ -12,6 +12,7 @@ import tempo/instant
 
 /// Which panel has focus in the topic view
 pub type ActivePanel {
+  DocumentationPanel
   ConversationPanel
   TopicPanel
   ReferencesPanel
@@ -19,6 +20,7 @@ pub type ActivePanel {
 
 pub fn active_panel_to_string(active_panel: ActivePanel) -> String {
   case active_panel {
+    DocumentationPanel -> "documentation"
     ConversationPanel -> "conversation"
     TopicPanel -> "topic"
     ReferencesPanel -> "references"
@@ -27,6 +29,7 @@ pub fn active_panel_to_string(active_panel: ActivePanel) -> String {
 
 pub fn active_panel_from_string(string: String) {
   case string {
+    "documentation" -> Ok(DocumentationPanel)
     "conversation" -> Ok(ConversationPanel)
     "topic" -> Ok(TopicPanel)
     "references" -> Ok(ReferencesPanel)
@@ -39,6 +42,7 @@ pub fn active_panel_from_string(string: String) {
 /// focus is resilient to token insertions/removals (e.g. new comments).
 pub type FocusState {
   FocusState(
+    documentation_node_topic: String,
     conversation_node_topic: String,
     topic_node_topic: String,
     references_node_topic: String,
@@ -49,6 +53,7 @@ pub type FocusState {
 /// Default focus state for new entries
 pub fn default_focus_state() -> FocusState {
   FocusState(
+    documentation_node_topic: "",
     conversation_node_topic: "",
     topic_node_topic: "",
     references_node_topic: "",

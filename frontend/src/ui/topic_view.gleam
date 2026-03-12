@@ -128,6 +128,8 @@ const expanded_references_panel_id = dromel.Id("expanded-references-panel")
 
 type ActiveViewElements {
   ActiveViewElements(
+    documentation_panel: element.Element,
+    documentation_container: element.Element,
     conversation_panel: element.Element,
     conversation_container: element.Element,
     conversation_input: element.Element,
@@ -135,6 +137,7 @@ type ActiveViewElements {
     topic_container: element.Element,
     expanded_references_panel: element.Element,
     expanded_references_container: element.Element,
+    documentation_tokens: array.Array(element.Element),
     conversation_tokens: array.Array(element.Element),
     topic_children_tokens: array.Array(element.Element),
     expanded_references_tokens: array.Array(element.Element),
@@ -250,6 +253,8 @@ const contract_key = dromel.DataKey("contract")
 
 fn panel_index_key(panel: ActivePanel) -> dromel.DataKey {
   case panel {
+    history_graph.DocumentationPanel ->
+      dromel.DataKey("current_documentation_index")
     history_graph.ConversationPanel ->
       dromel.DataKey("current_conversation_index")
     history_graph.TopicPanel -> dromel.DataKey("current_child_topic_index")
@@ -278,6 +283,7 @@ fn get_panel_tokens(
   panel: ActivePanel,
 ) -> array.Array(element.Element) {
   case panel {
+    history_graph.DocumentationPanel -> elements.documentation_tokens
     history_graph.ConversationPanel -> elements.conversation_tokens
     history_graph.TopicPanel -> elements.topic_children_tokens
     history_graph.ReferencesPanel -> elements.expanded_references_tokens
@@ -290,6 +296,8 @@ fn set_panel_tokens(
   tokens: array.Array(element.Element),
 ) -> ActiveViewElements {
   case panel {
+    history_graph.DocumentationPanel ->
+      ActiveViewElements(..elements, documentation_tokens: tokens)
     history_graph.ConversationPanel ->
       ActiveViewElements(..elements, conversation_tokens: tokens)
     history_graph.TopicPanel ->
@@ -304,6 +312,7 @@ fn get_panel_element(
   panel: ActivePanel,
 ) -> element.Element {
   case panel {
+    history_graph.DocumentationPanel -> elements.documentation_panel
     history_graph.ConversationPanel -> elements.conversation_panel
     history_graph.TopicPanel -> elements.topic_panel
     history_graph.ReferencesPanel -> elements.expanded_references_panel
@@ -336,6 +345,10 @@ fn get_current_focus_state(
   container: element.Element,
 ) -> history_graph.FocusState {
   history_graph.FocusState(
+    documentation_node_topic: get_focused_node_topic(
+      container,
+      history_graph.DocumentationPanel,
+    ),
     conversation_node_topic: get_focused_node_topic(
       container,
       history_graph.ConversationPanel,
@@ -377,6 +390,7 @@ fn get_focus_state_node_topic(
   panel: ActivePanel,
 ) -> String {
   case panel {
+    history_graph.DocumentationPanel -> focus_state.documentation_node_topic
     history_graph.ConversationPanel -> focus_state.conversation_node_topic
     history_graph.TopicPanel -> focus_state.topic_node_topic
     history_graph.ReferencesPanel -> focus_state.references_node_topic
@@ -445,6 +459,23 @@ fn update_comment_type_label(e: event.Event(a), label: element.Element) -> Nil {
 }
 
 fn mount_topic_view(container: element.Element) -> ActiveViewElements {
+  // Create the documentation panel element
+  let documentation_panel =
+    dromel.new_div()
+    |> dromel.set_class(elements.source_container_class)
+    |> dromel.set_style(panel_style)
+
+  let documentation_footer =
+    dromel.new_div()
+    |> dromel.set_inner_text("Documentation")
+    |> dromel.set_style(footer_style)
+
+  let documentation_container =
+    dromel.new_div()
+    |> dromel.set_style(container_style)
+    |> dromel.append_child(documentation_footer)
+    |> dromel.append_child(documentation_panel)
+
   // Create the conversation panel element
   let conversation_panel =
     dromel.new_div()
@@ -593,12 +624,15 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
     |> dromel.append_child(expanded_references_footer)
     |> dromel.append_child(expanded_references_panel)
 
+  let _ = container |> dromel.append_child(documentation_container)
   let _ = container |> dromel.append_child(conversation_container)
   let _ = container |> dromel.append_child(topic_container)
   let _ = container |> dromel.append_child(expanded_references_container)
 
   let elements =
     ActiveViewElements(
+      documentation_panel:,
+      documentation_container:,
       conversation_panel:,
       conversation_container:,
       conversation_input:,
@@ -606,6 +640,7 @@ fn mount_topic_view(container: element.Element) -> ActiveViewElements {
       topic_container:,
       expanded_references_panel:,
       expanded_references_container:,
+      documentation_tokens: array.from_list([]),
       conversation_tokens: array.from_list([]),
       topic_children_tokens: array.from_list([]),
       expanded_references_tokens: array.from_list([]),
@@ -633,6 +668,7 @@ fn prepare_active_view() -> Result(ActiveViewElements, Nil) {
       let reset_elements =
         ActiveViewElements(
           ..elements,
+          documentation_tokens: array.from_list([]),
           conversation_tokens: array.from_list([]),
           topic_children_tokens: array.from_list([]),
           expanded_references_tokens: array.from_list([]),
@@ -912,6 +948,7 @@ pub fn navigate_to_new_entry(
       update_url_for_topic(new_entry.topic_id)
 
       // Reset panel indices for the new entry
+      set_panel_index(container, history_graph.DocumentationPanel, 0)
       set_panel_index(container, history_graph.ConversationPanel, 0)
       set_panel_index(container, history_graph.TopicPanel, 0)
       set_panel_index(container, history_graph.ReferencesPanel, 0)
@@ -1108,6 +1145,12 @@ pub fn handle_topic_view_keydown(event) {
     _, False, False, "ArrowRight" -> {
       event.prevent_default(event)
       case panel {
+        history_graph.DocumentationPanel -> {
+          let next = history_graph.ConversationPanel
+          gather_tokens_for_panel(container, next)
+          set_active_panel(container, next)
+          focus_current_token(container, next)
+        }
         history_graph.ConversationPanel -> {
           let next = history_graph.TopicPanel
           set_active_panel(container, next)
@@ -1137,7 +1180,13 @@ pub fn handle_topic_view_keydown(event) {
           set_active_panel(container, next)
           focus_current_token(container, next)
         }
-        history_graph.ConversationPanel -> Nil
+        history_graph.ConversationPanel -> {
+          let next = history_graph.DocumentationPanel
+          gather_tokens_for_panel(container, next)
+          set_active_panel(container, next)
+          focus_current_token(container, next)
+        }
+        history_graph.DocumentationPanel -> Nil
       }
     }
 
