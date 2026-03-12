@@ -1783,6 +1783,221 @@ pub fn with_conversation(
   }
 }
 
+// --- Documentation: Types ---
+
+pub type FeatureResponse {
+  FeatureResponse(
+    topic: String,
+    name: String,
+    description: String,
+    documentation_topics: List(String),
+    requirement_topics: List(String),
+  )
+}
+
+fn feature_response_decoder() -> decode.Decoder(FeatureResponse) {
+  use topic <- decode.field("topic", decode.string)
+  use name <- decode.field("name", decode.string)
+  use description <- decode.field("description", decode.string)
+  use documentation_topics <- decode.field(
+    "documentation_topics",
+    decode.list(decode.string),
+  )
+  use requirement_topics <- decode.field(
+    "requirement_topics",
+    decode.list(decode.string),
+  )
+  decode.success(FeatureResponse(
+    topic:,
+    name:,
+    description:,
+    documentation_topics:,
+    requirement_topics:,
+  ))
+}
+
+fn features_response_decoder() -> decode.Decoder(List(FeatureResponse)) {
+  decode.list(feature_response_decoder())
+}
+
+// --- Documentation: FFI Declarations ---
+
+@external(javascript, "./mem_ffi.mjs", "set_topic_features_promise")
+fn set_topic_features_promise(
+  topic_id: String,
+  promise: promise.Promise(Result(List(FeatureResponse), snag.Snag)),
+) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_topic_features_promise")
+fn read_topic_features_promise(
+  topic_id: String,
+) -> Result(promise.Promise(Result(List(FeatureResponse), snag.Snag)), Nil)
+
+@external(javascript, "./mem_ffi.mjs", "get_topic_features")
+fn read_topic_features(
+  topic_id: String,
+) -> Result(List(FeatureResponse), Nil)
+
+@external(javascript, "./mem_ffi.mjs", "set_topic_features")
+fn set_topic_features(topic_id: String, val: List(FeatureResponse)) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "set_documentation_html_promise")
+fn set_documentation_html_promise(
+  key: String,
+  promise: promise.Promise(Result(String, snag.Snag)),
+) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_documentation_html_promise")
+fn read_documentation_html_promise(
+  key: String,
+) -> Result(promise.Promise(Result(String, snag.Snag)), Nil)
+
+@external(javascript, "./mem_ffi.mjs", "get_documentation_html")
+fn read_documentation_html(key: String) -> Result(String, Nil)
+
+@external(javascript, "./mem_ffi.mjs", "set_documentation_html")
+fn set_documentation_html(key: String, val: String) -> Nil
+
+// --- Documentation: Fetch Functions ---
+
+fn fetch_topic_features(topic_id: String) {
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/"
+      <> audit_name()
+      <> "/documentation/"
+      <> topic_id
+      <> "/features",
+    )
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_json_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  let result =
+    decode.run(resp.body, features_response_decoder())
+    |> snag.map_error(string.inspect)
+
+  promise.resolve(result)
+}
+
+fn fetch_documentation_html(feature_topics: List(String)) {
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/"
+      <> audit_name()
+      <> "/documentation",
+    )
+
+  let body =
+    json.object([
+      #(
+        "feature_topics",
+        json.array(feature_topics, json.string),
+      ),
+    ])
+
+  let req =
+    req
+    |> request.set_method(http.Post)
+    |> request.set_header("content-type", "application/json")
+    |> request.set_body(json.to_string(body))
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_text_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  promise.resolve(Ok(resp.body))
+}
+
+// --- Documentation: with_* Functions ---
+
+pub fn with_topic_features(
+  topic_id: String,
+  callback: fn(Result(List(FeatureResponse), snag.Snag)) -> Nil,
+) {
+  case read_topic_features(topic_id) {
+    Ok(features) -> {
+      callback(Ok(features))
+      Nil
+    }
+    Error(_) -> {
+      let promise = case read_topic_features_promise(topic_id) {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_topic_features(topic_id)
+          set_topic_features_promise(topic_id, promise)
+          promise
+        }
+      }
+
+      promise.await(promise, fn(features) {
+        case features {
+          Ok(features) -> set_topic_features(topic_id, features)
+          Error(error) ->
+            snag.layer(
+              error,
+              "Unable to fetch features for topic " <> topic_id,
+            )
+            |> snag.line_print
+            |> io.println_error
+        }
+        callback(features)
+
+        promise.resolve(Nil)
+      })
+
+      Nil
+    }
+  }
+}
+
+pub fn with_documentation_html(
+  feature_topics: List(String),
+  callback: fn(Result(String, snag.Snag)) -> Nil,
+) {
+  let key = string.join(feature_topics, ",")
+  case read_documentation_html(key) {
+    Ok(html) -> {
+      callback(Ok(html))
+      Nil
+    }
+    Error(_) -> {
+      let promise = case read_documentation_html_promise(key) {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_documentation_html(feature_topics)
+          set_documentation_html_promise(key, promise)
+          promise
+        }
+      }
+
+      promise.await(promise, fn(result) {
+        case result {
+          Ok(html) -> set_documentation_html(key, html)
+          Error(error) ->
+            snag.layer(error, "Unable to fetch documentation HTML")
+            |> snag.line_print
+            |> io.println_error
+        }
+        callback(result)
+
+        promise.resolve(Nil)
+      })
+
+      Nil
+    }
+  }
+}
+
 // --- Info Comments: FFI Declarations ---
 
 @external(javascript, "./mem_ffi.mjs", "set_topic_info_comments_promise")

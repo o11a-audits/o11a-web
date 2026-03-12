@@ -854,8 +854,59 @@ fn repopulate_view(
     }
   })
 
+  // Build documentation panel
+  populate_documentation_panel(container, elements, view.topic_id)
+
   // Build conversation panel from existing endpoints
   populate_conversation_panel(container, elements, view.topic_id)
+}
+
+fn populate_documentation_panel(
+  container: element.Element,
+  elements: ActiveViewElements,
+  topic_id: String,
+) -> Nil {
+  audit_data.with_topic_features(topic_id, fn(result) {
+    case result {
+      Ok(features) -> {
+        let feature_topics =
+          list.map(features, fn(feature) { feature.topic })
+
+        case feature_topics {
+          [] -> Nil
+          _ -> {
+            audit_data.with_documentation_html(feature_topics, fn(html_result) {
+              case html_result {
+                Ok(html) -> {
+                  dromel.set_inner_html(elements.documentation_panel, html)
+                  gather_tokens_for_panel(
+                    container,
+                    history_graph.DocumentationPanel,
+                  )
+                  Nil
+                }
+                Error(err) -> {
+                  snag.layer(
+                    err,
+                    "Failed to fetch documentation HTML for topic "
+                      <> topic_id,
+                  )
+                  |> log.print_error
+                  Nil
+                }
+              }
+            })
+            Nil
+          }
+        }
+      }
+      Error(err) -> {
+        snag.layer(err, "Failed to fetch features for topic " <> topic_id)
+        |> log.print_error
+        Nil
+      }
+    }
+  })
 }
 
 fn populate_conversation_panel(

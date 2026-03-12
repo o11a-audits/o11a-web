@@ -395,6 +395,56 @@ export function clear_thread_html(topic_id) {
   delete thread_html_dict[topic_id];
 }
 
+let topic_features_dict = {};
+let topic_features_promises = {};
+
+export function set_topic_features_promise(topic_id, promise) {
+  topic_features_promises[topic_id] = promise;
+}
+
+export function get_topic_features_promise(topic_id) {
+  if (!topic_features_promises[topic_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(topic_features_promises[topic_id]);
+}
+
+export function get_topic_features(topic_id) {
+  if (!topic_features_dict[topic_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(topic_features_dict[topic_id]);
+}
+
+export function set_topic_features(topic_id, val) {
+  topic_features_dict[topic_id] = val;
+}
+
+let documentation_html_dict = {};
+let documentation_html_promises = {};
+
+export function set_documentation_html_promise(key, promise) {
+  documentation_html_promises[key] = promise;
+}
+
+export function get_documentation_html_promise(key) {
+  if (!documentation_html_promises[key]) {
+    return Result$Error();
+  }
+  return Result$Ok(documentation_html_promises[key]);
+}
+
+export function get_documentation_html(key) {
+  if (!documentation_html_dict[key]) {
+    return Result$Error();
+  }
+  return Result$Ok(documentation_html_dict[key]);
+}
+
+export function set_documentation_html(key, val) {
+  documentation_html_dict[key] = val;
+}
+
 let comments_by_type_dict = {};
 let comments_by_type_promises = {};
 
