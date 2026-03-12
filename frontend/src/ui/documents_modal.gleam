@@ -165,7 +165,10 @@ fn get_document_name(document: audit_data.TopicMetadata) -> String {
         audit_data.Container(container:) -> container
         _ -> audit_data.topic_metadata_name(document)
       }
-    audit_data.ControlFlow(topic:, ..) | audit_data.CommentTopic(topic:, ..) ->
+    audit_data.Feature(name:, ..) -> name
+    audit_data.ControlFlow(topic:, ..)
+    | audit_data.CommentTopic(topic:, ..)
+    | audit_data.Requirement(topic:, ..) ->
       topic.id
   }
 }

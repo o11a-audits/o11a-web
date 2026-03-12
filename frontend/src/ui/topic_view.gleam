@@ -868,10 +868,7 @@ fn populate_documentation_panel(
 ) -> Nil {
   audit_data.with_topic_features(topic_id, fn(result) {
     case result {
-      Ok(features) -> {
-        let feature_topics =
-          list.map(features, fn(feature) { feature.topic })
-
+      Ok(feature_topics) -> {
         case feature_topics {
           [] -> Nil
           _ -> {
