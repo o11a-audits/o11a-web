@@ -674,7 +674,6 @@ pub type TopicMetadata {
     description: String,
     author_id: Int,
     created_at: String,
-    documentation_topics: List(Topic),
     requirement_topics: List(Topic),
   )
   Requirement(
@@ -683,6 +682,7 @@ pub type TopicMetadata {
     feature_topic: Topic,
     author_id: Int,
     created_at: String,
+    documentation_topics: List(Topic),
     source_topics: List(Topic),
   )
 }
@@ -727,12 +727,53 @@ fn conversation_response_decoder() -> decode.Decoder(List(ConversationEntry)) {
 fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
   use topic_type <- decode.field("type", decode.string)
   use topic_id <- decode.field("topic_id", decode.string)
-  use scope <- decode.field("scope", scope_decoder())
 
   let topic = Topic(id: topic_id)
 
   case topic_type {
+    "feature" -> {
+      use name <- decode.field("name", decode.string)
+      use description <- decode.field("description", decode.string)
+      use author_id <- decode.field("author_id", decode.int)
+      use created_at <- decode.field("created_at", decode.string)
+      use requirement_topic_ids <- decode.field(
+        "requirement_topics",
+        decode.list(decode.string),
+      )
+      decode.success(Feature(
+        topic:,
+        name:,
+        description:,
+        author_id:,
+        created_at:,
+        requirement_topics: list.map(requirement_topic_ids, Topic),
+      ))
+    }
+    "requirement" -> {
+      use description <- decode.field("description", decode.string)
+      use feature_topic_id <- decode.field("feature_topic", decode.string)
+      use author_id <- decode.field("author_id", decode.int)
+      use created_at <- decode.field("created_at", decode.string)
+      use documentation_topic_ids <- decode.field(
+        "documentation_topics",
+        decode.list(decode.string),
+      )
+      use source_topic_ids <- decode.field(
+        "source_topics",
+        decode.list(decode.string),
+      )
+      decode.success(Requirement(
+        topic:,
+        description:,
+        feature_topic: Topic(id: feature_topic_id),
+        author_id:,
+        created_at:,
+        documentation_topics: list.map(documentation_topic_ids, Topic),
+        source_topics: list.map(source_topic_ids, Topic),
+      ))
+    }
     "named" -> {
+      use scope <- decode.field("scope", scope_decoder())
       use name <- decode.field("name", decode.string)
       use kind <- decode.then(named_topic_kind_decoder())
       use visibility <- decode.then(named_topic_visibility_decoder())
@@ -780,6 +821,7 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
       ))
     }
     "titled" -> {
+      use scope <- decode.field("scope", scope_decoder())
       use title <- decode.field("title", decode.string)
       use kind <- decode.then(titled_topic_kind_decoder())
       use context <- decode.optional_field(
@@ -796,6 +838,7 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
       ))
     }
     "control_flow" -> {
+      use scope <- decode.field("scope", scope_decoder())
       use kind <- decode.then(control_flow_statement_kind_decoder())
       use condition_id <- decode.field("condition", decode.string)
       use context <- decode.optional_field(
@@ -811,48 +854,8 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         condition: Topic(id: condition_id),
       ))
     }
-    "feature" -> {
-      use name <- decode.field("name", decode.string)
-      use description <- decode.field("description", decode.string)
-      use author_id <- decode.field("author_id", decode.int)
-      use created_at <- decode.field("created_at", decode.string)
-      use documentation_topic_ids <- decode.field(
-        "documentation_topics",
-        decode.list(decode.string),
-      )
-      use requirement_topic_ids <- decode.field(
-        "requirement_topics",
-        decode.list(decode.string),
-      )
-      decode.success(Feature(
-        topic:,
-        name:,
-        description:,
-        author_id:,
-        created_at:,
-        documentation_topics: list.map(documentation_topic_ids, Topic),
-        requirement_topics: list.map(requirement_topic_ids, Topic),
-      ))
-    }
-    "requirement" -> {
-      use description <- decode.field("description", decode.string)
-      use feature_topic_id <- decode.field("feature_topic", decode.string)
-      use author_id <- decode.field("author_id", decode.int)
-      use created_at <- decode.field("created_at", decode.string)
-      use source_topic_ids <- decode.field(
-        "source_topics",
-        decode.list(decode.string),
-      )
-      decode.success(Requirement(
-        topic:,
-        description:,
-        feature_topic: Topic(id: feature_topic_id),
-        author_id:,
-        created_at:,
-        source_topics: list.map(source_topic_ids, Topic),
-      ))
-    }
     "CommentTopic" -> {
+      use scope <- decode.field("scope", scope_decoder())
       use author_id <- decode.field("author_id", decode.int)
       use comment_type <- decode.field("comment_type", comment_type_decoder())
       use target_topic_id <- decode.field("target_topic", decode.string)
@@ -878,6 +881,7 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
       ))
     }
     _ -> {
+      use scope <- decode.field("scope", scope_decoder())
       use kind <- decode.then(unnamed_topic_kind_decoder())
       use context <- decode.optional_field(
         "context",
@@ -1847,24 +1851,24 @@ pub fn with_conversation(
 
 // --- Documentation: FFI Declarations ---
 
-@external(javascript, "./mem_ffi.mjs", "set_topic_features_promise")
-fn set_topic_features_promise(
+@external(javascript, "./mem_ffi.mjs", "set_topic_requirements_promise")
+fn set_topic_requirements_promise(
   topic_id: String,
   promise: promise.Promise(Result(List(String), snag.Snag)),
 ) -> Nil
 
-@external(javascript, "./mem_ffi.mjs", "get_topic_features_promise")
-fn read_topic_features_promise(
+@external(javascript, "./mem_ffi.mjs", "get_topic_requirements_promise")
+fn read_topic_requirements_promise(
   topic_id: String,
 ) -> Result(promise.Promise(Result(List(String), snag.Snag)), Nil)
 
-@external(javascript, "./mem_ffi.mjs", "get_topic_features")
-fn read_topic_features(
+@external(javascript, "./mem_ffi.mjs", "get_topic_requirements")
+fn read_topic_requirements(
   topic_id: String,
 ) -> Result(List(String), Nil)
 
-@external(javascript, "./mem_ffi.mjs", "set_topic_features")
-fn set_topic_features(topic_id: String, val: List(String)) -> Nil
+@external(javascript, "./mem_ffi.mjs", "set_topic_requirements")
+fn set_topic_requirements(topic_id: String, val: List(String)) -> Nil
 
 @external(javascript, "./mem_ffi.mjs", "set_documentation_html_promise")
 fn set_documentation_html_promise(
@@ -1885,12 +1889,12 @@ fn set_documentation_html(key: String, val: String) -> Nil
 
 // --- Documentation: Fetch Functions ---
 
-fn fetch_topic_features(topic_id: String) {
+fn fetch_topic_requirements(topic_id: String) {
   let assert Ok(req) =
     request.to(
       "http://172.18.115.78:3000/api/v1/audits/"
       <> audit_name()
-      <> "/features/"
+      <> "/requirements/topic/"
       <> topic_id,
     )
 
@@ -1944,37 +1948,38 @@ fn fetch_documentation_html(feature_topics: List(String)) {
 
 // --- Documentation: with_* Functions ---
 
-pub fn with_topic_features(
+pub fn with_topic_requirements(
   topic_id: String,
   callback: fn(Result(List(String), snag.Snag)) -> Nil,
 ) {
-  case read_topic_features(topic_id) {
-    Ok(features) -> {
-      callback(Ok(features))
+  case read_topic_requirements(topic_id) {
+    Ok(requirements) -> {
+      callback(Ok(requirements))
       Nil
     }
     Error(_) -> {
-      let promise = case read_topic_features_promise(topic_id) {
+      let promise = case read_topic_requirements_promise(topic_id) {
         Ok(promise) -> promise
         Error(Nil) -> {
-          let promise = fetch_topic_features(topic_id)
-          set_topic_features_promise(topic_id, promise)
+          let promise = fetch_topic_requirements(topic_id)
+          set_topic_requirements_promise(topic_id, promise)
           promise
         }
       }
 
-      promise.await(promise, fn(features) {
-        case features {
-          Ok(features) -> set_topic_features(topic_id, features)
+      promise.await(promise, fn(requirements) {
+        case requirements {
+          Ok(requirements) ->
+            set_topic_requirements(topic_id, requirements)
           Error(error) ->
             snag.layer(
               error,
-              "Unable to fetch features for topic " <> topic_id,
+              "Unable to fetch requirements for topic " <> topic_id,
             )
             |> snag.line_print
             |> io.println_error
         }
-        callback(features)
+        callback(requirements)
 
         promise.resolve(Nil)
       })

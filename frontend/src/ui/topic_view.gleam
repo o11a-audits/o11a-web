@@ -664,6 +664,9 @@ fn prepare_active_view() -> Result(ActiveViewElements, Nil) {
       let _ = dromel.remove_data(elements.topic_panel, member_key)
       let _ = dromel.remove_data(elements.topic_panel, contract_key)
 
+      // Clear the documentation panel since it will be repopulated
+      dromel.set_inner_html(elements.documentation_panel, "")
+
       // Reset the token arrays since content will be replaced by fetch callbacks
       let reset_elements =
         ActiveViewElements(
@@ -866,13 +869,13 @@ fn populate_documentation_panel(
   elements: ActiveViewElements,
   topic_id: String,
 ) -> Nil {
-  audit_data.with_topic_features(topic_id, fn(result) {
+  audit_data.with_topic_requirements(topic_id, fn(result) {
     case result {
-      Ok(feature_topics) -> {
-        case feature_topics {
+      Ok(requirement_topics) -> {
+        case requirement_topics {
           [] -> Nil
           _ -> {
-            audit_data.with_documentation_html(feature_topics, fn(html_result) {
+            audit_data.with_documentation_html(requirement_topics, fn(html_result) {
               case html_result {
                 Ok(html) -> {
                   dromel.set_inner_html(elements.documentation_panel, html)
@@ -898,7 +901,7 @@ fn populate_documentation_panel(
         }
       }
       Error(err) -> {
-        snag.layer(err, "Failed to fetch features for topic " <> topic_id)
+        snag.layer(err, "Failed to fetch requirements for topic " <> topic_id)
         |> log.print_error
         Nil
       }

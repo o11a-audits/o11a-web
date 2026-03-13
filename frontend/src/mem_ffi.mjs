@@ -395,29 +395,29 @@ export function clear_thread_html(topic_id) {
   delete thread_html_dict[topic_id];
 }
 
-let topic_features_dict = {};
-let topic_features_promises = {};
+let topic_requirements_dict = {};
+let topic_requirements_promises = {};
 
-export function set_topic_features_promise(topic_id, promise) {
-  topic_features_promises[topic_id] = promise;
+export function set_topic_requirements_promise(topic_id, promise) {
+  topic_requirements_promises[topic_id] = promise;
 }
 
-export function get_topic_features_promise(topic_id) {
-  if (!topic_features_promises[topic_id]) {
+export function get_topic_requirements_promise(topic_id) {
+  if (!topic_requirements_promises[topic_id]) {
     return Result$Error();
   }
-  return Result$Ok(topic_features_promises[topic_id]);
+  return Result$Ok(topic_requirements_promises[topic_id]);
 }
 
-export function get_topic_features(topic_id) {
-  if (!topic_features_dict[topic_id]) {
+export function get_topic_requirements(topic_id) {
+  if (!topic_requirements_dict[topic_id]) {
     return Result$Error();
   }
-  return Result$Ok(topic_features_dict[topic_id]);
+  return Result$Ok(topic_requirements_dict[topic_id]);
 }
 
-export function set_topic_features(topic_id, val) {
-  topic_features_dict[topic_id] = val;
+export function set_topic_requirements(topic_id, val) {
+  topic_requirements_dict[topic_id] = val;
 }
 
 let documentation_html_dict = {};
