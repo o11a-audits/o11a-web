@@ -1197,10 +1197,17 @@ pub fn handle_topic_view_keydown(event) {
       event.prevent_default(event)
       case panel {
         history_graph.DocumentationPanel -> {
-          let next = history_graph.ConversationPanel
-          gather_tokens_for_panel(container, next)
-          set_active_panel(container, next)
-          focus_current_token(container, next)
+          gather_tokens_for_panel(container, history_graph.ConversationPanel)
+          case panel_has_tokens(history_graph.ConversationPanel) {
+            True -> {
+              set_active_panel(container, history_graph.ConversationPanel)
+              focus_current_token(container, history_graph.ConversationPanel)
+            }
+            False -> {
+              set_active_panel(container, history_graph.TopicPanel)
+              focus_current_token(container, history_graph.TopicPanel)
+            }
+          }
         }
         history_graph.ConversationPanel -> {
           let next = history_graph.TopicPanel
@@ -1208,10 +1215,14 @@ pub fn handle_topic_view_keydown(event) {
           focus_current_token(container, next)
         }
         history_graph.TopicPanel -> {
-          let next = history_graph.ReferencesPanel
-          gather_tokens_for_panel(container, next)
-          set_active_panel(container, next)
-          focus_current_token(container, next)
+          gather_tokens_for_panel(container, history_graph.ReferencesPanel)
+          case panel_has_tokens(history_graph.ReferencesPanel) {
+            True -> {
+              set_active_panel(container, history_graph.ReferencesPanel)
+              focus_current_token(container, history_graph.ReferencesPanel)
+            }
+            False -> Nil
+          }
         }
         history_graph.ReferencesPanel -> Nil
       }
@@ -1226,16 +1237,42 @@ pub fn handle_topic_view_keydown(event) {
           focus_current_token(container, next)
         }
         history_graph.TopicPanel -> {
-          let next = history_graph.ConversationPanel
-          gather_tokens_for_panel(container, next)
-          set_active_panel(container, next)
-          focus_current_token(container, next)
+          gather_tokens_for_panel(container, history_graph.ConversationPanel)
+          case panel_has_tokens(history_graph.ConversationPanel) {
+            True -> {
+              set_active_panel(container, history_graph.ConversationPanel)
+              focus_current_token(container, history_graph.ConversationPanel)
+            }
+            False -> {
+              gather_tokens_for_panel(
+                container,
+                history_graph.DocumentationPanel,
+              )
+              case panel_has_tokens(history_graph.DocumentationPanel) {
+                True -> {
+                  set_active_panel(
+                    container,
+                    history_graph.DocumentationPanel,
+                  )
+                  focus_current_token(
+                    container,
+                    history_graph.DocumentationPanel,
+                  )
+                }
+                False -> Nil
+              }
+            }
+          }
         }
         history_graph.ConversationPanel -> {
-          let next = history_graph.DocumentationPanel
-          gather_tokens_for_panel(container, next)
-          set_active_panel(container, next)
-          focus_current_token(container, next)
+          gather_tokens_for_panel(container, history_graph.DocumentationPanel)
+          case panel_has_tokens(history_graph.DocumentationPanel) {
+            True -> {
+              set_active_panel(container, history_graph.DocumentationPanel)
+              focus_current_token(container, history_graph.DocumentationPanel)
+            }
+            False -> Nil
+          }
         }
         history_graph.DocumentationPanel -> Nil
       }
@@ -1714,6 +1751,14 @@ fn gather_tokens_for_panel(
       Nil
     }
     Error(Nil) -> Nil
+  }
+}
+
+/// Check if a panel has any focusable tokens after gathering them
+fn panel_has_tokens(panel: ActivePanel) -> Bool {
+  case get_active_view_elements() {
+    Ok(elements) -> array.size(get_panel_tokens(elements, panel)) > 0
+    Error(Nil) -> False
   }
 }
 
