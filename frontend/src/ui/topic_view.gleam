@@ -875,27 +875,30 @@ fn populate_documentation_panel(
         case requirement_topics {
           [] -> Nil
           _ -> {
-            audit_data.with_documentation_html(requirement_topics, fn(html_result) {
-              case html_result {
-                Ok(html) -> {
-                  dromel.set_inner_html(elements.documentation_panel, html)
-                  gather_tokens_for_panel(
-                    container,
-                    history_graph.DocumentationPanel,
-                  )
-                  Nil
+            audit_data.with_documentation_html(
+              requirement_topics,
+              fn(html_result) {
+                case html_result {
+                  Ok(html) -> {
+                    dromel.set_inner_html(elements.documentation_panel, html)
+                    gather_tokens_for_panel(
+                      container,
+                      history_graph.DocumentationPanel,
+                    )
+                    Nil
+                  }
+                  Error(err) -> {
+                    snag.layer(
+                      err,
+                      "Failed to fetch documentation HTML for topic "
+                        <> topic_id,
+                    )
+                    |> log.print_error
+                    Nil
+                  }
                 }
-                Error(err) -> {
-                  snag.layer(
-                    err,
-                    "Failed to fetch documentation HTML for topic "
-                      <> topic_id,
-                  )
-                  |> log.print_error
-                  Nil
-                }
-              }
-            })
+              },
+            )
             Nil
           }
         }
@@ -938,10 +941,7 @@ fn populate_conversation_panel(
                 Nil
               }
               Error(err) -> {
-                snag.layer(
-                  err,
-                  "Failed to fetch thread for " <> entry.topic_id,
-                )
+                snag.layer(err, "Failed to fetch thread for " <> entry.topic_id)
                 |> log.print_error
                 Nil
               }
@@ -1250,10 +1250,7 @@ pub fn handle_topic_view_keydown(event) {
               )
               case panel_has_tokens(history_graph.DocumentationPanel) {
                 True -> {
-                  set_active_panel(
-                    container,
-                    history_graph.DocumentationPanel,
-                  )
+                  set_active_panel(container, history_graph.DocumentationPanel)
                   focus_current_token(
                     container,
                     history_graph.DocumentationPanel,

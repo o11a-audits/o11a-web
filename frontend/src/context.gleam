@@ -4,6 +4,7 @@ pub type Context {
   Default
   ContractsModal
   DocumentsModal
+  FeaturesModal
   Input
 }
 

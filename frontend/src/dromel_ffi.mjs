@@ -56,3 +56,7 @@ export function remove_attribute(element, attribute) {
   element.removeAttribute(attribute);
   return element;
 }
+
+export function scroll_into_view(element) {
+  element.scrollIntoView({ block: "nearest" });
+}

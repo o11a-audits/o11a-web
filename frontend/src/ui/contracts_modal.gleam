@@ -254,6 +254,11 @@ fn render_contract_list(
         let _ = item |> dromel.append_child(name_container)
         let _ = list_container |> dromel.append_child(item)
 
+        case is_selected {
+          True -> dromel.scroll_into_view(item)
+          False -> Nil
+        }
+
         item
       })
       |> list.each(fn(_) { Nil })

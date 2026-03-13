@@ -342,3 +342,6 @@ pub fn client_width(elem: Element) -> Int
 
 @external(javascript, "./dromel_ffi.mjs", "scroll_width")
 pub fn scroll_width(elem: Element) -> Int
+
+@external(javascript, "./dromel_ffi.mjs", "scroll_into_view")
+pub fn scroll_into_view(elem: Element) -> Nil

@@ -10,6 +10,7 @@ import plinth/browser/window
 import snag
 import ui/contracts_modal
 import ui/documents_modal
+import ui/features_modal
 import ui/elements
 import ui/topic_view
 
@@ -95,6 +96,61 @@ pub fn prefetch_hot_data() {
     }
   })
 
+  // Prefetch features and their requirements' source text
+  audit_data.with_audit_features(fn(features) {
+    case features {
+      Error(snag) ->
+        snag.layer(snag, "Unable to fetch audit features")
+        |> snag.line_print
+        |> io.println_error
+
+      Ok(features) -> {
+        list.each(features, fn(feature) {
+          // Prefetch the feature's own source text
+          audit_data.with_source_text(feature.topic, fn(source_text) {
+            case source_text {
+              Error(snag) ->
+                snag.layer(
+                  snag,
+                  "Unable to fetch source text for topic "
+                    <> feature.topic.id,
+                )
+                |> snag.line_print
+                |> io.println_error
+
+              Ok(_text) -> Nil
+            }
+          })
+
+          // Prefetch each requirement's source text
+          let requirement_topics = case feature {
+            audit_data.Feature(requirement_topics:, ..) -> requirement_topics
+            _ -> []
+          }
+
+          list.each(requirement_topics, fn(req_topic) {
+            audit_data.with_source_text(req_topic, fn(source_text) {
+              case source_text {
+                Error(snag) ->
+                  snag.layer(
+                    snag,
+                    "Unable to fetch source text for topic "
+                      <> req_topic.id,
+                  )
+                  |> snag.line_print
+                  |> io.println_error
+
+                Ok(_text) -> Nil
+              }
+            })
+          })
+        })
+
+        Nil
+      }
+    }
+  })
+
   // Prefetch documentation
   audit_data.with_audit_documents(fn(documents) {
     case documents {
@@ -158,6 +214,11 @@ fn handle_window_keydown(event) {
       event.prevent_default(event)
       event.stop_propagation(event)
       documents_modal.open()
+    }
+    context.Default, "f", _, _ -> {
+      event.prevent_default(event)
+      event.stop_propagation(event)
+      features_modal.open()
     }
     context.Default, _, _, _ -> topic_view.handle_topic_view_keydown(event)
     _, _, _, _ -> Nil

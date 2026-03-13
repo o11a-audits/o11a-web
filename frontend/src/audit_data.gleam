@@ -1052,6 +1052,78 @@ pub fn with_audit_documents(callback) {
   }
 }
 
+@external(javascript, "./mem_ffi.mjs", "set_features_promise")
+fn set_features_promise(
+  promise: promise.Promise(Result(List(TopicMetadata), snag.Snag)),
+) -> Nil
+
+@external(javascript, "./mem_ffi.mjs", "get_features_promise")
+fn read_features_promise() -> Result(
+  promise.Promise(Result(List(TopicMetadata), snag.Snag)),
+  Nil,
+)
+
+@external(javascript, "./mem_ffi.mjs", "get_features")
+fn read_features() -> Result(List(TopicMetadata), snag.Snag)
+
+@external(javascript, "./mem_ffi.mjs", "set_features")
+fn set_features(features: List(TopicMetadata)) -> Nil
+
+fn fetch_audit_features() {
+  let assert Ok(req) =
+    request.to(
+      "http://172.18.115.78:3000/api/v1/audits/" <> audit_name() <> "/features",
+    )
+
+  use resp <- promise.try_await(
+    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
+  )
+  use resp <- promise.try_await(
+    fetch.read_json_body(resp)
+    |> promise.map(snag.map_error(_, string.inspect)),
+  )
+
+  let features =
+    decode.run(resp.body, decode.list(topic_metadata_decoder()))
+    |> snag.map_error(string.inspect)
+
+  promise.resolve(features)
+}
+
+pub fn with_audit_features(callback) {
+  case read_features() {
+    Ok(features) -> {
+      callback(Ok(features))
+      Nil
+    }
+    Error(_) -> {
+      let promise = case read_features_promise() {
+        Ok(promise) -> promise
+        Error(Nil) -> {
+          let promise = fetch_audit_features()
+          set_features_promise(promise)
+          promise
+        }
+      }
+
+      promise.await(promise, fn(features) {
+        case features {
+          Ok(features) -> set_features(features)
+          Error(error) ->
+            snag.layer(error, "Unable to fetch features")
+            |> snag.line_print
+            |> io.println_error
+        }
+        callback(features)
+
+        promise.resolve(Nil)
+      })
+
+      Nil
+    }
+  }
+}
+
 @external(javascript, "./mem_ffi.mjs", "set_source_text_promise")
 fn set_source_text_promise(
   topic_id: String,

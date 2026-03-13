@@ -99,6 +99,32 @@ export function get_documents() {
   return Result$Ok(documents);
 }
 
+let features_promise;
+
+export function set_features_promise(promise) {
+  features_promise = promise;
+}
+
+export function get_features_promise() {
+  if (!features_promise) {
+    return Result$Error();
+  }
+  return Result$Ok(features_promise);
+}
+
+let features;
+
+export function set_features(val) {
+  features = val;
+}
+
+export function get_features() {
+  if (!features) {
+    return Result$Error();
+  }
+  return Result$Ok(features);
+}
+
 let source_text_dict = {};
 
 let source_text_promises = {};
@@ -188,6 +214,23 @@ export function get_documents_modal_state() {
 
 export function set_documents_modal_state(state) {
   documents_modal_state = state;
+}
+
+// =============================================================================
+// Features Modal
+// =============================================================================
+
+let features_modal_state = null;
+
+export function get_features_modal_state() {
+  if (!features_modal_state) {
+    return Result$Error();
+  }
+  return Result$Ok(features_modal_state);
+}
+
+export function set_features_modal_state(state) {
+  features_modal_state = state;
 }
 
 let context = null;
