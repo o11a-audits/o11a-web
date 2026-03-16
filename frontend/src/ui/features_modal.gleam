@@ -243,6 +243,130 @@ fn render_feature_list(
 // Preview Loading with Race Condition Protection
 // ============================================================================
 
+fn load_child_source_texts(
+  right_pane: element.Element,
+  parent_topic_id: String,
+  child_ids: List(String),
+) -> Nil {
+  list.each(child_ids, fn(child_id) {
+    let separator =
+      dromel.new_div()
+      |> dromel.set_style(
+        "border-top: 1px dashed var(--color-body-border); margin: 1rem 0;",
+      )
+
+    let section =
+      dromel.new_div()
+      |> dromel.set_inner_html("Loading...")
+
+    let _ = right_pane |> dromel.append_child(separator)
+    let _ = right_pane |> dromel.append_child(section)
+
+    audit_data.with_source_text(
+      audit_data.Topic(id: child_id),
+      fn(result) {
+        case get_features_modal_state() {
+          Ok(s) -> {
+            case s.current_preview_topic_id {
+              Some(cid) if cid == parent_topic_id -> {
+                case result {
+                  Ok(text) -> {
+                    dromel.set_inner_html(section, text)
+                    Nil
+                  }
+                  Error(error) -> {
+                    dromel.set_inner_html(
+                      section,
+                      log.render_source_error(error),
+                    )
+                    Nil
+                  }
+                }
+              }
+              _ -> Nil
+            }
+          }
+          Error(_) -> Nil
+        }
+      },
+    )
+  })
+}
+
+fn load_threat_with_invariants(
+  right_pane: element.Element,
+  parent_topic_id: String,
+  threat_id: String,
+) -> Nil {
+  // Add separator and container for threat
+  let separator =
+    dromel.new_div()
+    |> dromel.set_style(
+      "border-top: 1px dashed var(--color-body-border); margin: 1rem 0;",
+    )
+
+  let threat_container =
+    dromel.new_div()
+
+  let threat_section =
+    dromel.new_div()
+    |> dromel.set_inner_html("Loading...")
+
+  let _ = right_pane |> dromel.append_child(separator)
+  let _ = right_pane |> dromel.append_child(threat_container)
+  let _ = threat_container |> dromel.append_child(threat_section)
+
+  // Load the threat's source text
+  audit_data.with_source_text(
+    audit_data.Topic(id: threat_id),
+    fn(result) {
+      case get_features_modal_state() {
+        Ok(s) -> {
+          case s.current_preview_topic_id {
+            Some(cid) if cid == parent_topic_id -> {
+              case result {
+                Ok(text) -> {
+                  dromel.set_inner_html(threat_section, text)
+                  Nil
+                }
+                Error(error) -> {
+                  dromel.set_inner_html(
+                    threat_section,
+                    log.render_source_error(error),
+                  )
+                  Nil
+                }
+              }
+            }
+            _ -> Nil
+          }
+        }
+        Error(_) -> Nil
+      }
+    },
+  )
+
+  // Load invariants nested under this threat
+  audit_data.with_threat_invariants(threat_id, fn(inv_result) {
+    case inv_result {
+      Ok(inv_ids) -> {
+        let invariants_wrapper =
+          dromel.new_div()
+          |> dromel.set_attribute("class", "indent")
+
+        let _ = threat_container |> dromel.append_child(invariants_wrapper)
+
+        load_child_source_texts(
+          invariants_wrapper,
+          parent_topic_id,
+          inv_ids,
+        )
+      }
+      Error(_) -> Nil
+    }
+  })
+}
+
 fn load_preview(feature: audit_data.TopicMetadata) -> Nil {
   case get_features_modal_state() {
     Ok(state) -> {
@@ -274,59 +398,39 @@ fn load_preview(feature: audit_data.TopicMetadata) -> Nil {
                   current_state.right_pane
                   |> dromel.append_child(feature_section)
 
-                // Now load each requirement's source text
-                let requirement_topics = case feature {
-                  audit_data.Feature(requirement_topics:, ..) ->
-                    requirement_topics
-                  _ -> []
-                }
-
-                list.each(requirement_topics, fn(req_topic) {
-                  // Create a placeholder for each requirement
-                  let separator =
-                    dromel.new_div()
-                    |> dromel.set_style(
-                      "border-top: 1px dashed var(--color-body-border); margin: 1rem 0;",
-                    )
-
-                  let req_section =
-                    dromel.new_div()
-                    |> dromel.set_inner_html("Loading...")
-
-                  let _ =
-                    current_state.right_pane
-                    |> dromel.append_child(separator)
-                  let _ =
-                    current_state.right_pane
-                    |> dromel.append_child(req_section)
-
-                  audit_data.with_source_text(req_topic, fn(req_result) {
-                    // Check we're still on the same preview
-                    case get_features_modal_state() {
-                      Ok(s) -> {
-                        case s.current_preview_topic_id {
-                          Some(cid) if cid == topic_id -> {
-                            case req_result {
-                              Ok(text) -> {
-                                dromel.set_inner_html(req_section, text)
-                                Nil
-                              }
-                              Error(error) -> {
-                                dromel.set_inner_html(
-                                  req_section,
-                                  log.render_source_error(error),
-                                )
-                                Nil
-                              }
-                            }
-                          }
-                          _ -> Nil
-                        }
-                      }
+                // Fetch requirement IDs and load their source text
+                audit_data.with_feature_requirements(
+                  topic_id,
+                  fn(req_result) {
+                    case req_result {
+                      Ok(req_ids) ->
+                        load_child_source_texts(
+                          current_state.right_pane,
+                          topic_id,
+                          req_ids,
+                        )
                       Error(_) -> Nil
                     }
-                  })
-                })
+                  },
+                )
+
+                // Fetch threat IDs and load each with nested invariants
+                audit_data.with_feature_threats(
+                  topic_id,
+                  fn(threat_result) {
+                    case threat_result {
+                      Ok(threat_ids) ->
+                        list.each(threat_ids, fn(threat_id) {
+                          load_threat_with_invariants(
+                            current_state.right_pane,
+                            topic_id,
+                            threat_id,
+                          )
+                        })
+                      Error(_) -> Nil
+                    }
+                  },
+                )
 
                 Nil
               }

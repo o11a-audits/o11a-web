@@ -463,6 +463,81 @@ export function set_topic_requirements(topic_id, val) {
   topic_requirements_dict[topic_id] = val;
 }
 
+let feature_requirements_dict = {};
+let feature_requirements_promises = {};
+
+export function set_feature_requirements_promise(feature_id, promise) {
+  feature_requirements_promises[feature_id] = promise;
+}
+
+export function get_feature_requirements_promise(feature_id) {
+  if (!feature_requirements_promises[feature_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(feature_requirements_promises[feature_id]);
+}
+
+export function get_feature_requirements(feature_id) {
+  if (!feature_requirements_dict[feature_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(feature_requirements_dict[feature_id]);
+}
+
+export function set_feature_requirements(feature_id, val) {
+  feature_requirements_dict[feature_id] = val;
+}
+
+let feature_threats_dict = {};
+let feature_threats_promises = {};
+
+export function set_feature_threats_promise(feature_id, promise) {
+  feature_threats_promises[feature_id] = promise;
+}
+
+export function get_feature_threats_promise(feature_id) {
+  if (!feature_threats_promises[feature_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(feature_threats_promises[feature_id]);
+}
+
+export function get_feature_threats(feature_id) {
+  if (!feature_threats_dict[feature_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(feature_threats_dict[feature_id]);
+}
+
+export function set_feature_threats(feature_id, val) {
+  feature_threats_dict[feature_id] = val;
+}
+
+let threat_invariants_dict = {};
+let threat_invariants_promises = {};
+
+export function set_threat_invariants_promise(threat_id, promise) {
+  threat_invariants_promises[threat_id] = promise;
+}
+
+export function get_threat_invariants_promise(threat_id) {
+  if (!threat_invariants_promises[threat_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(threat_invariants_promises[threat_id]);
+}
+
+export function get_threat_invariants(threat_id) {
+  if (!threat_invariants_dict[threat_id]) {
+    return Result$Error();
+  }
+  return Result$Ok(threat_invariants_dict[threat_id]);
+}
+
+export function set_threat_invariants(threat_id, val) {
+  threat_invariants_dict[threat_id] = val;
+}
+
 let documentation_html_dict = {};
 let documentation_html_promises = {};
 

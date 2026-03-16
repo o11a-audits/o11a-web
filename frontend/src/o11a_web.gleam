@@ -64,6 +64,25 @@ pub fn mount_history_container() {
   Ok(Nil)
 }
 
+fn prefetch_source_text(topic_id: String) -> Nil {
+  audit_data.with_source_text(
+    audit_data.Topic(id: topic_id),
+    fn(source_text) {
+      case source_text {
+        Error(snag) ->
+          snag.layer(
+            snag,
+            "Unable to fetch source text for topic " <> topic_id,
+          )
+          |> snag.line_print
+          |> io.println_error
+
+        Ok(_text) -> Nil
+      }
+    },
+  )
+}
+
 pub fn prefetch_hot_data() {
   // Prefetch audit contracts
   audit_data.with_audit_contracts(fn(contracts) {
@@ -122,28 +141,46 @@ pub fn prefetch_hot_data() {
             }
           })
 
-          // Prefetch each requirement's source text
-          let requirement_topics = case feature {
-            audit_data.Feature(requirement_topics:, ..) -> requirement_topics
-            _ -> []
-          }
-
-          list.each(requirement_topics, fn(req_topic) {
-            audit_data.with_source_text(req_topic, fn(source_text) {
-              case source_text {
-                Error(snag) ->
-                  snag.layer(
-                    snag,
-                    "Unable to fetch source text for topic "
-                      <> req_topic.id,
-                  )
-                  |> snag.line_print
-                  |> io.println_error
-
-                Ok(_text) -> Nil
+          // Prefetch requirement IDs and their source text
+          audit_data.with_feature_requirements(
+            feature.topic.id,
+            fn(req_result) {
+              case req_result {
+                Ok(req_ids) ->
+                  list.each(req_ids, fn(req_id) {
+                    prefetch_source_text(req_id)
+                  })
+                Error(_) -> Nil
               }
-            })
-          })
+            },
+          )
+
+          // Prefetch threat IDs, their source text, and their invariants
+          audit_data.with_feature_threats(
+            feature.topic.id,
+            fn(threat_result) {
+              case threat_result {
+                Ok(threat_ids) ->
+                  list.each(threat_ids, fn(threat_id) {
+                    prefetch_source_text(threat_id)
+
+                    audit_data.with_threat_invariants(
+                      threat_id,
+                      fn(inv_result) {
+                        case inv_result {
+                          Ok(inv_ids) ->
+                            list.each(inv_ids, fn(inv_id) {
+                              prefetch_source_text(inv_id)
+                            })
+                          Error(_) -> Nil
+                        }
+                      },
+                    )
+                  })
+                Error(_) -> Nil
+              }
+            },
+          )
         })
 
         Nil

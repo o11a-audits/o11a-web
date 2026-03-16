@@ -168,7 +168,9 @@ fn get_document_name(document: audit_data.TopicMetadata) -> String {
     audit_data.Feature(name:, ..) -> name
     audit_data.ControlFlow(topic:, ..)
     | audit_data.CommentTopic(topic:, ..)
-    | audit_data.Requirement(topic:, ..) ->
+    | audit_data.Requirement(topic:, ..)
+    | audit_data.Threat(topic:, ..)
+    | audit_data.Invariant(topic:, ..) ->
       topic.id
   }
 }
