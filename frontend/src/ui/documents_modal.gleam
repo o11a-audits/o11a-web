@@ -158,20 +158,19 @@ fn mount_documents_modal(container: element.Element) -> Nil {
 
 fn get_document_name(document: audit_data.TopicMetadata) -> String {
   case document {
-    audit_data.NamedTopic(name:, ..) -> name
+    audit_data.NamedTopic(name:, ..) | audit_data.Feature(name:, ..) -> name
     audit_data.TitledTopic(title:, ..) -> title
-    audit_data.UnnamedTopic(scope:, ..) ->
+    audit_data.UnnamedTopic(topic:, ..)
+    | audit_data.ControlFlow(topic:, ..)
+    | audit_data.CommentTopic(topic:, ..)
+    | audit_data.Requirement(topic:, ..)
+    | audit_data.Threat(topic:, ..)
+    | audit_data.Invariant(topic:, ..) -> topic.id
+    audit_data.Documentation(scope:, ..) ->
       case scope {
         audit_data.Container(container:) -> container
         _ -> audit_data.topic_metadata_name(document)
       }
-    audit_data.Feature(name:, ..) -> name
-    audit_data.ControlFlow(topic:, ..)
-    | audit_data.CommentTopic(topic:, ..)
-    | audit_data.Requirement(topic:, ..)
-    | audit_data.Threat(topic:, ..)
-    | audit_data.Invariant(topic:, ..) ->
-      topic.id
   }
 }
 
@@ -219,13 +218,19 @@ fn render_document_list(
             "display: flex; align-items: center; gap: 0.5rem;",
           )
 
-        // Use a document icon
+        // Use a more technical icon for technical documents
+        let icon_svg = case document {
+          audit_data.Documentation(is_technical: True, ..) ->
+            icons.file_terminal
+          _ -> icons.file_text
+        }
+
         let icon_container =
           dromel.new_span()
           |> dromel.set_style(
             "display: flex; align-items: center; flex-shrink: 0;",
           )
-          |> dromel.set_inner_html(icons.file_text)
+          |> dromel.set_inner_html(icon_svg)
 
         // Get name from metadata and highlight matching search term
         let document_name = get_document_name(document)
