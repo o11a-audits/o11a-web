@@ -385,7 +385,6 @@ pub type UnnamedTopicKind {
   Reference
   MutableReference
   Signature
-  DocumentationRoot
   DocumentationHeading
   DocumentationParagraph
   DocumentationSentence
@@ -594,8 +593,7 @@ fn unnamed_topic_kind_decoder() -> decode.Decoder(UnnamedTopicKind) {
     "Reference" -> decode.success(Reference)
     "MutableReference" -> decode.success(MutableReference)
     "Signature" -> decode.success(Signature)
-    "DocumentationRoot" -> decode.success(DocumentationRoot)
-    "DocumentationHeading" -> decode.success(DocumentationHeading)
+"DocumentationHeading" -> decode.success(DocumentationHeading)
     "DocumentationParagraph" -> decode.success(DocumentationParagraph)
     "DocumentationSentence" -> decode.success(DocumentationSentence)
     "DocumentationCodeBlock" -> decode.success(DocumentationCodeBlock)
@@ -626,42 +624,31 @@ pub type TopicMetadata {
   NamedTopic(
     topic: Topic,
     scope: Scope,
-    context: List(SourceContext),
     kind: NamedTopicKind,
     name: String,
     visibility: NamedTopicVisibility,
-    expanded_context: List(SourceContext),
-    ancestry: List(SourceContext),
     is_mutable: Bool,
     mutations: List(Topic),
     ancestors: List(Topic),
     descendants: List(Topic),
     relatives: List(Topic),
   )
-  UnnamedTopic(
-    topic: Topic,
-    scope: Scope,
-    context: List(SourceContext),
-    kind: UnnamedTopicKind,
-  )
+  UnnamedTopic(topic: Topic, scope: Scope, kind: UnnamedTopicKind)
   ControlFlow(
     topic: Topic,
     scope: Scope,
-    context: List(SourceContext),
     kind: ControlFlowStatementKind,
     condition: Topic,
   )
   TitledTopic(
     topic: Topic,
     scope: Scope,
-    context: List(SourceContext),
     kind: TitledTopicKind,
     title: String,
   )
   CommentTopic(
     topic: Topic,
     scope: Scope,
-    context: List(SourceContext),
     author_id: Int,
     comment_type: CommentType,
     target_topic: Topic,
@@ -698,6 +685,7 @@ pub type TopicMetadata {
     created_at: String,
     severity: String,
   )
+  Documentation(topic: Topic, scope: Scope, is_technical: Bool)
 }
 
 pub type ConversationEntryKind {
@@ -801,18 +789,6 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
       use name <- decode.field("name", decode.string)
       use kind <- decode.then(named_topic_kind_decoder())
       use visibility <- decode.then(named_topic_visibility_decoder())
-      use context <- decode.field(
-        "context",
-        decode.list(source_context_decoder()),
-      )
-      use expanded_context <- decode.field(
-        "expanded_context",
-        decode.list(source_context_decoder()),
-      )
-      use ancestry <- decode.field(
-        "ancestry",
-        decode.list(source_context_decoder()),
-      )
       use mutation_ids <- decode.optional_field(
         "mutations",
         [],
@@ -834,9 +810,6 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         kind:,
         name:,
         visibility:,
-        context:,
-        expanded_context:,
-        ancestry:,
         is_mutable:,
         mutations: list.map(mutation_ids, Topic),
         ancestors: list.map(ancestor_ids, Topic),
@@ -848,26 +821,15 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
       use scope <- decode.field("scope", scope_decoder())
       use title <- decode.field("title", decode.string)
       use kind <- decode.then(titled_topic_kind_decoder())
-      use context <- decode.optional_field(
-        "context",
-        [],
-        decode.list(source_context_decoder()),
-      )
-      decode.success(TitledTopic(topic:, scope:, context:, kind:, title:))
+      decode.success(TitledTopic(topic:, scope:, kind:, title:))
     }
     "control_flow" -> {
       use scope <- decode.field("scope", scope_decoder())
       use kind <- decode.then(control_flow_statement_kind_decoder())
       use condition_id <- decode.field("condition", decode.string)
-      use context <- decode.optional_field(
-        "context",
-        [],
-        decode.list(source_context_decoder()),
-      )
       decode.success(ControlFlow(
         topic:,
         scope:,
-        context:,
         kind:,
         condition: Topic(id: condition_id),
       ))
@@ -882,15 +844,9 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         "mentioned_topics",
         decode.list(decode.string),
       )
-      use context <- decode.optional_field(
-        "context",
-        [],
-        decode.list(source_context_decoder()),
-      )
       decode.success(CommentTopic(
         topic:,
         scope:,
-        context:,
         author_id:,
         comment_type:,
         target_topic: Topic(id: target_topic_id),
@@ -898,15 +854,15 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         mentioned_topics: list.map(mentioned_topic_ids, Topic),
       ))
     }
+    "documentation" -> {
+      use scope <- decode.field("scope", scope_decoder())
+      use is_technical <- decode.field("is_technical", decode.bool)
+      decode.success(Documentation(topic:, scope:, is_technical:))
+    }
     _ -> {
       use scope <- decode.field("scope", scope_decoder())
       use kind <- decode.then(unnamed_topic_kind_decoder())
-      use context <- decode.optional_field(
-        "context",
-        [],
-        decode.list(source_context_decoder()),
-      )
-      decode.success(UnnamedTopic(topic:, scope:, context:, kind:))
+      decode.success(UnnamedTopic(topic:, scope:, kind:))
     }
   }
 }
@@ -922,6 +878,7 @@ pub fn topic_metadata_name(metadata: TopicMetadata) -> String {
     Requirement(topic:, ..) -> topic.id
     Threat(topic:, ..) -> topic.id
     Invariant(topic:, ..) -> topic.id
+    Documentation(topic:, ..) -> topic.id
   }
 }
 
