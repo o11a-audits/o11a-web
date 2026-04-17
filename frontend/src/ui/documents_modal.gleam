@@ -164,8 +164,7 @@ fn get_document_name(document: audit_data.TopicMetadata) -> String {
     | audit_data.ControlFlow(topic:, ..)
     | audit_data.CommentTopic(topic:, ..)
     | audit_data.Requirement(topic:, ..)
-    | audit_data.Threat(topic:, ..)
-    | audit_data.Invariant(topic:, ..) -> topic.id
+    | audit_data.Behavior(topic:, ..) -> topic.id
     audit_data.Documentation(scope:, ..) ->
       case scope {
         audit_data.Container(container:) -> container

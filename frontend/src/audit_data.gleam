@@ -669,37 +669,41 @@ pub type TopicMetadata {
     author_id: Int,
     created_at: String,
   )
-  Threat(
+  Behavior(
     topic: Topic,
     description: String,
-    feature_topic: Topic,
+    member_topic: Topic,
     author_id: Int,
     created_at: String,
-    severity: String,
-  )
-  Invariant(
-    topic: Topic,
-    description: String,
-    threat_topic: Topic,
-    author_id: Int,
-    created_at: String,
-    severity: String,
   )
   Documentation(topic: Topic, scope: Scope, is_technical: Bool)
 }
 
 pub type ConversationEntryKind {
+  FunctionalSemanticsEntry
+  FunctionalPurposeEntry
+  BehaviorEntry
+  RequirementEntry
   CommentEntry
   MentionEntry
 }
 
 pub type ConversationEntry {
-  ConversationEntry(topic_id: String, kind: ConversationEntryKind, html: String)
+  ConversationEntry(
+    topic_id: String,
+    kind: ConversationEntryKind,
+    created_at: String,
+    html: String,
+  )
 }
 
 fn conversation_entry_kind_decoder() -> decode.Decoder(ConversationEntryKind) {
   use kind_str <- decode.then(decode.string)
   case kind_str {
+    "functional_semantics" -> decode.success(FunctionalSemanticsEntry)
+    "functional_purpose" -> decode.success(FunctionalPurposeEntry)
+    "behavior" -> decode.success(BehaviorEntry)
+    "requirement" -> decode.success(RequirementEntry)
     "comment" -> decode.success(CommentEntry)
     "mention" -> decode.success(MentionEntry)
     _ -> decode.failure(CommentEntry, "ConversationEntryKind")
@@ -709,8 +713,9 @@ fn conversation_entry_kind_decoder() -> decode.Decoder(ConversationEntryKind) {
 fn conversation_entry_decoder() -> decode.Decoder(ConversationEntry) {
   use topic_id <- decode.field("topic_id", decode.string)
   use kind <- decode.field("kind", conversation_entry_kind_decoder())
+  use created_at <- decode.field("created_at", decode.string)
   use html <- decode.field("html", decode.string)
-  decode.success(ConversationEntry(topic_id:, kind:, html:))
+  decode.success(ConversationEntry(topic_id:, kind:, created_at:, html:))
 }
 
 fn conversation_response_decoder() -> decode.Decoder(List(ConversationEntry)) {
@@ -754,34 +759,17 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
         created_at:,
       ))
     }
-    "threat" -> {
+    "behavior" -> {
       use description <- decode.field("description", decode.string)
-      use feature_topic_id <- decode.field("feature_topic", decode.string)
+      use member_topic_id <- decode.field("member_topic", decode.string)
       use author_id <- decode.field("author_id", decode.int)
       use created_at <- decode.field("created_at", decode.string)
-      use severity <- decode.field("severity", decode.string)
-      decode.success(Threat(
+      decode.success(Behavior(
         topic:,
         description:,
-        feature_topic: Topic(id: feature_topic_id),
+        member_topic: Topic(id: member_topic_id),
         author_id:,
         created_at:,
-        severity:,
-      ))
-    }
-    "invariant" -> {
-      use description <- decode.field("description", decode.string)
-      use threat_topic_id <- decode.field("threat_topic", decode.string)
-      use author_id <- decode.field("author_id", decode.int)
-      use created_at <- decode.field("created_at", decode.string)
-      use severity <- decode.field("severity", decode.string)
-      decode.success(Invariant(
-        topic:,
-        description:,
-        threat_topic: Topic(id: threat_topic_id),
-        author_id:,
-        created_at:,
-        severity:,
       ))
     }
     "named" -> {
@@ -876,8 +864,7 @@ pub fn topic_metadata_name(metadata: TopicMetadata) -> String {
     CommentTopic(topic:, ..) -> topic.id
     Feature(name:, ..) -> name
     Requirement(topic:, ..) -> topic.id
-    Threat(topic:, ..) -> topic.id
-    Invariant(topic:, ..) -> topic.id
+    Behavior(topic:, ..) -> topic.id
     Documentation(topic:, ..) -> topic.id
   }
 }
@@ -1641,7 +1628,7 @@ fn comment_event_decoder() -> decode.Decoder(CommentEvent) {
         ConversationUpdated(
           audit_id: "",
           topic_id: "",
-          entry: ConversationEntry(topic_id: "", kind: CommentEntry, html: ""),
+          entry: ConversationEntry(topic_id: "", kind: CommentEntry, created_at: "", html: ""),
           invalidated_thread_ids: [],
         ),
         "CommentEvent",
@@ -2077,22 +2064,22 @@ fn read_feature_requirements(feature_id: String) -> Result(List(String), Nil)
 @external(javascript, "./mem_ffi.mjs", "set_feature_requirements")
 fn set_feature_requirements(feature_id: String, val: List(String)) -> Nil
 
-@external(javascript, "./mem_ffi.mjs", "set_feature_threats_promise")
-fn set_feature_threats_promise(
-  feature_id: String,
-  promise: promise.Promise(Result(List(String), snag.Snag)),
+@external(javascript, "./mem_ffi.mjs", "set_behaviors_promise")
+fn set_behaviors_promise(
+  promise: promise.Promise(Result(List(TopicMetadata), snag.Snag)),
 ) -> Nil
 
-@external(javascript, "./mem_ffi.mjs", "get_feature_threats_promise")
-fn read_feature_threats_promise(
-  feature_id: String,
-) -> Result(promise.Promise(Result(List(String), snag.Snag)), Nil)
+@external(javascript, "./mem_ffi.mjs", "get_behaviors_promise")
+fn read_behaviors_promise() -> Result(
+  promise.Promise(Result(List(TopicMetadata), snag.Snag)),
+  Nil,
+)
 
-@external(javascript, "./mem_ffi.mjs", "get_feature_threats")
-fn read_feature_threats(feature_id: String) -> Result(List(String), Nil)
+@external(javascript, "./mem_ffi.mjs", "get_behaviors")
+fn read_behaviors() -> Result(List(TopicMetadata), snag.Snag)
 
-@external(javascript, "./mem_ffi.mjs", "set_feature_threats")
-fn set_feature_threats(feature_id: String, val: List(String)) -> Nil
+@external(javascript, "./mem_ffi.mjs", "set_behaviors")
+fn set_behaviors(behaviors: List(TopicMetadata)) -> Nil
 
 // --- Feature Children: Fetch Functions ---
 
@@ -2121,14 +2108,14 @@ fn fetch_feature_requirements(feature_id: String) {
   promise.resolve(result)
 }
 
-fn fetch_feature_threats(feature_id: String) {
+// --- Behaviors: Fetch Functions ---
+
+fn fetch_audit_behaviors() {
   let assert Ok(req) =
     request.to(
       "http://172.18.115.78:3000/api/v1/audits/"
       <> audit_name()
-      <> "/features/"
-      <> feature_id
-      <> "/threats",
+      <> "/behaviors",
     )
 
   use resp <- promise.try_await(
@@ -2139,11 +2126,11 @@ fn fetch_feature_threats(feature_id: String) {
     |> promise.map(snag.map_error(_, string.inspect)),
   )
 
-  let result =
-    decode.run(resp.body, decode.list(decode.string))
+  let behaviors =
+    decode.run(resp.body, decode.list(topic_metadata_decoder()))
     |> snag.map_error(string.inspect)
 
-  promise.resolve(result)
+  promise.resolve(behaviors)
 }
 
 // --- Feature Children: with_* Functions ---
@@ -2189,37 +2176,31 @@ pub fn with_feature_requirements(
   }
 }
 
-pub fn with_feature_threats(
-  feature_id: String,
-  callback: fn(Result(List(String), snag.Snag)) -> Nil,
-) {
-  case read_feature_threats(feature_id) {
-    Ok(threats) -> {
-      callback(Ok(threats))
+pub fn with_audit_behaviors(callback) {
+  case read_behaviors() {
+    Ok(behaviors) -> {
+      callback(Ok(behaviors))
       Nil
     }
     Error(_) -> {
-      let promise = case read_feature_threats_promise(feature_id) {
+      let promise = case read_behaviors_promise() {
         Ok(promise) -> promise
         Error(Nil) -> {
-          let promise = fetch_feature_threats(feature_id)
-          set_feature_threats_promise(feature_id, promise)
+          let promise = fetch_audit_behaviors()
+          set_behaviors_promise(promise)
           promise
         }
       }
 
-      promise.await(promise, fn(threats) {
-        case threats {
-          Ok(threats) -> set_feature_threats(feature_id, threats)
+      promise.await(promise, fn(behaviors) {
+        case behaviors {
+          Ok(behaviors) -> set_behaviors(behaviors)
           Error(error) ->
-            snag.layer(
-              error,
-              "Unable to fetch threats for feature " <> feature_id,
-            )
+            snag.layer(error, "Unable to fetch behaviors")
             |> snag.line_print
             |> io.println_error
         }
-        callback(threats)
+        callback(behaviors)
 
         promise.resolve(Nil)
       })
@@ -2229,93 +2210,6 @@ pub fn with_feature_threats(
   }
 }
 
-// --- Threat Children: FFI Declarations ---
-
-@external(javascript, "./mem_ffi.mjs", "set_threat_invariants_promise")
-fn set_threat_invariants_promise(
-  threat_id: String,
-  promise: promise.Promise(Result(List(String), snag.Snag)),
-) -> Nil
-
-@external(javascript, "./mem_ffi.mjs", "get_threat_invariants_promise")
-fn read_threat_invariants_promise(
-  threat_id: String,
-) -> Result(promise.Promise(Result(List(String), snag.Snag)), Nil)
-
-@external(javascript, "./mem_ffi.mjs", "get_threat_invariants")
-fn read_threat_invariants(threat_id: String) -> Result(List(String), Nil)
-
-@external(javascript, "./mem_ffi.mjs", "set_threat_invariants")
-fn set_threat_invariants(threat_id: String, val: List(String)) -> Nil
-
-// --- Threat Children: Fetch Functions ---
-
-fn fetch_threat_invariants(threat_id: String) {
-  let assert Ok(req) =
-    request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
-      <> audit_name()
-      <> "/threats/"
-      <> threat_id
-      <> "/invariants",
-    )
-
-  use resp <- promise.try_await(
-    fetch.send(req) |> promise.map(snag.map_error(_, string.inspect)),
-  )
-  use resp <- promise.try_await(
-    fetch.read_json_body(resp)
-    |> promise.map(snag.map_error(_, string.inspect)),
-  )
-
-  let result =
-    decode.run(resp.body, decode.list(decode.string))
-    |> snag.map_error(string.inspect)
-
-  promise.resolve(result)
-}
-
-// --- Threat Children: with_* Functions ---
-
-pub fn with_threat_invariants(
-  threat_id: String,
-  callback: fn(Result(List(String), snag.Snag)) -> Nil,
-) {
-  case read_threat_invariants(threat_id) {
-    Ok(invariants) -> {
-      callback(Ok(invariants))
-      Nil
-    }
-    Error(_) -> {
-      let promise = case read_threat_invariants_promise(threat_id) {
-        Ok(promise) -> promise
-        Error(Nil) -> {
-          let promise = fetch_threat_invariants(threat_id)
-          set_threat_invariants_promise(threat_id, promise)
-          promise
-        }
-      }
-
-      promise.await(promise, fn(invariants) {
-        case invariants {
-          Ok(invariants) -> set_threat_invariants(threat_id, invariants)
-          Error(error) ->
-            snag.layer(
-              error,
-              "Unable to fetch invariants for threat " <> threat_id,
-            )
-            |> snag.line_print
-            |> io.println_error
-        }
-        callback(invariants)
-
-        promise.resolve(Nil)
-      })
-
-      Nil
-    }
-  }
-}
 
 // --- Info Comments: FFI Declarations ---
 
@@ -2350,7 +2244,7 @@ fn fetch_topic_info_comments(topic_id: String) {
                   Ok(CommentTopic(comment_type: Info, ..)) -> Ok(entry.topic_id)
                   _ -> Error(Nil)
                 }
-              MentionEntry -> Error(Nil)
+              _ -> Error(Nil)
             }
           })
         }),

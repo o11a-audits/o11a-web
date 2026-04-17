@@ -155,32 +155,6 @@ pub fn prefetch_hot_data() {
             },
           )
 
-          // Prefetch threat IDs, their source text, and their invariants
-          audit_data.with_feature_threats(
-            feature.topic.id,
-            fn(threat_result) {
-              case threat_result {
-                Ok(threat_ids) ->
-                  list.each(threat_ids, fn(threat_id) {
-                    prefetch_source_text(threat_id)
-
-                    audit_data.with_threat_invariants(
-                      threat_id,
-                      fn(inv_result) {
-                        case inv_result {
-                          Ok(inv_ids) ->
-                            list.each(inv_ids, fn(inv_id) {
-                              prefetch_source_text(inv_id)
-                            })
-                          Error(_) -> Nil
-                        }
-                      },
-                    )
-                  })
-                Error(_) -> Nil
-              }
-            },
-          )
         })
 
         Nil

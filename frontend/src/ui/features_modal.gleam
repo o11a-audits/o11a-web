@@ -293,80 +293,6 @@ fn load_child_source_texts(
   })
 }
 
-fn load_threat_with_invariants(
-  right_pane: element.Element,
-  parent_topic_id: String,
-  threat_id: String,
-) -> Nil {
-  // Add separator and container for threat
-  let separator =
-    dromel.new_div()
-    |> dromel.set_style(
-      "border-top: 1px dashed var(--color-body-border); margin: 1rem 0;",
-    )
-
-  let threat_container =
-    dromel.new_div()
-
-  let threat_section =
-    dromel.new_div()
-    |> dromel.set_inner_html("Loading...")
-
-  let _ = right_pane |> dromel.append_child(separator)
-  let _ = right_pane |> dromel.append_child(threat_container)
-  let _ = threat_container |> dromel.append_child(threat_section)
-
-  // Load the threat's source text
-  audit_data.with_source_text(
-    audit_data.Topic(id: threat_id),
-    fn(result) {
-      case get_features_modal_state() {
-        Ok(s) -> {
-          case s.current_preview_topic_id {
-            Some(cid) if cid == parent_topic_id -> {
-              case result {
-                Ok(text) -> {
-                  dromel.set_inner_html(threat_section, text)
-                  Nil
-                }
-                Error(error) -> {
-                  dromel.set_inner_html(
-                    threat_section,
-                    log.render_source_error(error),
-                  )
-                  Nil
-                }
-              }
-            }
-            _ -> Nil
-          }
-        }
-        Error(_) -> Nil
-      }
-    },
-  )
-
-  // Load invariants nested under this threat
-  audit_data.with_threat_invariants(threat_id, fn(inv_result) {
-    case inv_result {
-      Ok(inv_ids) -> {
-        let invariants_wrapper =
-          dromel.new_div()
-          |> dromel.set_attribute("class", "indent")
-
-        let _ = threat_container |> dromel.append_child(invariants_wrapper)
-
-        load_child_source_texts(
-          invariants_wrapper,
-          parent_topic_id,
-          inv_ids,
-        )
-      }
-      Error(_) -> Nil
-    }
-  })
-}
-
 fn load_preview(feature: audit_data.TopicMetadata) -> Nil {
   case get_features_modal_state() {
     Ok(state) -> {
@@ -409,24 +335,6 @@ fn load_preview(feature: audit_data.TopicMetadata) -> Nil {
                           topic_id,
                           req_ids,
                         )
-                      Error(_) -> Nil
-                    }
-                  },
-                )
-
-                // Fetch threat IDs and load each with nested invariants
-                audit_data.with_feature_threats(
-                  topic_id,
-                  fn(threat_result) {
-                    case threat_result {
-                      Ok(threat_ids) ->
-                        list.each(threat_ids, fn(threat_id) {
-                          load_threat_with_invariants(
-                            current_state.right_pane,
-                            topic_id,
-                            threat_id,
-                          )
-                        })
                       Error(_) -> Nil
                     }
                   },
