@@ -660,21 +660,21 @@ pub type TopicMetadata {
     name: String,
     description: String,
     author_id: Int,
-    created_at: String,
+    created_at: option.Option(String),
   )
   Requirement(
     topic: Topic,
     description: String,
     feature_topic: Topic,
     author_id: Int,
-    created_at: String,
+    created_at: option.Option(String),
   )
   Behavior(
     topic: Topic,
     description: String,
     member_topic: Topic,
     author_id: Int,
-    created_at: String,
+    created_at: option.Option(String),
   )
   Documentation(topic: Topic, scope: Scope, is_technical: Bool)
 }
@@ -737,7 +737,11 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
       use name <- decode.field("name", decode.string)
       use description <- decode.field("description", decode.string)
       use author_id <- decode.field("author_id", decode.int)
-      use created_at <- decode.field("created_at", decode.string)
+      use created_at <- decode.optional_field(
+        "created_at",
+        None,
+        decode.optional(decode.string),
+      )
       decode.success(Feature(
         topic:,
         name:,
@@ -750,7 +754,11 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
       use description <- decode.field("description", decode.string)
       use feature_topic_id <- decode.field("feature_topic", decode.string)
       use author_id <- decode.field("author_id", decode.int)
-      use created_at <- decode.field("created_at", decode.string)
+      use created_at <- decode.optional_field(
+        "created_at",
+        None,
+        decode.optional(decode.string),
+      )
       decode.success(Requirement(
         topic:,
         description:,
@@ -763,7 +771,11 @@ fn topic_metadata_decoder() -> decode.Decoder(TopicMetadata) {
       use description <- decode.field("description", decode.string)
       use member_topic_id <- decode.field("member_topic", decode.string)
       use author_id <- decode.field("author_id", decode.int)
-      use created_at <- decode.field("created_at", decode.string)
+      use created_at <- decode.optional_field(
+        "created_at",
+        None,
+        decode.optional(decode.string),
+      )
       decode.success(Behavior(
         topic:,
         description:,
@@ -914,7 +926,7 @@ fn set_contracts(contracts: List(TopicMetadata)) -> Nil
 fn fetch_audit_contracts() {
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/" <> audit_name() <> "/contracts",
+      "http://192.168.2.52:3058/api/v1/audits/" <> audit_name() <> "/contracts",
     )
 
   use resp <- promise.try_await(
@@ -958,7 +970,7 @@ fn set_documents(documents: List(TopicMetadata)) -> Nil
 fn fetch_audit_documents() {
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/" <> audit_name() <> "/documents",
+      "http://192.168.2.52:3058/api/v1/audits/" <> audit_name() <> "/documents",
     )
 
   use resp <- promise.try_await(
@@ -1036,7 +1048,7 @@ fn set_features(features: List(TopicMetadata)) -> Nil
 fn fetch_audit_features() {
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/" <> audit_name() <> "/features",
+      "http://192.168.2.52:3058/api/v1/audits/" <> audit_name() <> "/features",
     )
 
   use resp <- promise.try_await(
@@ -1108,7 +1120,7 @@ fn set_source_text(topic_id: String, text: String) -> Nil
 fn fetch_source_text(topic: Topic) {
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
+      "http://192.168.2.52:3058/api/v1/audits/"
       <> audit_name()
       <> "/source_text/"
       <> topic.id,
@@ -1193,7 +1205,7 @@ pub fn fetch_topic_view(
   let request_promise = {
     let assert Ok(req) =
       request.to(
-        "http://172.18.115.78:3000/api/v1/audits/"
+        "http://192.168.2.52:3058/api/v1/audits/"
         <> audit_name()
         <> "/topic_view/"
         <> topic.id,
@@ -1242,7 +1254,7 @@ fn set_topic_metadata(topic_id: String, metadata: TopicMetadata) -> Nil
 fn fetch_topic_metadata(topic: Topic) {
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
+      "http://192.168.2.52:3058/api/v1/audits/"
       <> audit_name()
       <> "/metadata/"
       <> topic.id,
@@ -1397,7 +1409,7 @@ fn set_in_scope_files(files: List(String)) -> Nil
 fn fetch_in_scope_files() {
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
+      "http://192.168.2.52:3058/api/v1/audits/"
       <> audit_name()
       <> "/in_scope_files",
     )
@@ -1499,11 +1511,11 @@ pub type CommentVoteSummary {
   )
 }
 
-pub type CommentEvent {
-  ConversationUpdated(
+pub type AuditEvent {
+  TopicUpdated(
     audit_id: String,
     topic_id: String,
-    entry: ConversationEntry,
+    comment_topic_id: String,
     invalidated_thread_ids: List(String),
   )
   StatusUpdated(
@@ -1586,31 +1598,31 @@ fn comment_vote_summary_decoder() -> decode.Decoder(CommentVoteSummary) {
   ))
 }
 
-fn comment_event_decoder() -> decode.Decoder(CommentEvent) {
+fn audit_event_decoder() -> decode.Decoder(AuditEvent) {
   use event_type <- decode.field("type", decode.string)
   use audit_id <- decode.field("audit_id", decode.string)
   case event_type {
-    "ConversationUpdated" -> {
+    "topic_updated" -> {
       use topic_id <- decode.field("topic_id", decode.string)
-      use entry <- decode.field("entry", conversation_entry_decoder())
+      use comment_topic_id <- decode.field("comment_topic_id", decode.string)
       use invalidated_thread_ids <- decode.optional_field(
         "invalidated_thread_ids",
         [],
         decode.list(decode.string),
       )
-      decode.success(ConversationUpdated(
+      decode.success(TopicUpdated(
         audit_id:,
         topic_id:,
-        entry:,
+        comment_topic_id:,
         invalidated_thread_ids:,
       ))
     }
-    "StatusUpdated" -> {
+    "status_updated" -> {
       use comment_topic_id <- decode.field("comment_topic_id", decode.string)
       use status <- decode.field("status", comment_status_decoder())
       decode.success(StatusUpdated(audit_id:, comment_topic_id:, status:))
     }
-    "VoteUpdated" -> {
+    "vote_updated" -> {
       use comment_topic_id <- decode.field("comment_topic_id", decode.string)
       use score <- decode.field("score", decode.int)
       use upvotes <- decode.field("upvotes", decode.int)
@@ -1625,13 +1637,13 @@ fn comment_event_decoder() -> decode.Decoder(CommentEvent) {
     }
     _ ->
       decode.failure(
-        ConversationUpdated(
+        TopicUpdated(
           audit_id: "",
           topic_id: "",
-          entry: ConversationEntry(topic_id: "", kind: CommentEntry, created_at: "", html: ""),
+          comment_topic_id: "",
           invalidated_thread_ids: [],
         ),
-        "CommentEvent",
+        "AuditEvent",
       )
   }
 }
@@ -1739,7 +1751,7 @@ fn set_comments_by_type(comment_type: String, val: List(String)) -> Nil
 fn fetch_thread(topic_id: String) {
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
+      "http://192.168.2.52:3058/api/v1/audits/"
       <> audit_name()
       <> "/thread/"
       <> topic_id,
@@ -1804,7 +1816,7 @@ pub fn with_thread_html(
 fn fetch_conversation(topic_id: String) {
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
+      "http://192.168.2.52:3058/api/v1/audits/"
       <> audit_name()
       <> "/conversation/"
       <> topic_id,
@@ -1914,9 +1926,9 @@ fn set_documentation_html(key: String, val: String) -> Nil
 fn fetch_topic_requirements(topic_id: String) {
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
+      "http://192.168.2.52:3058/api/v1/audits/"
       <> audit_name()
-      <> "/requirements/topic/"
+      <> "/requirements?for_topic="
       <> topic_id,
     )
 
@@ -1938,7 +1950,7 @@ fn fetch_topic_requirements(topic_id: String) {
 fn fetch_documentation_html(feature_topics: List(String)) {
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
+      "http://192.168.2.52:3058/api/v1/audits/"
       <> audit_name()
       <> "/documentation",
     )
@@ -2086,7 +2098,7 @@ fn set_behaviors(behaviors: List(TopicMetadata)) -> Nil
 fn fetch_feature_requirements(feature_id: String) {
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
+      "http://192.168.2.52:3058/api/v1/audits/"
       <> audit_name()
       <> "/features/"
       <> feature_id
@@ -2113,7 +2125,7 @@ fn fetch_feature_requirements(feature_id: String) {
 fn fetch_audit_behaviors() {
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
+      "http://192.168.2.52:3058/api/v1/audits/"
       <> audit_name()
       <> "/behaviors",
     )
@@ -2294,7 +2306,7 @@ fn fetch_comments_by_type(comment_type: CommentType, status: CommentStatus) {
   let status_str = comment_status_to_string(status)
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
+      "http://192.168.2.52:3058/api/v1/audits/"
       <> audit_name()
       <> "/comments/"
       <> type_str
@@ -2377,7 +2389,7 @@ pub fn create_comment(
 
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/" <> audit_name() <> "/comments",
+      "http://192.168.2.52:3058/api/v1/audits/" <> audit_name() <> "/comments",
     )
   let req =
     req
@@ -2431,19 +2443,15 @@ fn set_comment_status(
   val: CommentStatusResponse,
 ) -> Nil
 
-fn comment_numeric_id(comment_topic_id: String) -> String {
-  string.drop_start(comment_topic_id, 1)
-}
-
 // --- Status: Fetch Functions ---
 
 fn fetch_comment_status(comment_topic_id: String) {
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
+      "http://192.168.2.52:3058/api/v1/audits/"
       <> audit_name()
       <> "/comments/"
-      <> comment_numeric_id(comment_topic_id)
+      <> comment_topic_id
       <> "/status",
     )
 
@@ -2508,10 +2516,10 @@ pub fn update_comment_status(comment_topic_id: String, status: CommentStatus) {
 
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
+      "http://192.168.2.52:3058/api/v1/audits/"
       <> audit_name()
       <> "/comments/"
-      <> comment_numeric_id(comment_topic_id)
+      <> comment_topic_id
       <> "/status",
     )
   let req =
@@ -2584,7 +2592,7 @@ fn set_unvoted(user_id: String, val: List(String)) -> Nil
 fn fetch_unvoted(user_id: Int) {
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
+      "http://192.168.2.52:3058/api/v1/audits/"
       <> audit_name()
       <> "/votes/unvoted?user_id="
       <> int.to_string(user_id),
@@ -2643,10 +2651,10 @@ pub fn with_unvoted(user_id: Int, callback) {
 fn fetch_vote_summary(comment_topic_id: String, user_id: Int) {
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
+      "http://192.168.2.52:3058/api/v1/audits/"
       <> audit_name()
       <> "/votes/"
-      <> comment_numeric_id(comment_topic_id)
+      <> comment_topic_id
       <> "?user_id="
       <> int.to_string(user_id),
     )
@@ -2713,10 +2721,10 @@ pub fn cast_vote(comment_topic_id: String, user_id: Int, vote: VoteValue) {
 
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
+      "http://192.168.2.52:3058/api/v1/audits/"
       <> audit_name()
       <> "/votes/"
-      <> comment_numeric_id(comment_topic_id),
+      <> comment_topic_id,
     )
   let req =
     req
@@ -2748,10 +2756,10 @@ pub fn cast_vote(comment_topic_id: String, user_id: Int, vote: VoteValue) {
 pub fn delete_vote(comment_topic_id: String, user_id: Int) {
   let assert Ok(req) =
     request.to(
-      "http://172.18.115.78:3000/api/v1/audits/"
+      "http://192.168.2.52:3058/api/v1/audits/"
       <> audit_name()
       <> "/votes/"
-      <> comment_numeric_id(comment_topic_id)
+      <> comment_topic_id
       <> "?user_id="
       <> int.to_string(user_id),
     )
@@ -2775,48 +2783,66 @@ fn ws_connect(url: String, on_message: fn(String) -> Nil) -> Nil
 @external(javascript, "./ws_ffi.mjs", "ws_close")
 pub fn ws_close() -> Nil
 
-pub fn connect_comment_ws(
-  on_conversation_updated on_conversation_updated: fn(String) -> Nil,
+pub fn connect_audit_event_ws(
+  on_topic_updated on_topic_updated: fn(String) -> Nil,
 ) -> Nil {
   let url =
-    "ws://172.18.115.78:3000/api/v1/audits/" <> audit_name() <> "/comments/ws"
+    "ws://192.168.2.52:3058/api/v1/audits/" <> audit_name() <> "/events/ws"
 
-  ws_connect(url, handle_comment_event(_, on_conversation_updated))
+  ws_connect(url, handle_audit_event(_, on_topic_updated))
 }
 
-fn handle_comment_event(
+fn handle_audit_event(
   raw: String,
-  on_conversation_updated: fn(String) -> Nil,
+  on_topic_updated: fn(String) -> Nil,
 ) -> Nil {
-  case json.parse(raw, comment_event_decoder()) {
-    Ok(event) -> process_comment_event(event, on_conversation_updated)
+  case json.parse(raw, audit_event_decoder()) {
+    Ok(event) -> process_audit_event(event, on_topic_updated)
     Error(_) -> {
-      io.println_error("Failed to decode WebSocket comment event")
+      io.println_error("Failed to decode WebSocket audit event")
       Nil
     }
   }
 }
 
-fn process_comment_event(
-  event: CommentEvent,
-  on_conversation_updated: fn(String) -> Nil,
+fn refetch_conversation(topic_id: String) -> Nil {
+  let request_promise = fetch_conversation(topic_id)
+  promise.await(request_promise, fn(result) {
+    case result {
+      Ok(entries) -> {
+        set_conversation(topic_id, entries)
+        list.each(entries, fn(entry) {
+          set_thread_html(entry.topic_id, entry.html)
+        })
+      }
+      Error(error) ->
+        snag.layer(error, "Unable to refetch conversation for " <> topic_id)
+        |> snag.line_print
+        |> io.println_error
+    }
+    promise.resolve(Nil)
+  })
+  Nil
+}
+
+fn process_audit_event(
+  event: AuditEvent,
+  on_topic_updated: fn(String) -> Nil,
 ) -> Nil {
   case event {
-    ConversationUpdated(audit_id:, topic_id:, entry:, invalidated_thread_ids:) -> {
-      // Append entry to cached conversation list
-      case read_conversation(topic_id) {
-        Ok(entries) -> set_conversation(topic_id, list.append(entries, [entry]))
-        Error(_) -> Nil
-      }
-      // Cache the new entry's thread HTML
-      set_thread_html(entry.topic_id, entry.html)
-      // Invalidate and refetch stale threads
+    TopicUpdated(
+      audit_id:,
+      topic_id:,
+      comment_topic_id: _,
+      invalidated_thread_ids:,
+    ) -> {
+      refetch_conversation(topic_id)
       list.each(invalidated_thread_ids, fn(thread_id) {
         clear_thread_html(thread_id)
         refetch_thread(thread_id)
       })
       case audit_id == audit_name() {
-        True -> on_conversation_updated(topic_id)
+        True -> on_topic_updated(topic_id)
         False -> Nil
       }
       Nil

@@ -25,8 +25,8 @@ pub fn main() {
 
   let _ = prefetch_hot_data()
 
-  audit_data.connect_comment_ws(
-    on_conversation_updated: topic_view.reload_topic_on_screen,
+  audit_data.connect_audit_event_ws(
+    on_topic_updated: topic_view.reload_topic_on_screen,
   )
 
   let _ = open_url()

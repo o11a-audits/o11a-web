@@ -329,16 +329,18 @@ fn set_active_panel(container: element.Element, panel: ActivePanel) -> Nil {
 }
 
 fn get_active_panel(container: element.Element) -> ActivePanel {
-  use Ok(data) <- case dromel.get_data(container, active_panel_key) {
+  case dromel.get_data(container, active_panel_key) {
+    Ok(data) -> {
+      case history_graph.active_panel_from_string(data) {
+        Ok(panel) -> panel
+        Error(snag) -> {
+          log.print_error(snag)
+          history_graph.TopicPanel
+        }
+      }
+    }
     Error(Nil) -> history_graph.TopicPanel
   }
-  use Ok(panel) <- case history_graph.active_panel_from_string(data) {
-    Error(snag) -> {
-      log.print_error(snag)
-      history_graph.TopicPanel
-    }
-  }
-  panel
 }
 
 fn get_current_focus_state(
