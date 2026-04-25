@@ -684,6 +684,8 @@ pub type ConversationEntryKind {
   FunctionalPurposeEntry
   BehaviorEntry
   RequirementEntry
+  ThreatEntry
+  InvariantEntry
   CommentEntry
   MentionEntry
 }
@@ -694,6 +696,7 @@ pub type ConversationEntry {
     kind: ConversationEntryKind,
     created_at: String,
     html: String,
+    inline_html: option.Option(String),
   )
 }
 
@@ -704,6 +707,8 @@ fn conversation_entry_kind_decoder() -> decode.Decoder(ConversationEntryKind) {
     "functional_purpose" -> decode.success(FunctionalPurposeEntry)
     "behavior" -> decode.success(BehaviorEntry)
     "requirement" -> decode.success(RequirementEntry)
+    "threat" -> decode.success(ThreatEntry)
+    "invariant" -> decode.success(InvariantEntry)
     "comment" -> decode.success(CommentEntry)
     "mention" -> decode.success(MentionEntry)
     _ -> decode.failure(CommentEntry, "ConversationEntryKind")
@@ -715,7 +720,18 @@ fn conversation_entry_decoder() -> decode.Decoder(ConversationEntry) {
   use kind <- decode.field("kind", conversation_entry_kind_decoder())
   use created_at <- decode.field("created_at", decode.string)
   use html <- decode.field("html", decode.string)
-  decode.success(ConversationEntry(topic_id:, kind:, created_at:, html:))
+  use inline_html <- decode.optional_field(
+    "inline_html",
+    None,
+    decode.optional(decode.string),
+  )
+  decode.success(ConversationEntry(
+    topic_id:,
+    kind:,
+    created_at:,
+    html:,
+    inline_html:,
+  ))
 }
 
 fn conversation_response_decoder() -> decode.Decoder(List(ConversationEntry)) {
